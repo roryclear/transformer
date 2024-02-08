@@ -46,11 +46,16 @@ names = open('data/names.txt', 'r').readlines()
 print(len(names),"names in file")
 
 chars = set()
+unique = set() #some names like rory are there twice
 for i in range(len(names)):
     names[i] = names[i].replace("\n",".")
+    if names[i] not in unique:
+        unique.add(names[i])
     for y in names[i]:
         if y not in chars:
             chars.add(y)
+names = list(unique)
+print(len(names),"names now")
 chars = sorted(list(chars))
 print(chars)
 vocab_size = len(chars) #"special 0 token?"-karpathy
