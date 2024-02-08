@@ -73,9 +73,12 @@ opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=3
 #exit()
 x = 0
 hidden_size = 128
-for n in names[0:100]:
-    print(x)
-    x+=1
+total_loss = Tensor(0)
+acc = 0
+w = 0
+for n in names:
+    w+=1
+    #print(w)    
     model.prev_hidden = Tensor.zeros(hidden_size)
     for i in range(len(n)-1):
         #print(n,":",n[i]," ->",n[i+1])
@@ -89,7 +92,18 @@ for n in names[0:100]:
         #print("output =",out.numpy())
 
         loss = out.sparse_categorical_crossentropy(Tensor(s2i[n[i+1]]))
+
+        pred = out.argmax(axis=-1)
+        acc += (pred == s2i[n[i+1]]).mean().numpy()
+        x+=1
+        #print("rory acc =",acc.numpy())
+
         #print("rory loss =",loss.numpy())
         loss.backward()
 
         opt.step()
+        #print("rory loss =",loss.numpy())
+    if w > 0 and w % 100 == 0:
+        print(w,"acc =",acc/x)
+        acc = 0
+        x = 0
