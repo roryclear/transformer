@@ -25,7 +25,7 @@ class RNN:
     def __init__(self,hidden_size=128):
         #self.hidden_size = hidden_size
         self.w_in = nn.Linear(vocab_size,hidden_size)
-        self.h0 = nn.Linear(hidden_size,hidden_size)
+        self.h0 = nn.Linear(hidden_size*2,hidden_size)
         self.w_out = nn.Linear(hidden_size,vocab_size)
         self.prev_hidden = Tensor.zeros(hidden_size)
         self.hidden = Tensor.zeros(hidden_size)
@@ -33,10 +33,10 @@ class RNN:
     def __call__(self,x:Tensor):
         x = self.w_in(x)
         #print("x now =",x.numpy(),len(x.numpy()))
-        #self.hidden = x
-        #x = x.cat(self.prev_hidden)
-        #self.prev_hidden = self.hidden
+        x = x.cat(self.prev_hidden)
         x = self.h0(x)
+        x = Tensor.tanh(x)
+        self.prev_hidden = x
         x = self.w_out(x)
         return x
 
