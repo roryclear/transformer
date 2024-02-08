@@ -23,12 +23,12 @@ class RNN:
 '''
 class RNN:
     def __init__(self,hidden_size=128):
-        self.hidden_size = hidden_size
+        #self.hidden_size = hidden_size
         self.w_in = nn.Linear(vocab_size,hidden_size)
         self.h0 = nn.Linear(hidden_size,hidden_size)
         self.w_out = nn.Linear(hidden_size,vocab_size)
-        #self.prev_hidden = Tensor.zeros(hidden_size)
-        #self.hidden = Tensor.zeros(hidden_size)
+        self.prev_hidden = Tensor.zeros(hidden_size)
+        self.hidden = Tensor.zeros(hidden_size)
     
     def __call__(self,x:Tensor):
         x = self.w_in(x)
@@ -66,15 +66,17 @@ for i in range(len(chars)):
 #opt = nn.optim.Adam(nn.state.get_parameters(model2), lr=3e-4)
 
 model = RNN()
-opt = nn.optim.Adam(nn.state.get_parameters(model), lr=3e-4)
+#opt = nn.optim.Adam(nn.state.get_parameters(model), lr=3e-4)
+opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=3e-4)
 #print(nn.state.get_parameters(model))
 #exit()
 #exit()
 x = 0
+hidden_size = 128
 for n in names[0:100]:
     print(x)
     x+=1
-    model.prev_hidden = Tensor.zeros(model.hidden_size)
+    model.prev_hidden = Tensor.zeros(hidden_size)
     for i in range(len(n)-1):
         #print(n,":",n[i]," ->",n[i+1])
         e = s2i[n[i]]
