@@ -1,5 +1,7 @@
 from tinygrad import nn, Tensor
-
+from tinygrad.nn.optim import SGD
+from typing import Tuple
+'''
 class RNN:
     def __init__(self,hidden_size=128):
         self.hidden_size = hidden_size
@@ -11,13 +13,29 @@ class RNN:
     
     def __call__(self,x:Tensor):
         x = self.w_in(x)
-        print("x now =",x.numpy(),len(x.numpy()))
+        #print("x now =",x.numpy(),len(x.numpy()))
         self.hidden = x
-        x = x.pad2d([0,self.hidden_size],0)
-        print("x now =",x.numpy(),len(x.numpy()))
-        x = x + self.prev_hidden.pad2d([self.hidden_size,0])
-        print("x now =",x.numpy(),len(x.numpy()))
+        x = x.cat(self.prev_hidden)
         self.prev_hidden = self.hidden
+        x = self.h0(x)
+        x = self.w_out(x)
+        return x
+'''
+class RNN:
+    def __init__(self,hidden_size=128):
+        self.hidden_size = hidden_size
+        self.w_in = nn.Linear(vocab_size,hidden_size)
+        self.h0 = nn.Linear(hidden_size,hidden_size)
+        self.w_out = nn.Linear(hidden_size,vocab_size)
+        #self.prev_hidden = Tensor.zeros(hidden_size)
+        #self.hidden = Tensor.zeros(hidden_size)
+    
+    def __call__(self,x:Tensor):
+        x = self.w_in(x)
+        #print("x now =",x.numpy(),len(x.numpy()))
+        #self.hidden = x
+        #x = x.cat(self.prev_hidden)
+        #self.prev_hidden = self.hidden
         x = self.h0(x)
         x = self.w_out(x)
         return x
@@ -43,14 +61,33 @@ for i in range(len(chars)):
     i2s[i] = chars[i]
     s2i[chars[i]] = i
 
-model = RNN()
+  
+#model2 = ActorCritic(10, int(10))    # type: ignore
+#opt = nn.optim.Adam(nn.state.get_parameters(model2), lr=3e-4)
 
-for n in names[0:2]:
+model = RNN()
+opt = nn.optim.Adam(nn.state.get_parameters(model), lr=3e-4)
+#print(nn.state.get_parameters(model))
+#exit()
+#exit()
+x = 0
+for n in names[0:100]:
+    print(x)
+    x+=1
+    model.prev_hidden = Tensor.zeros(model.hidden_size)
     for i in range(len(n)-1):
-        print(n,":",n[i]," ->",n[i+1])
+        #print(n,":",n[i]," ->",n[i+1])
         e = s2i[n[i]]
-        print(n[i],e)
+        #print(n[i],e)
         input = Tensor([1]).pad2d([e,vocab_size-e-1])
-        print("input =",input.numpy(),"len =",len(input.numpy()))
+        #print("input =",input.numpy(),"len =",len(input.numpy()))
+        opt.zero_grad()
+
         out = model(input)
-        print("output =",out.numpy())
+        #print("output =",out.numpy())
+
+        loss = out.sparse_categorical_crossentropy(Tensor(s2i[n[i+1]]))
+        #print("rory loss =",loss.numpy())
+        loss.backward()
+
+        opt.step()
