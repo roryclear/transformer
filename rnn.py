@@ -74,6 +74,7 @@ opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=3
 x = 0
 hidden_size = 128
 total_loss = Tensor(0)
+avg_acc = 0
 acc = 0
 w = 0
 for n in names:
@@ -95,6 +96,7 @@ for n in names:
 
         pred = out.argmax(axis=-1)
         acc += (pred == s2i[n[i+1]]).mean().numpy()
+        print("rory letter =",n[i],"->",i2s[int(pred.numpy())],"\t\t",w,"\t",avg_acc)
         x+=1
         #print("rory acc =",acc.numpy())
 
@@ -104,6 +106,7 @@ for n in names:
         opt.step()
         #print("rory loss =",loss.numpy())
     if w > 0 and w % 100 == 0:
-        print(w,"acc =",acc/x)
+        avg_acc = acc/x
+        print(w,"acc =",avg_acc)
         acc = 0
         x = 0
