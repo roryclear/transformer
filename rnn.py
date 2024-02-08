@@ -47,13 +47,13 @@ print(len(names),"names in file")
 
 chars = set()
 for i in range(len(names)):
-    names[i] = names[i].replace("\n","")
+    names[i] = names[i].replace("\n",".")
     for y in names[i]:
         if y not in chars:
             chars.add(y)
 chars = sorted(list(chars))
 print(chars)
-vocab_size = len(chars) + 1 #"special 0 token?"-karpathy
+vocab_size = len(chars) #"special 0 token?"-karpathy
 i2s = {}
 s2i = {}
 # "decode and encode"
@@ -96,7 +96,7 @@ for n in names:
 
         pred = out.argmax(axis=-1)
         acc += (pred == s2i[n[i+1]]).mean().numpy()
-        print("rory letter =",n[i],"->",i2s[int(pred.numpy())],"\t\t",w,"\t",avg_acc)
+        print(w,"\t",avg_acc,"\tletter =",n,(n[:i+1]+i2s[int(pred.numpy())])) #just do this for test?
         x+=1
         #print("rory acc =",acc.numpy())
 
