@@ -35,6 +35,7 @@ class tinyrnn:
 
 model = tinyrnn()
 input = "roryclear."
+chars = ['r','o','y','c','l','e','a','.']
 inputTensor = Tensor([[1,0,0,0,0,0,0,0], #r
                       [0,1,0,0,0,0,0,0], #o
                       [1,0,0,0,0,0,0,0], #r
@@ -49,7 +50,7 @@ inputTensor = Tensor([[1,0,0,0,0,0,0,0], #r
 targetTensor = Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]]) # o r y c l e a r .
 
 opt = nn.optim.Adam([model.w_in.weight,model.w_out.weight], lr=1e-3)
-for e in range(100):
+for e in range(1000):
     for i in range(inputTensor.shape[0]):
         opt.zero_grad()
         out = model(inputTensor[i])
@@ -58,6 +59,19 @@ for e in range(100):
         opt.step()
         if i == 6:
             print("rory loss =",loss.numpy())
+    
+    if e % 100 == 0:
+        s = ""
+        print("epoch",e)
+        for i in range(inputTensor.shape[0]):
+            s += chars[out.argmax().numpy()]
+            out = model(inputTensor[i])
+        print("output =",s)
+        if s == "roryclear.":
+            print("CORRECT")
+            exit()
+
+        
 
 exit()
 # r = 0, o = 1, y = 2, c = 3, l = 4, e = 5, a = 6
