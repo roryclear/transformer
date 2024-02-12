@@ -61,11 +61,11 @@ for e in range(1000):
             print("rory loss =",loss.numpy())
     
     if e % 100 == 0:
-        s = ""
+        s = chars[inputTensor[0].argmax().numpy()]
         print("epoch",e)
         for i in range(inputTensor.shape[0]):
-            s += chars[out.argmax().numpy()]
             out = model(inputTensor[i])
+            s += chars[out.argmax().numpy()]
         print("output =",s)
         if s == "roryclear.":
             print("CORRECT")
