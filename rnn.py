@@ -1,6 +1,7 @@
 from tinygrad import nn, Tensor
 from tinygrad.nn.optim import SGD
 from typing import Tuple
+import time
 '''
 class RNN:
     def __init__(self,hidden_size=128):
@@ -21,6 +22,58 @@ class RNN:
         x = self.w_out(x)
         return x
 '''
+class tinyrnn:
+    def __init__(self):
+        self.prevh = Tensor.zeros(8)
+        self.w_in = nn.Linear(8,8)
+        self.w_out = nn.Linear(8,8)
+    
+    def __call__(self, x):
+        ret = self.w_in(x)
+        ret = self.w_out(ret)
+        return ret
+
+model = tinyrnn()
+input = "roryclear."
+inputTensor = Tensor([[1,0,0,0,0,0,0,0], #r
+                      [0,1,0,0,0,0,0,0], #o
+                      [1,0,0,0,0,0,0,0], #r
+                      [0,0,1,0,0,0,0,0], #y
+                      [0,0,0,1,0,0,0,0], #c
+                      [0,0,0,0,1,0,0,0], #l
+                      [0,0,0,0,0,1,0,0], #e
+                      [0,0,0,0,0,0,1,0], #a
+                      [1,0,0,0,0,0,0,0], #r
+                      ])
+
+targetTensor = Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]]) # o r y c l e a r .
+
+opt = nn.optim.Adam([model.w_in.weight,model.w_out.weight], lr=1e-3)
+for e in range(100):
+    for i in range(inputTensor.shape[0]):
+        opt.zero_grad()
+        out = model(inputTensor[i])
+        loss = out.sparse_categorical_crossentropy(targetTensor[i])
+        loss.backward()
+        opt.step()
+        if i == 6:
+            print("rory loss =",loss.numpy())
+
+exit()
+# r = 0, o = 1, y = 2, c = 3, l = 4, e = 5, a = 6
+r = Tensor([1,0,0,0,0,0,0])
+o = Tensor([0,1,0,0,0,0,0])
+opt = nn.optim.Adam([model.w_in.weight,model.w_out.weight], lr=1e-3)
+opt.zero_grad()
+batch = Tensor([[1,0,0,0,0,0,0],[0,1,0,0,0,0,0]]) #r o, to try out?
+for i in range(1000):
+    out = model(r)
+    loss = out.sparse_categorical_crossentropy(Tensor([1])) # just use the category positions in an array?? o r
+    loss.backward()
+    opt.step()
+    print("rory loss =",loss.numpy())
+exit()
+
 class RNN:
     def __init__(self,hidden_size=128):
         #self.hidden_size = hidden_size
@@ -82,15 +135,19 @@ total_loss = Tensor(0)
 avg_acc = 0
 acc = 0
 w = 0
+st = time.perf_counter()
 for n in names:
     w+=1
     #print(w)    
     model.prev_hidden = Tensor.zeros(hidden_size)
-    for i in range(len(n)-1):
+    for i in range(0,len(n)-2,2):
         #print(n,":",n[i]," ->",n[i+1])
         e = s2i[n[i]]
-        #print(n[i],e)
+        e2 = s2i[n[i+1]]
         input = Tensor([1]).pad2d([e,vocab_size-e-1])
+        print("rory input shape =",input.shape)
+        input = input.cat(Tensor([1]).pad2d([e2,vocab_size-e2-1]))
+        input = input.reshape(2,27)
         #print("input =",input.numpy(),"len =",len(input.numpy()))
         opt.zero_grad()
 
@@ -100,16 +157,19 @@ for n in names:
         loss = out.sparse_categorical_crossentropy(Tensor(s2i[n[i+1]]))
 
         pred = out.argmax(axis=-1)
-        acc += (pred == s2i[n[i+1]]).mean().numpy()
-        print(w,"\t",avg_acc,"\tletter =",n,(n[:i+1]+i2s[int(pred.numpy())])) #just do this for test?
+        #acc += (pred == s2i[n[i+1]]).mean().numpy()
+        #print(w,"\t",avg_acc,"\tletter =",n,(n[:i+1]+i2s[int(pred.numpy())])) #just do this for test?
         x+=1
-        #print("rory acc =",acc.numpy())
-
-        #print("rory loss =",loss.numpy())
+        
         loss.backward()
-
         opt.step()
-        #print("rory loss =",loss.numpy())
+
+        #timing first 5000 so can improve it?
+        if x > 500:
+            t = time.perf_counter() - st
+            print("time taken =",t)
+            exit()
+
     if w > 0 and w % 100 == 0:
         avg_acc = acc/x
         print(w,"acc =",avg_acc)
