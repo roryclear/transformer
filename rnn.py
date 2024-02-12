@@ -26,11 +26,17 @@ class tinyrnn:
     def __init__(self):
         self.prevh = Tensor.zeros(8)
         self.w_in = nn.Linear(8,8)
+        self.h0 = nn.Linear(16,8)
         self.w_out = nn.Linear(8,8)
     
     def __call__(self, x):
         ret = self.w_in(x)
+        ret = ret.cat(self.prevh)
+        ret = Tensor.tanh(ret)
+        ret = self.h0(ret)
+        self.prevh = ret
         ret = self.w_out(ret)
+        ret = ret.softmax()
         return ret
 
 model = tinyrnn()
@@ -49,8 +55,9 @@ inputTensor = Tensor([[1,0,0,0,0,0,0,0], #r
 
 targetTensor = Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]]) # o r y c l e a r .
 
-opt = nn.optim.Adam([model.w_in.weight,model.w_out.weight], lr=1e-3)
-for e in range(1000):
+opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-2)
+for e in range(10000):
+    model.prevh = Tensor.zeros(8)
     for i in range(inputTensor.shape[0]):
         opt.zero_grad()
         out = model(inputTensor[i])
@@ -58,7 +65,7 @@ for e in range(1000):
         loss.backward()
         opt.step()
         if i == 6:
-            print("rory loss =",loss.numpy())
+            print("loss =",loss.numpy())
     
     if e % 100 == 0:
         s = chars[inputTensor[0].argmax().numpy()]
