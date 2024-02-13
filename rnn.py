@@ -23,11 +23,12 @@ class RNN:
         return x
 '''
 class tinyrnn:
-    def __init__(self):
-        self.prevh = Tensor.zeros(8)
+    def __init__(self,hidden_size=8):
+        self.hidden_size = hidden_size
+        self.prevh = Tensor.zeros(self.hidden_size)
         self.w_in = nn.Linear(8,8)
-        self.h0 = nn.Linear(16,8)
-        self.w_out = nn.Linear(8,8)
+        self.h0 = nn.Linear(8+hidden_size,self.hidden_size)
+        self.w_out = nn.Linear(self.hidden_size,8)
     
     def __call__(self, x):
         ret = self.w_in(x)
@@ -39,7 +40,8 @@ class tinyrnn:
         ret = ret.softmax()
         return ret
 
-model = tinyrnn()
+model = tinyrnn(hidden_size=6) #8 is more than enough for "roryclear." overfit
+# depends on the init, can we use a seed?
 input = "roryclear."
 chars = ['r','o','y','c','l','e','a','.']
 inputTensor = Tensor([[1,0,0,0,0,0,0,0], #r
@@ -55,9 +57,9 @@ inputTensor = Tensor([[1,0,0,0,0,0,0,0], #r
 
 targetTensor = Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]]) # o r y c l e a r .
 
-opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-2)
+opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-3)
 for e in range(10000):
-    model.prevh = Tensor.zeros(8)
+    model.prevh = Tensor.zeros(model.hidden_size)
     for i in range(inputTensor.shape[0]):
         opt.zero_grad()
         out = model(inputTensor[i])
