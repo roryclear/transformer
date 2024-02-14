@@ -61,18 +61,6 @@ def str_to_target_tensor(s):
     ret = ret.reshape(len(s),1)
     return ret
 input_tensor  = str_to_input_tensor("roryclear")
-''' function should make this now
-input_tensor = Tensor([[1,0,0,0,0,0,0,0], #r
-                      [0,1,0,0,0,0,0,0], #o
-                      [1,0,0,0,0,0,0,0], #r
-                      [0,0,1,0,0,0,0,0], #y
-                      [0,0,0,1,0,0,0,0], #c
-                      [0,0,0,0,1,0,0,0], #l
-                      [0,0,0,0,0,1,0,0], #e
-                      [0,0,0,0,0,0,1,0], #a
-                      [1,0,0,0,0,0,0,0], #r
-                      ])
-'''
 target_tensor = str_to_target_tensor("oryclear.") #Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]])
 # o r y c l e a r .
 
@@ -80,13 +68,12 @@ opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1
 for e in range(10000):
     model.prevh = Tensor.zeros(model.hidden_size)
     for i in range(input_tensor.shape[0]):
-        opt.zero_grad()
         out = model(input_tensor[i])
         loss = out.sparse_categorical_crossentropy(target_tensor[i])
         loss.backward()
-        opt.step()
-        if i == 6:
-            print("loss =",loss.numpy())
+    opt.step() # slower for "roryclear." overfit example obvs
+    opt.zero_grad()
+    print("loss =",loss.numpy())
     
     if e % 100 == 0:
         s = chars[input_tensor[0].argmax().numpy()]
