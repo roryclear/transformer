@@ -2,6 +2,7 @@ from tinygrad import nn, Tensor
 from tinygrad.nn.optim import SGD
 from typing import Tuple
 import time
+import random
 '''
 class RNN:
     def __init__(self,hidden_size=128):
@@ -39,14 +40,7 @@ class tinyrnn:
         ret = self.w_out(ret)
         ret = ret.softmax()
         return ret
-
-model = tinyrnn(hidden_size=8) #8 is more than enough for "roryclear." overfit
-# depends on the init, can we use a seed?
-input = "roryclear."
-chars = list(set(input)) #['r','o','y','c','l','e','a','.']
-chars = ['r','o','y','c','l','e','a','.']
-vocab_size = len(chars)
-
+    
 def str_to_input_tensor(s):
     ret = Tensor(None)
     for c in s:
@@ -60,6 +54,24 @@ def str_to_target_tensor(s):
         ret = ret.cat(Tensor([chars.index(c)]))
     ret = ret.reshape(len(s),1)
     return ret
+
+'''wip training / testing
+lines = open('data/names.txt', 'r').readlines()
+lines = list(set(lines)) #unique lines only!
+lines.sort()
+random.Random(420).shuffle(lines) #same shuffle every time
+print("first =",lines[0])
+train_names = lines[:int(len(lines)*0.9)]
+test_names = lines[int(len(lines)*0.9):]
+'''
+
+model = tinyrnn(hidden_size=8) #8 is more than enough for "roryclear." overfit
+# depends on the init, can we use a seed?
+input = "roryclear."
+chars = list(set(input)) #['r','o','y','c','l','e','a','.']
+chars = ['r','o','y','c','l','e','a','.']
+vocab_size = len(chars)
+
 input_tensor  = str_to_input_tensor("roryclear")
 target_tensor = str_to_target_tensor("oryclear.") #Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]])
 # o r y c l e a r .
