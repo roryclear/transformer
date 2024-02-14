@@ -72,7 +72,26 @@ test_names = lines[int(len(lines)*0.9):]
 print("first =",train_names[0],test_names[0])
 opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-3)
 for i in range(len(train_names)):
-    #print(i,train_names[i])
+    '''
+    if i % 1000 == 0:
+        print("testing test set")
+        acc = 0
+        test_loss = 0
+        for j in range(1000):
+            print(j,len(test_names))
+            input = str_to_input_tensor(test_names[i])
+            target = str_to_target_tensor(test_names[i][1:]+".")
+            for x in range(input.shape[0]):
+                out = model(input[x])
+                pred = out.argmax(axis=-1)
+                acc += (pred == target).mean().numpy()
+                test_loss += out.sparse_categorical_crossentropy(target).numpy()
+        print("loss =",test_loss)
+        print("acc =",acc)
+    '''
+    #loss = None
+    #acc = None
+
     input = str_to_input_tensor(train_names[i])
     target = str_to_target_tensor(train_names[i][1:]+".")
     #print("input =",input.numpy())
@@ -86,7 +105,6 @@ for i in range(len(train_names)):
         opt.step()
         opt.zero_grad()
     
-
 exit()
 
 
