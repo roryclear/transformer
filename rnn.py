@@ -24,12 +24,12 @@ class RNN:
         return x
 '''
 class tinyrnn:
-    def __init__(self,hidden_size=8):
+    def __init__(self,hidden_size=8,vocab_size=8):
         self.hidden_size = hidden_size
         self.prevh = Tensor.zeros(self.hidden_size)
-        self.w_in = nn.Linear(8,8)
+        self.w_in = nn.Linear(vocab_size,8)
         self.h0 = nn.Linear(8+hidden_size,self.hidden_size)
-        self.w_out = nn.Linear(self.hidden_size,8)
+        self.w_out = nn.Linear(self.hidden_size,vocab_size)
     
     def __call__(self, x):
         ret = self.w_in(x)
@@ -54,19 +54,35 @@ def str_to_target_tensor(s):
         ret = ret.cat(Tensor([chars.index(c)]))
     ret = ret.reshape(len(s),1)
     return ret
-
 '''
+model = tinyrnn(hidden_size=8,vocab_size=27)
+
 lines = open('data/names.txt', 'r').readlines()
 lines = list(set(lines)) #unique lines only!
-for i in range(len(lines)): lines[i] = lines[i].replace("\n","")
+chars = "."
+for i in range(len(lines)): 
+    lines[i] = lines[i].replace("\n","")
+    chars += lines[i]
+chars = list(set(chars))
+vocab_size = len(chars)
 lines.sort()
 random.Random(420).shuffle(lines) #same shuffle every time
 train_names = lines[:int(len(lines)*0.9)]
 test_names = lines[int(len(lines)*0.9):]
 print("first =",train_names[0],test_names[0])
+all = ""
+for i in range(len(train_names)):
+    print(i,train_names[i])
+    input = str_to_input_tensor(train_names[i])
+    target = str_to_target_tensor(train_names[i][1]+".")
+    print("input =",input.numpy())
+    print("target =",target.numpy(),"\n")
+    out = model(input)
+    loss = out.sparse_categorical_crossentropy(target)
 
 exit()
 '''
+
 
 model = tinyrnn(hidden_size=8) #8 is more than enough for "roryclear." overfit
 # depends on the init, can we use a seed?
