@@ -47,7 +47,7 @@ chars = list(set(input)) #['r','o','y','c','l','e','a','.']
 chars = ['r','o','y','c','l','e','a','.']
 vocab_size = len(chars)
 
-def str_to_tensor(s):
+def str_to_input_tensor(s):
     ret = Tensor(None)
     for c in s:
         c_tensor = Tensor([1]).pad2d([chars.index(c),vocab_size-chars.index(c)-1],0)
@@ -60,7 +60,7 @@ def str_to_target_tensor(s):
         ret = ret.cat(Tensor([chars.index(c)]))
     ret = ret.reshape(len(s),1)
     return ret
-input_tensor  = str_to_tensor("roryclear")
+input_tensor  = str_to_input_tensor("roryclear")
 ''' function should make this now
 input_tensor = Tensor([[1,0,0,0,0,0,0,0], #r
                       [0,1,0,0,0,0,0,0], #o
@@ -73,7 +73,7 @@ input_tensor = Tensor([[1,0,0,0,0,0,0,0], #r
                       [1,0,0,0,0,0,0,0], #r
                       ])
 '''
-targetTensor = str_to_target_tensor("oryclear.") #Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]])
+target_tensor = str_to_target_tensor("oryclear.") #Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]])
 # o r y c l e a r .
 
 opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-3)
@@ -82,7 +82,7 @@ for e in range(10000):
     for i in range(input_tensor.shape[0]):
         opt.zero_grad()
         out = model(input_tensor[i])
-        loss = out.sparse_categorical_crossentropy(targetTensor[i])
+        loss = out.sparse_categorical_crossentropy(target_tensor[i])
         loss.backward()
         opt.step()
         if i == 6:
