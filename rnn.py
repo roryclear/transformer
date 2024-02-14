@@ -50,18 +50,19 @@ vocab_size = len(chars)
 def str_to_tensor(s):
     ret = Tensor(None)
     for c in s:
-        print(c,chars.index(c))
-        c_tensor = Tensor([1])
-        c_tensor = c_tensor.pad2d([chars.index(c),vocab_size-chars.index(c)-1],0)
+        c_tensor = Tensor([1]).pad2d([chars.index(c),vocab_size-chars.index(c)-1],0)
         ret = ret.cat(c_tensor)
-        print("c_tensor =",c_tensor.numpy())
-    ret = ret.reshape(len(s),vocab_size)
-    print("ret =",ret.numpy())
+    return ret.reshape(len(s),vocab_size)
+
+def str_to_target_tensor(s):
+    ret = Tensor(None)
+    for c in s:
+        ret = ret.cat(Tensor([chars.index(c)]))
+    ret = ret.reshape(len(s),1)
     return ret
-inputTensor  = str_to_tensor("roryclear")
-print("inputTensor ->",inputTensor)
+input_tensor  = str_to_tensor("roryclear")
 ''' function should make this now
-inputTensor = Tensor([[1,0,0,0,0,0,0,0], #r
+input_tensor = Tensor([[1,0,0,0,0,0,0,0], #r
                       [0,1,0,0,0,0,0,0], #o
                       [1,0,0,0,0,0,0,0], #r
                       [0,0,1,0,0,0,0,0], #y
@@ -72,14 +73,15 @@ inputTensor = Tensor([[1,0,0,0,0,0,0,0], #r
                       [1,0,0,0,0,0,0,0], #r
                       ])
 '''
-targetTensor = Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]]) # o r y c l e a r .
+targetTensor = str_to_target_tensor("oryclear.") #Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]])
+# o r y c l e a r .
 
 opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-3)
 for e in range(10000):
     model.prevh = Tensor.zeros(model.hidden_size)
-    for i in range(inputTensor.shape[0]):
+    for i in range(input_tensor.shape[0]):
         opt.zero_grad()
-        out = model(inputTensor[i])
+        out = model(input_tensor[i])
         loss = out.sparse_categorical_crossentropy(targetTensor[i])
         loss.backward()
         opt.step()
@@ -87,10 +89,10 @@ for e in range(10000):
             print("loss =",loss.numpy())
     
     if e % 100 == 0:
-        s = chars[inputTensor[0].argmax().numpy()]
+        s = chars[input_tensor[0].argmax().numpy()]
         print("epoch",e)
-        for i in range(inputTensor.shape[0]):
-            out = model(inputTensor[i])
+        for i in range(input_tensor.shape[0]):
+            out = model(input_tensor[i])
             s += chars[out.argmax().numpy()]
         print("output =",s)
         if s == "roryclear.":
