@@ -54,7 +54,7 @@ def str_to_target_tensor(s):
         ret = ret.cat(Tensor([chars.index(c)]))
     ret = ret.reshape(len(s),1)
     return ret
-'''
+
 model = tinyrnn(hidden_size=8,vocab_size=27)
 
 lines = open('data/names.txt', 'r').readlines()
@@ -70,18 +70,24 @@ random.Random(420).shuffle(lines) #same shuffle every time
 train_names = lines[:int(len(lines)*0.9)]
 test_names = lines[int(len(lines)*0.9):]
 print("first =",train_names[0],test_names[0])
-all = ""
+opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-3)
 for i in range(len(train_names)):
-    print(i,train_names[i])
+    #print(i,train_names[i])
     input = str_to_input_tensor(train_names[i])
-    target = str_to_target_tensor(train_names[i][1]+".")
-    print("input =",input.numpy())
-    print("target =",target.numpy(),"\n")
-    out = model(input)
-    loss = out.sparse_categorical_crossentropy(target)
+    target = str_to_target_tensor(train_names[i][1:]+".")
+    #print("input =",input.numpy())
+    #print("target =",target.numpy(),target.shape,"\n")
+    for x in range(input.shape[0]):
+        out = model(input[x])
+        loss = out.sparse_categorical_crossentropy(target[x])
+        loss.backward()
+    if i > 0 and i % 10 == 0:
+        print(i,"loss =",loss.numpy())
+        opt.step()
+        opt.zero_grad()
+    
 
 exit()
-'''
 
 
 model = tinyrnn(hidden_size=8) #8 is more than enough for "roryclear." overfit
