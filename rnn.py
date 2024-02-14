@@ -55,14 +55,17 @@ def str_to_target_tensor(s):
     ret = ret.reshape(len(s),1)
     return ret
 
-'''wip training / testing
+'''
 lines = open('data/names.txt', 'r').readlines()
 lines = list(set(lines)) #unique lines only!
+for i in range(len(lines)): lines[i] = lines[i].replace("\n","")
 lines.sort()
 random.Random(420).shuffle(lines) #same shuffle every time
-print("first =",lines[0])
 train_names = lines[:int(len(lines)*0.9)]
 test_names = lines[int(len(lines)*0.9):]
+print("first =",train_names[0],test_names[0])
+
+exit()
 '''
 
 model = tinyrnn(hidden_size=8) #8 is more than enough for "roryclear." overfit
