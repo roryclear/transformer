@@ -64,7 +64,7 @@ input_tensor  = str_to_input_tensor("roryclear")
 target_tensor = str_to_target_tensor("oryclear.") #Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]])
 # o r y c l e a r .
 
-opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-3)
+opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-2)
 for e in range(10000):
     model.prevh = Tensor.zeros(model.hidden_size)
     for i in range(input_tensor.shape[0]):
@@ -84,8 +84,4 @@ for e in range(10000):
         print("output =",s)
         if s == "roryclear.":
             print("CORRECT")
-            exit()
-
-        
-
-exit()
+            break
