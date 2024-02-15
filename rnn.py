@@ -70,41 +70,40 @@ random.Random(420).shuffle(lines) #same shuffle every time
 train_names = lines[:int(len(lines)*0.9)]
 test_names = lines[int(len(lines)*0.9):]
 print("first =",train_names[0],test_names[0])
-opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-3)
-for i in range(len(train_names)):
-    '''
-    if i % 1000 == 0:
-        print("testing test set")
-        acc = 0
-        test_loss = 0
-        for j in range(1000):
-            print(j,len(test_names))
-            input = str_to_input_tensor(test_names[i])
-            target = str_to_target_tensor(test_names[i][1:]+".")
-            for x in range(input.shape[0]):
-                out = model(input[x])
-                pred = out.argmax(axis=-1)
-                acc += (pred == target).mean().numpy()
-                test_loss += out.sparse_categorical_crossentropy(target).numpy()
-        print("loss =",test_loss)
-        print("acc =",acc)
-    '''
-    #loss = None
-    #acc = None
 
-    input = str_to_input_tensor(train_names[i])
-    target = str_to_target_tensor(train_names[i][1:]+".")
-    #print("input =",input.numpy())
-    #print("target =",target.numpy(),target.shape,"\n")
-    for x in range(input.shape[0]):
-        out = model(input[x])
-        loss = out.sparse_categorical_crossentropy(target[x])
-        loss.backward()
-    if i > 0 and i % 10 == 0:
-        print(i,"loss =",loss.numpy())
-        opt.step()
-        opt.zero_grad()
-    
+for e in range(10):
+    opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=0.0)
+    #this is bad, need to figure out how to do inference properly
+    #not full epochs atm cos too slow on xps
+    #figure out how to save or something
+    test_loss = 0
+    for i in range(1000):
+        input = str_to_input_tensor(test_names[i])
+        target = str_to_target_tensor(test_names[i][1:]+".")
+        for x in range(input.shape[0]):
+            out = model(input[x])
+            loss = out.sparse_categorical_crossentropy(target[x])
+            test_loss += loss.numpy()
+            loss.backward()
+        if i > 0 and i % 100 == 0:
+            print(i,"test loss =",loss.numpy())
+            opt.step()
+            opt.zero_grad()
+    print("epoch",e,"test loss =",test_loss)
+
+    opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-2)
+    for i in range(10000):
+        input = str_to_input_tensor(train_names[i])
+        target = str_to_target_tensor(train_names[i][1:]+".")
+        for x in range(input.shape[0]):
+            out = model(input[x])
+            loss = out.sparse_categorical_crossentropy(target[x])
+            loss.backward()
+        if i > 0 and i % 50 == 0:
+            print(i,"loss =",loss.numpy())
+            opt.step()
+            opt.zero_grad()
+
 exit()
 
 
