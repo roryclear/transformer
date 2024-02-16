@@ -28,8 +28,8 @@ class tinyrnn:
     def __init__(self,hidden_size=8,vocab_size=8):
         self.hidden_size = hidden_size
         self.prevh = Tensor.zeros(self.hidden_size)
-        self.w_in = nn.Linear(vocab_size,16)
-        self.h0 = nn.Linear(16+hidden_size,self.hidden_size)
+        self.w_in = nn.Linear(vocab_size,128)
+        self.h0 = nn.Linear(128+hidden_size,self.hidden_size)
         self.w_out = nn.Linear(self.hidden_size,vocab_size)
     
     def __call__(self, x):
@@ -56,7 +56,7 @@ def str_to_target_tensor(s):
     ret = ret.reshape(len(s),1)
     return ret
 
-model = tinyrnn(hidden_size=16,vocab_size=27)
+model = tinyrnn(hidden_size=128,vocab_size=27)
 
 lines = open('data/names.txt', 'r').readlines()
 lines = list(set(lines)) #unique lines only!
@@ -74,8 +74,8 @@ test_names = lines[int(len(lines)*0.9):]
 print("first =",train_names[0],test_names[0])
 lowest_loss = None
 save = True
-#state_dict = safe_load("names_rnn.safetensors")
-#load_state_dict(model, state_dict)
+state_dict = safe_load("names_rnn.safetensors")
+load_state_dict(model, state_dict)
 
 def make_names():
     ## generate something? begining with each letter?
@@ -85,10 +85,14 @@ def make_names():
         s = input
         input = str_to_input_tensor(input)
         out = chars[model(input[0]).argmax().numpy()]
-        while out != "." and len(s) < 20:
+        while len(s) < 20:
             input = str_to_input_tensor(out)
             out = chars[model(input[0]).argmax().numpy()]
+            if out == ".":
+                break
             s+=out
+        if s in train_names:
+            s += " (in dataset)"
         print(s)
 
 make_names()
@@ -98,7 +102,7 @@ for e in range(10):
     #this is bad, need to figure out how to do inference properly
     #not full epochs atm cos too slow on xps
     #figure out how to save or something
-    test_loss = 59658
+    test_loss = 98705 # change this every time cos testing is slow?
 
     opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-3)
     for i in range(len(train_names)):
