@@ -28,8 +28,8 @@ class tinyrnn:
     def __init__(self,hidden_size=8,vocab_size=8):
         self.hidden_size = hidden_size
         self.prevh = Tensor.zeros(self.hidden_size)
-        self.w_in = nn.Linear(vocab_size,8)
-        self.h0 = nn.Linear(8+hidden_size,self.hidden_size)
+        self.w_in = nn.Linear(vocab_size,16)
+        self.h0 = nn.Linear(16+hidden_size,self.hidden_size)
         self.w_out = nn.Linear(self.hidden_size,vocab_size)
     
     def __call__(self, x):
@@ -39,7 +39,7 @@ class tinyrnn:
         ret = self.h0(ret)
         self.prevh = ret
         ret = self.w_out(ret)
-        ret = ret.softmax()
+        #ret = ret.leakyrelu() or ret.softmax() or nothing idk
         return ret
     
 def str_to_input_tensor(s):
@@ -56,7 +56,7 @@ def str_to_target_tensor(s):
     ret = ret.reshape(len(s),1)
     return ret
 
-model = tinyrnn(hidden_size=8,vocab_size=27)
+model = tinyrnn(hidden_size=16,vocab_size=27)
 
 lines = open('data/names.txt', 'r').readlines()
 lines = list(set(lines)) #unique lines only!
@@ -65,6 +65,7 @@ for i in range(len(lines)):
     lines[i] = lines[i].replace("\n","")
     chars += lines[i]
 chars = list(set(chars))
+chars.sort()
 vocab_size = len(chars)
 lines.sort()
 random.Random(420).shuffle(lines) #same shuffle every time
@@ -73,15 +74,50 @@ test_names = lines[int(len(lines)*0.9):]
 print("first =",train_names[0],test_names[0])
 lowest_loss = None
 save = True
-state_dict = safe_load("names_rnn.safetensors")
-load_state_dict(model, state_dict)
+#state_dict = safe_load("names_rnn.safetensors")
+#load_state_dict(model, state_dict)
+
+def make_names():
+    ## generate something? begining with each letter?
+    print(chars)
+    for input in chars:
+        model.prevh = Tensor.zeros(model.hidden_size)
+        s = input
+        input = str_to_input_tensor(input)
+        out = chars[model(input[0]).argmax().numpy()]
+        while out != "." and len(s) < 20:
+            input = str_to_input_tensor(out)
+            out = chars[model(input[0]).argmax().numpy()]
+            s+=out
+        print(s)
+
+make_names()
+
 for e in range(10):
     opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=0.0)
     #this is bad, need to figure out how to do inference properly
     #not full epochs atm cos too slow on xps
     #figure out how to save or something
-    test_loss = 0
+    test_loss = 59658
+
+    opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-3)
+    for i in range(len(train_names)):
+        model.prevh = Tensor.zeros(model.hidden_size)
+        input = str_to_input_tensor(train_names[i])
+        target = str_to_target_tensor(train_names[i][1:]+".")
+        for x in range(input.shape[0]):
+            out = model(input[x])
+            loss = out.sparse_categorical_crossentropy(target[x])
+            loss.backward()
+        if i > 0 and i % 50 == 0:
+            print(i,"loss =",loss.numpy())
+            opt.step()
+            opt.zero_grad()
+        if i > 0 and i % 1000 == 0:
+            make_names()
+
     for i in range(len(test_names)):
+        model.prevh = Tensor.zeros(model.hidden_size)
         input = str_to_input_tensor(test_names[i])
         target = str_to_target_tensor(test_names[i][1:]+".")
         for x in range(input.shape[0]):
@@ -102,19 +138,6 @@ for e in range(10):
             state_dict = get_state_dict(model)
             safe_save(state_dict, "names_rnn.safetensors")
             print("MODEL SAVED")
-
-    opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-2)
-    for i in range(len(train_names)):
-        input = str_to_input_tensor(train_names[i])
-        target = str_to_target_tensor(train_names[i][1:]+".")
-        for x in range(input.shape[0]):
-            out = model(input[x])
-            loss = out.sparse_categorical_crossentropy(target[x])
-            loss.backward()
-        if i > 0 and i % 50 == 0:
-            print(i,"loss =",loss.numpy())
-            opt.step()
-            opt.zero_grad()
 
 exit()
 
