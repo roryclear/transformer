@@ -3,6 +3,7 @@ from tinygrad.nn.optim import SGD
 from typing import Tuple
 import time
 import random
+from tinygrad.nn.state import safe_save, safe_load, get_state_dict, load_state_dict
 '''
 class RNN:
     def __init__(self,hidden_size=128):
@@ -54,7 +55,7 @@ def str_to_target_tensor(s):
         ret = ret.cat(Tensor([chars.index(c)]))
     ret = ret.reshape(len(s),1)
     return ret
-
+'''
 model = tinyrnn(hidden_size=8,vocab_size=27)
 
 lines = open('data/names.txt', 'r').readlines()
@@ -105,7 +106,7 @@ for e in range(10):
             opt.zero_grad()
 
 exit()
-
+'''
 
 model = tinyrnn(hidden_size=8) #8 is more than enough for "roryclear." overfit
 # depends on the init, can we use a seed?
@@ -116,19 +117,16 @@ vocab_size = len(chars)
 
 input_tensor  = str_to_input_tensor("roryclear")
 target_tensor = str_to_target_tensor("oryclear.") #Tensor([[1],[0],[2],[3],[4],[5],[6],[0],[7]])
+
+load = False
+if load:
+    state_dict = safe_load("roryclearrn.safetensors")
+    load_state_dict(model, state_dict)
+
 # o r y c l e a r .
 
 opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-2)
 for e in range(10000):
-    model.prevh = Tensor.zeros(model.hidden_size)
-    for i in range(input_tensor.shape[0]):
-        out = model(input_tensor[i])
-        loss = out.sparse_categorical_crossentropy(target_tensor[i])
-        loss.backward()
-    opt.step() # slower for "roryclear." overfit example obvs
-    opt.zero_grad()
-    print("loss =",loss.numpy())
-    
     if e % 100 == 0:
         s = chars[input_tensor[0].argmax().numpy()]
         print("epoch",e)
@@ -137,5 +135,16 @@ for e in range(10000):
             s += chars[out.argmax().numpy()]
         print("output =",s)
         if s == "roryclear.":
+            state_dict = get_state_dict(model)
+            safe_save(state_dict, "roryclearrn.safetensors")
             print("CORRECT")
             break
+
+    model.prevh = Tensor.zeros(model.hidden_size)
+    for i in range(input_tensor.shape[0]):
+        out = model(input_tensor[i])
+        loss = out.sparse_categorical_crossentropy(target_tensor[i])
+        loss.backward()
+    opt.step() # slower for "roryclear." overfit example obvs
+    opt.zero_grad()
+    print("loss =",loss.numpy())
