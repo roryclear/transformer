@@ -55,7 +55,7 @@ def str_to_target_tensor(s):
         ret = ret.cat(Tensor([chars.index(c)]))
     ret = ret.reshape(len(s),1)
     return ret
-'''
+
 model = tinyrnn(hidden_size=8,vocab_size=27)
 
 lines = open('data/names.txt', 'r').readlines()
@@ -71,14 +71,17 @@ random.Random(420).shuffle(lines) #same shuffle every time
 train_names = lines[:int(len(lines)*0.9)]
 test_names = lines[int(len(lines)*0.9):]
 print("first =",train_names[0],test_names[0])
-
+lowest_loss = None
+save = True
+state_dict = safe_load("names_rnn.safetensors")
+load_state_dict(model, state_dict)
 for e in range(10):
     opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=0.0)
     #this is bad, need to figure out how to do inference properly
     #not full epochs atm cos too slow on xps
     #figure out how to save or something
     test_loss = 0
-    for i in range(1000):
+    for i in range(len(test_names)):
         input = str_to_input_tensor(test_names[i])
         target = str_to_target_tensor(test_names[i][1:]+".")
         for x in range(input.shape[0]):
@@ -91,9 +94,17 @@ for e in range(10):
             opt.step()
             opt.zero_grad()
     print("epoch",e,"test loss =",test_loss)
+    if lowest_loss == None:
+        lowest_loss = test_loss
+    if test_loss < lowest_loss:
+        lowest_loss = test_loss
+        if save:
+            state_dict = get_state_dict(model)
+            safe_save(state_dict, "names_rnn.safetensors")
+            print("MODEL SAVED")
 
     opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-2)
-    for i in range(10000):
+    for i in range(len(train_names)):
         input = str_to_input_tensor(train_names[i])
         target = str_to_target_tensor(train_names[i][1:]+".")
         for x in range(input.shape[0]):
@@ -106,7 +117,6 @@ for e in range(10):
             opt.zero_grad()
 
 exit()
-'''
 
 model = tinyrnn(hidden_size=8) #8 is more than enough for "roryclear." overfit
 # depends on the init, can we use a seed?
