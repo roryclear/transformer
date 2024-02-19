@@ -27,17 +27,23 @@ class RNN:
 class tinyrnn:
     def __init__(self,hidden_size=8,vocab_size=8):
         self.hidden_size = hidden_size
-        self.prevh = Tensor.zeros(self.hidden_size)
+        self.prevh0 = Tensor.zeros(self.hidden_size)
+        self.prevh1 = Tensor.zeros(self.hidden_size)
         self.w_in = nn.Linear(vocab_size,128)
         self.h0 = nn.Linear(128+hidden_size,self.hidden_size)
+        self.h1 = nn.Linear(2*hidden_size,self.hidden_size)
         self.w_out = nn.Linear(self.hidden_size,vocab_size)
     
     def __call__(self, x):
         ret = self.w_in(x)
-        ret = ret.cat(self.prevh)
+        ret = ret.cat(self.prevh0)
         ret = Tensor.tanh(ret)
         ret = self.h0(ret)
-        self.prevh = ret
+        self.prevh0 = ret
+        ret = ret.cat(self.prevh1)
+        ret = Tensor.tanh(ret)
+        ret = self.h1(ret)
+        self.prevh1 = ret
         ret = self.w_out(ret)
         #ret = ret.leakyrelu() or ret.softmax() or nothing idk
         return ret
@@ -74,14 +80,15 @@ test_names = lines[int(len(lines)*0.9):]
 print("first =",train_names[0],test_names[0])
 lowest_loss = None
 save = True
-state_dict = safe_load("names_rnn.safetensors")
+state_dict = safe_load("names_rnn_2hidden.safetensors")
 load_state_dict(model, state_dict)
 
 def make_names():
     ## generate something? begining with each letter?
     print(chars)
     for input in chars:
-        model.prevh = Tensor.zeros(model.hidden_size)
+        model.prevh0 = Tensor.zeros(model.hidden_size)
+        model.prevh1 = Tensor.zeros(model.hidden_size)
         s = input
         input = str_to_input_tensor(input)
         out = chars[model(input[0]).argmax().numpy()]
@@ -96,17 +103,16 @@ def make_names():
         print(s)
 
 make_names()
-
+lowest_loss = 37457 #hardcode from last time cos testing takes long
 for e in range(10):
-    opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=0.0)
-    #this is bad, need to figure out how to do inference properly
-    #not full epochs atm cos too slow on xps
-    #figure out how to save or something
-    test_loss = 98705 # change this every time cos testing is slow?
+    test_loss = 0
+    opt = nn.optim.Adam([model.w_out.weight], lr=0.0)
+    #todo tinygrad inference properly, this is bad
 
-    opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.w_out.weight], lr=1e-3)
+    opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.h1.weight,model.w_out.weight], lr=1e-5)
     for i in range(len(train_names)):
-        model.prevh = Tensor.zeros(model.hidden_size)
+        model.prevh0 = Tensor.zeros(model.hidden_size)
+        model.prevh1 = Tensor.zeros(model.hidden_size)
         input = str_to_input_tensor(train_names[i])
         target = str_to_target_tensor(train_names[i][1:]+".")
         for x in range(input.shape[0]):
@@ -121,7 +127,8 @@ for e in range(10):
             make_names()
 
     for i in range(len(test_names)):
-        model.prevh = Tensor.zeros(model.hidden_size)
+        model.prevh0 = Tensor.zeros(model.hidden_size)
+        model.prevh1 = Tensor.zeros(model.hidden_size)
         input = str_to_input_tensor(test_names[i])
         target = str_to_target_tensor(test_names[i][1:]+".")
         for x in range(input.shape[0]):
@@ -140,7 +147,7 @@ for e in range(10):
         lowest_loss = test_loss
         if save:
             state_dict = get_state_dict(model)
-            safe_save(state_dict, "names_rnn.safetensors")
+            safe_save(state_dict, "names_rnn_2hidden.safetensors")
             print("MODEL SAVED")
 
 exit()
@@ -177,7 +184,7 @@ for e in range(10000):
             print("CORRECT")
             break
 
-    model.prevh = Tensor.zeros(model.hidden_size)
+    model.prevh0 = Tensor.zeros(model.hidden_size)
     for i in range(input_tensor.shape[0]):
         out = model(input_tensor[i])
         loss = out.sparse_categorical_crossentropy(target_tensor[i])
