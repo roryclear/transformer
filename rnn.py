@@ -103,16 +103,18 @@ def make_names():
         print(s)
 
 make_names()
+hidden_zeors = Tensor.zeros(model.hidden_size)
 lowest_loss = 37457 #hardcode from last time cos testing takes long
 for e in range(10):
     test_loss = 0
-    opt = nn.optim.Adam([model.w_out.weight], lr=0.0)
-    #todo tinygrad inference properly, this is bad
-
+    time_a = 0
+    time_b = 0
     opt = nn.optim.Adam([model.w_in.weight,model.h0.weight,model.h1.weight,model.w_out.weight], lr=1e-5)
     for i in range(len(train_names)):
-        model.prevh0 = Tensor.zeros(model.hidden_size)
-        model.prevh1 = Tensor.zeros(model.hidden_size)
+        st = time.perf_counter()
+        model.prevh0 = hidden_zeors #TODO, can this be a function in the model instead?
+        model.prevh1 = hidden_zeors
+        time_b += time.perf_counter() - st
         input = str_to_input_tensor(train_names[i])
         target = str_to_target_tensor(train_names[i][1:]+".")
         for x in range(input.shape[0]):
@@ -120,15 +122,20 @@ for e in range(10):
             loss = out.sparse_categorical_crossentropy(target[x])
             loss.backward()
         if i > 0 and i % 50 == 0:
-            print(i,"loss =",loss.numpy())
+            print(i,"loss =",loss.numpy(),time_a,time_b)
             opt.step()
             opt.zero_grad()
+        time_a += time.perf_counter() - st
         if i > 0 and i % 1000 == 0:
             make_names()
+            print("time_a =",time_a)
 
+    opt = nn.optim.Adam([model.w_out.weight], lr=0.0)
+    #todo tinygrad inference properly, this is bad
+    
     for i in range(len(test_names)):
-        model.prevh0 = Tensor.zeros(model.hidden_size)
-        model.prevh1 = Tensor.zeros(model.hidden_size)
+        model.prevh0 = hidden_zeors
+        model.prevh1 = hidden_zeors
         input = str_to_input_tensor(test_names[i])
         target = str_to_target_tensor(test_names[i][1:]+".")
         for x in range(input.shape[0]):
