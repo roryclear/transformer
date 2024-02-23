@@ -15,10 +15,34 @@ HALF = getenv("HALF")
 
 tokenizer = tiktoken.get_encoding("gpt2")
 tokens = open('tokens.txt', 'r').readlines()
+token_dict = dict()
+max_token_length = -1
+for i in range(len(tokens)): 
+  s = tokens[i].replace("\n","").replace("/n","\n")
+  token_dict[s] = i
+  if len(s) > max_token_length:
+    max_token_length = len(s)
 def rory_decode(index):
   ret = ""
   for i in index:
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
+  return ret
+
+def rory_encode(x):
+  ret = []
+  token = None
+  i = -1
+  while len(x) > 0:
+    token = None
+    i = -1
+    while token == None:
+      i+=1
+      s = x[:min(max_token_length,len(x))-i]
+      #print("s =",s)
+      if s in token_dict:
+        token = token_dict[s]
+    ret.append(token)
+    x = x[min(max_token_length,len(x))-i:]
   return ret
 
 class Attention:
@@ -141,8 +165,6 @@ class GPT2:
   def build(model_size="gpt2"):
     tokenizer = tiktoken.get_encoding("gpt2")
 
-    print(tokenizer.encode("rory clear was here and is here"))
-
     model = Transformer(**MODEL_PARAMS[model_size])
     weights = torch_load(fetch(f'https://huggingface.co/{model_size}/resolve/main/pytorch_model.bin'))
     # special treatment for the Conv1D weights we need to transpose
@@ -165,7 +187,7 @@ class GPT2:
     self.tokenizer = tokenizer
 
   def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):
-    prompt_tokens = self.tokenizer.encode(prompt, allowed_special={"<|endoftext|>"})
+    prompt_tokens = rory_encode(prompt)
     toks = [prompt_tokens[:] for _ in range(batch_size)]
     start_pos = 0
     for _ in trange(max_length, disable=(timing==True)):
