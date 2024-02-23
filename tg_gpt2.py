@@ -3,8 +3,7 @@ from typing import Optional, Union
 import argparse
 from tqdm import trange
 import numpy as np
-import tiktoken
-from tinygrad import Tensor, TinyJit, Device, GlobalCounters
+from tinygrad import Tensor, TinyJit, Device
 from tinygrad.helpers import Timing, DEBUG, getenv, fetch, colored
 from tinygrad.nn import Embedding, Linear, LayerNorm
 from tinygrad.nn.state import torch_load, load_state_dict, get_state_dict
@@ -13,7 +12,6 @@ from tinygrad.shape.symbolic import Variable
 MAX_CONTEXT = getenv("MAX_CONTEXT", 128)
 HALF = getenv("HALF")
 
-tokenizer = tiktoken.get_encoding("gpt2")
 tokens = open('tokens.txt', 'r').readlines()
 token_dict = dict()
 max_token_length = -1
@@ -163,7 +161,6 @@ MODEL_PARAMS = {
 class GPT2:
   @staticmethod
   def build(model_size="gpt2"):
-    tokenizer = tiktoken.get_encoding("gpt2")
 
     model = Transformer(**MODEL_PARAMS[model_size])
     weights = torch_load(fetch(f'https://huggingface.co/{model_size}/resolve/main/pytorch_model.bin'))
@@ -180,28 +177,21 @@ class GPT2:
       for l in get_state_dict(model).values():
         l.assign(l.half().realize())
 
-    return GPT2(model, tokenizer)
+    return GPT2(model)
 
-  def __init__(self, model, tokenizer):
+  def __init__(self, model):
     self.model = model
-    self.tokenizer = tokenizer
 
   def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):
     prompt_tokens = rory_encode(prompt)
     toks = [prompt_tokens[:] for _ in range(batch_size)]
     start_pos = 0
     for _ in trange(max_length, disable=(timing==True)):
-      GlobalCounters.reset()
-      if timing: print("")
-      st = GlobalCounters.time_sum_s
-      with Timing("ran model in ", on_exit=(lambda et: (f", {(GlobalCounters.time_sum_s-st)*1e3:.2f} ms on GPU" if DEBUG>=2 else "")+
-                  f", {GlobalCounters.global_ops*1e-9:.2f} GOPS, {GlobalCounters.global_mem*1e-9:.2f} GB"+
-                  (f", {GlobalCounters.global_mem*1e-9/(GlobalCounters.time_sum_s-st):.2f} GB/s" if DEBUG>=2 else "")) if DEBUG else None, enabled=timing):
-        if batch_size == 1 and len(toks[0][start_pos:]) == 1:
-          tokens = Variable("tokens", 0, VOCAB_SIZE).bind(toks[0][start_pos])
-        else:
-          tokens = Tensor([x[start_pos:] for x in toks])
-        tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature).numpy().tolist()
+      if batch_size == 1 and len(toks[0][start_pos:]) == 1:
+        tokens = Variable("tokens", 0, VOCAB_SIZE).bind(toks[0][start_pos])
+      else:
+        tokens = Tensor([x[start_pos:] for x in toks])
+      tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature).numpy().tolist()
       start_pos = len(toks[0])
       for i,t in enumerate(tok): toks[i].append(t)
     return [rory_decode(x) for x in toks]
@@ -225,31 +215,11 @@ if __name__ == "__main__":
   parser.add_argument('--noshow', action='store_true', help="Don't show the output")
   args = parser.parse_args()
 
-  if args.seed is not None:
-    Tensor.manual_seed(args.seed)
-    np.random.seed(args.seed)
+  Tensor.manual_seed(69)
+  np.random.seed(69)
 
-  print(f"using {args.model_size}")
   gpt2 = GPT2.build(args.model_size)
 
-  if args.benchmark != -1:
-    gpt2.model(Tensor.rand(args.batch_size, args.benchmark), Variable("a", 0, MAX_CONTEXT).bind(0)).realize()
-  else:
-    texts = gpt2.generate(args.prompt, args.count, args.temperature, timing=args.timing, batch_size=args.batch_size)
-    if not args.noshow:
-      print('Generating text...')
-      if len(texts) == 1: print(texts[0])
-      else:
-        for i,text in enumerate(texts): print(colored(f"Response {i}:", "green"), text)
-
-    # validate output!
-    if args.temperature == 0 and args.model_size == "gpt2-medium" and args.count == 10:
-      expected = {
-        default_prompt: "What is the answer to life, the universe, and everything?\n\nThe answer is that we are all one",
-        "Hello.": "Hello. I'm a little late to the party, but",
-      }
-      try:
-        assert texts[0] == expected[args.prompt]
-        print(colored("output validated", "green"))
-      except KeyError:
-        pass
+  texts = gpt2.generate(args.prompt, args.count, args.temperature, timing=args.timing, batch_size=args.batch_size)
+  print('Generating text...')
+  for i,text in enumerate(texts): print(colored(f"Response {i}:", "green"), text)
