@@ -109,19 +109,13 @@ class Transformer:
     self.forward_jit = TinyJit(self.forward)
 
   def forward(self, tokens:Union[Tensor,Variable], start_pos:Variable, temperature:float=0.0):
-    #print("rory start_pos =",start_pos,"type =",type(start_pos),type(tokens))
-    #print("rory sybolic variable, expr,nmin,nmax,pos =",start_pos.expr,start_pos.min,start_pos.max,start_pos._val)
-    #print("rory render start_pos =",start_pos.render())
     if not hasattr(self, 'allpos'): self.allpos = Tensor.arange(0, MAX_CONTEXT).reshape(1, -1).realize()
     if isinstance(tokens, Variable):
       seqlen = 1
       tok_emb = self.wte.weight.shrink(((tokens, tokens+1), None))
     else:
-      #only happens once at the start -rory
       seqlen = tokens.shape[1]
       tok_emb = self.wte(tokens)
-      #print("rory tok_emb =",tok_emb.numpy())
-      #print("rory len tok_emb =",tok_emb.shape)
 
     pos_emb = self.wpe(self.allpos.shrink((None, (start_pos, start_pos+seqlen))))
     h = tok_emb + pos_emb
@@ -151,18 +145,11 @@ class Transformer:
     return forward(tokens, start_pos, temperature)
 
 VOCAB_SIZE = 50257
-MODEL_PARAMS = {
-  'gpt2':         dict(n_layers=12, n_heads=12, dim=768, norm_eps=1e-5, vocab_size=VOCAB_SIZE),   # 124M params
-  'gpt2-medium':  dict(n_layers=24, n_heads=16, dim=1024, norm_eps=1e-5, vocab_size=VOCAB_SIZE),  # 350M params
-  'gpt2-large':   dict(n_layers=36, n_heads=20, dim=1280, norm_eps=1e-5, vocab_size=VOCAB_SIZE),  # 774M params
-  'gpt2-xl':      dict(n_layers=48, n_heads=25, dim=1600, norm_eps=1e-5, vocab_size=VOCAB_SIZE),  # 1558M params
-}
-
 class GPT2:
   @staticmethod
-  def build(model_size="gpt2-medium"):
+  def build(model_size="gpt2"):
 
-    model = Transformer(**MODEL_PARAMS[model_size])
+    model = Transformer(n_layers=12,n_heads=12,dim=768,norm_eps=1e-5,vocab_size=VOCAB_SIZE) #small
     weights = torch_load(fetch(f'https://huggingface.co/{model_size}/resolve/main/pytorch_model.bin'))
     # special treatment for the Conv1D weights we need to transpose
     transposed = ('attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight')
@@ -172,10 +159,6 @@ class GPT2:
     # lm head and wte are tied
     weights['lm_head.weight'] = weights['wte.weight']
     load_state_dict(model, weights)
-
-    if HALF:
-      for l in get_state_dict(model).values():
-        l.assign(l.half().realize())
 
     return GPT2(model)
 
@@ -203,8 +186,8 @@ if __name__ == "__main__":
   print(f"using {Device.DEFAULT} backend")
   default_prompt = "What is the answer to life, the universe, and everything?"
 
-  Tensor.manual_seed(69)
-  np.random.seed(69)
+  Tensor.manual_seed(420)
+  np.random.seed(420)
 
   gpt2 = GPT2.build()
 
