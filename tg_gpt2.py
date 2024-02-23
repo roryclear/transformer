@@ -160,7 +160,7 @@ MODEL_PARAMS = {
 
 class GPT2:
   @staticmethod
-  def build(model_size="gpt2"):
+  def build(model_size="gpt2-medium"):
 
     model = Transformer(**MODEL_PARAMS[model_size])
     weights = torch_load(fetch(f'https://huggingface.co/{model_size}/resolve/main/pytorch_model.bin'))
@@ -203,23 +203,11 @@ if __name__ == "__main__":
   print(f"using {Device.DEFAULT} backend")
   default_prompt = "What is the answer to life, the universe, and everything?"
 
-  parser = argparse.ArgumentParser(description='Run GPT2 in tinygrad', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-  parser.add_argument('--prompt', type=str, default=default_prompt, help="Phrase to start with")
-  parser.add_argument('--count', type=int, default=100, help="Max number of tokens to generate")
-  parser.add_argument('--temperature', type=float, default=0.8, help="Temperature in the softmax")
-  parser.add_argument('--model_size', type=str, default="gpt2-medium", help="Size of model to use [gpt2, gpt2-medium, gpt2-large, gpt2-xl]")
-  parser.add_argument('--timing', action='store_true', help="Print timing per token")
-  parser.add_argument('--seed', type=int, help="Set the random seed")
-  parser.add_argument('--batch_size', type=int, default=1, help="Set the input batch size")
-  parser.add_argument('--benchmark', type=int, default=-1, help="Benchmark GPT with the given number of tokens")
-  parser.add_argument('--noshow', action='store_true', help="Don't show the output")
-  args = parser.parse_args()
-
   Tensor.manual_seed(69)
   np.random.seed(69)
 
-  gpt2 = GPT2.build(args.model_size)
+  gpt2 = GPT2.build()
 
-  texts = gpt2.generate(args.prompt, args.count, args.temperature, timing=args.timing, batch_size=args.batch_size)
+  texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
   print('Generating text...')
   for i,text in enumerate(texts): print(colored(f"Response {i}:", "green"), text)
