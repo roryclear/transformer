@@ -148,7 +148,6 @@ VOCAB_SIZE = 50257
 class GPT2:
   @staticmethod
   def build(model_size="gpt2"):
-
     model = Transformer(n_layers=12,n_heads=12,dim=768,norm_eps=1e-5,vocab_size=VOCAB_SIZE) #small
     weights = torch_load(fetch(f'https://huggingface.co/{model_size}/resolve/main/pytorch_model.bin'))
     # special treatment for the Conv1D weights we need to transpose
@@ -194,3 +193,12 @@ if __name__ == "__main__":
   texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
   print('Generating text...')
   for i,text in enumerate(texts): print(colored(f"Response {i}:", "green"), text)
+
+  assert texts == [("What is the answer to life, the universe, and everything?"
+  "\n\nIf you were an astrophysicist, or just a physicist, your answer might "
+  "be a bit different. For one, you might take a longer view of the universe. "
+  "But for other people — including scientists, artists, and other in-your-face "
+  "people — your answer might be far more like: Life doesn't exist at all.\n\n"
+  "Imagine you are a young person who just graduated from middle school and has "
+  "never really pursued a career in astrophysics. You're on an eight")]
+  exit()
