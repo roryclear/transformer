@@ -1,4 +1,6 @@
 #!/usr/bin/env python3 #for tinygrad repo, get rid of libs etc
+# can I beat https://github.com/jaymody/picoGPT.git?
+# beating https://github.com/WAUthethird/stupidGPT should be easy
 from typing import Optional, Union
 import argparse
 from tqdm import trange
@@ -36,9 +38,11 @@ class Rory_Linear():
 
   def __call__(self,x):
     #rory this is terrible atm obv
+    w = self.weight.numpy()
+    w = w.transpose()
+    x = x.numpy()
     x = x[0]
-    ret = x.matmul(self.weight.transpose())
-    ret = ret.numpy()
+    ret = np.matmul(x,w)
     ret = [ret]
     ret = Tensor(ret)
     return ret
