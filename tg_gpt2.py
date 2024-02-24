@@ -9,6 +9,8 @@ from tinygrad.nn import Embedding, Linear, LayerNorm
 from tinygrad.nn.state import torch_load, load_state_dict, get_state_dict
 from tinygrad.shape.symbolic import Variable
 
+rorys = True #todo args
+
 MAX_CONTEXT = getenv("MAX_CONTEXT", 128)
 HALF = getenv("HALF")
 
@@ -33,18 +35,13 @@ class Rory_Linear():
     self.weight = weight
 
   def __call__(self,x):
-    return self.weight.matmul(x)
-
-Tensor.manual_seed(420)
-input = Tensor.rand([10])
-tg_linear = Linear(10,10,bias=False)
-out = tg_linear(input)
-print(out.numpy())
-out = tg_linear.weight.matmul(input)
-print(out.numpy())
-rory_linear = Rory_Linear(tg_linear.weight)
-out = rory_linear(input)
-print(out.numpy())
+    #rory this is terrible atm obv
+    x = x[0]
+    ret = x.matmul(self.weight.transpose())
+    ret = ret.numpy()
+    ret = [ret]
+    ret = Tensor(ret)
+    return ret
 
 def rory_lm_head():
   return None
@@ -129,7 +126,7 @@ class Transformer:
     self.h = [TransformerBlock(dim, n_heads, norm_eps) for _ in range(n_layers)]
     self.ln_f = LayerNorm(dim, norm_eps)
     self.lm_head = Linear(dim, vocab_size, bias=False)
-    self.rory_lm_head = Rory_Linear(None) #fix late
+    self.rory_lm_head = Rory_Linear(Tensor(0)) #fix late
     self.forward_jit = TinyJit(self.forward)
 
   def forward(self, tokens:Union[Tensor,Variable], start_pos:Variable, temperature:float=0.0):
@@ -150,10 +147,10 @@ class Transformer:
 
     for hi in self.h: h = hi(h, start_pos, mask)
 
-    #print("rory lm_head in =",type(self.ln_f(h)),self.ln_f(h).shape)
-    #print("rory lm_head bias =",self.lm_head.bias)
-    #print("rory lm_head weights =",self.lm_head.weight.shape)
-    logits = self.lm_head(self.ln_f(h))
+    if rorys:
+      logits = self.rory_lm_head(self.ln_f(h))
+    else:
+      logits = self.lm_head(self.ln_f(h))
 
     if logits.shape[1] == 0:
       # special case for empty prompt
@@ -185,6 +182,7 @@ class GPT2:
     # lm head and wte are tied
     weights['lm_head.weight'] = weights['wte.weight']
     weights['rory_lm_head.weight'] = weights['wte.weight']
+    model.rory_lm_head.weight = model.lm_head.weight #todo properly later
     load_state_dict(model, weights)
 
     return GPT2(model)
