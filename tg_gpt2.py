@@ -26,6 +26,29 @@ def rory_decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
+#rory can we match linear??
+#start using numpy?
+class Rory_Linear():
+  def __init__(self,weight=None):
+    self.weight = weight
+
+  def __call__(self,x):
+    return self.weight.matmul(x)
+
+Tensor.manual_seed(420)
+input = Tensor.rand([10])
+tg_linear = Linear(10,10,bias=False)
+out = tg_linear(input)
+print(out.numpy())
+out = tg_linear.weight.matmul(input)
+print(out.numpy())
+rory_linear = Rory_Linear(tg_linear.weight)
+out = rory_linear(input)
+print(out.numpy())
+
+def rory_lm_head():
+  return None
+
 def rory_encode(x):
   ret = []
   token = None
@@ -106,6 +129,7 @@ class Transformer:
     self.h = [TransformerBlock(dim, n_heads, norm_eps) for _ in range(n_layers)]
     self.ln_f = LayerNorm(dim, norm_eps)
     self.lm_head = Linear(dim, vocab_size, bias=False)
+    self.rory_lm_head = Rory_Linear(None) #fix late
     self.forward_jit = TinyJit(self.forward)
 
   def forward(self, tokens:Union[Tensor,Variable], start_pos:Variable, temperature:float=0.0):
@@ -126,6 +150,9 @@ class Transformer:
 
     for hi in self.h: h = hi(h, start_pos, mask)
 
+    #print("rory lm_head in =",type(self.ln_f(h)),self.ln_f(h).shape)
+    #print("rory lm_head bias =",self.lm_head.bias)
+    #print("rory lm_head weights =",self.lm_head.weight.shape)
     logits = self.lm_head(self.ln_f(h))
 
     if logits.shape[1] == 0:
@@ -157,6 +184,7 @@ class GPT2:
         weights[k] = weights[k].T
     # lm head and wte are tied
     weights['lm_head.weight'] = weights['wte.weight']
+    weights['rory_lm_head.weight'] = weights['wte.weight']
     load_state_dict(model, weights)
 
     return GPT2(model)
