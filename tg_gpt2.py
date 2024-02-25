@@ -1,20 +1,17 @@
 #!/usr/bin/env python3 #for tinygrad repo, get rid of libs etc
-# can I beat https://github.com/jaymody/picoGPT.git?
+# can I beat https://github.com/jaymody/xpicoGPT.git?
 # beating https://github.com/WAUthethird/stupidGPT should be easy
-from typing import Optional, Union
-import argparse
+from typing import Optional, Union, Tuple
 from tqdm import trange
 import numpy as np
 from tinygrad import Tensor, TinyJit, Device
-from tinygrad.helpers import Timing, DEBUG, getenv, fetch, colored
+from tinygrad.helpers import getenv, fetch, colored
 from tinygrad.nn import Embedding, Linear, LayerNorm
-from tinygrad.nn.state import torch_load, load_state_dict, get_state_dict
+from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.shape.symbolic import Variable
-
 rorys = True #todo args
 
 MAX_CONTEXT = getenv("MAX_CONTEXT", 128)
-HALF = getenv("HALF")
 
 tokens = open('tokens.txt', 'r').readlines()
 token_dict = dict()
@@ -46,6 +43,18 @@ class Rory_Linear():
     ret = [ret]
     ret = Tensor(ret)
     return ret
+  
+class Rory_LayerNorm:
+  def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True):
+    self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else tuple(normalized_shape)
+    self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
+    self.weight, self.bias = (Tensor.ones(*self.normalized_shape), Tensor.zeros(*self.normalized_shape)) if elementwise_affine else (None, None)
+
+  def __call__(self, x:Tensor):
+    assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
+    x = x.layernorm(eps=self.eps, axis=self.axis)
+    if not self.elementwise_affine: return x
+    return x * self.weight + self.bias
 
 def rory_lm_head():
   return None
@@ -80,7 +89,6 @@ class Attention:
       # no symbolic shape qkv when consuming prompts
       start_pos = start_pos.val
 
-    if HALF: x = x.half()
     xqkv = self.c_attn(x)
     xq, xk, xv = [xqkv.shrink((None, None, (i*self.dim, (i+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim) for i in range(3)]
     bsz, seqlen, _, _ = xq.shape
@@ -129,6 +137,7 @@ class Transformer:
     self.wpe = Embedding(max_seq_len, dim)
     self.h = [TransformerBlock(dim, n_heads, norm_eps) for _ in range(n_layers)]
     self.ln_f = LayerNorm(dim, norm_eps)
+    self.rory_ln_f = Rory_LayerNorm(dim,norm_eps)
     self.lm_head = Linear(dim, vocab_size, bias=False)
     self.rory_lm_head = Rory_Linear(Tensor(0)) #fix late
     self.forward_jit = TinyJit(self.forward)
@@ -145,14 +154,12 @@ class Transformer:
     pos_emb = self.wpe(self.allpos.shrink((None, (start_pos, start_pos+seqlen))))
     h = tok_emb + pos_emb
 
-    if HALF: h = h.half()
-
     mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf"), dtype=h.dtype).triu(start_pos.val+1) if seqlen > 1 else None
 
     for hi in self.h: h = hi(h, start_pos, mask)
 
     if rorys:
-      logits = self.rory_lm_head(self.ln_f(h))
+      logits = self.rory_lm_head(self.rory_ln_f(h))
     else:
       logits = self.lm_head(self.ln_f(h))
 
@@ -186,6 +193,8 @@ class GPT2:
     # lm head and wte are tied
     weights['lm_head.weight'] = weights['wte.weight']
     weights['rory_lm_head.weight'] = weights['wte.weight']
+    weights['rory_ln_f.weight'] = weights['ln_f.weight']
+    weights['rory_ln_f.bias'] = weights['ln_f.bias']
     model.rory_lm_head.weight = model.lm_head.weight #todo properly later
     load_state_dict(model, weights)
 
