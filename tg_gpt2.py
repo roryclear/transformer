@@ -11,6 +11,21 @@ from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.shape.symbolic import Variable
 rorys = True #todo args
 
+##rory delete
+#what is layer norm
+
+a = Tensor([0,1,2,3,4,5])
+ln = LayerNorm(6)
+ln.weight = Tensor([0,1,2,3,4,5])
+ln.bias = Tensor([420,419,421,0,100,-100])
+tg_out = ln(a)
+print(tg_out.numpy())
+
+a = a.numpy()
+a = ((a - a.mean()) / a.std()) * ln.weight.numpy() + ln.bias.numpy()
+print(a)
+#
+
 MAX_CONTEXT = getenv("MAX_CONTEXT", 128)
 
 tokens = open('tokens.txt', 'r').readlines()
@@ -51,10 +66,17 @@ class Rory_LayerNorm:
     self.weight, self.bias = (Tensor.ones(*self.normalized_shape), Tensor.zeros(*self.normalized_shape)) if elementwise_affine else (None, None)
 
   def __call__(self, x:Tensor):
+    if x.shape[1] == 1:
+      x = x.numpy()
+      x = x[0][0]
+      x = ((x - x.mean()) / x.std()) * self.weight.numpy() + self.bias.numpy()
+      x = [[x]]
+      return Tensor(x)
     assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
     x = x.layernorm(eps=self.eps, axis=self.axis)
     if not self.elementwise_affine: return x
-    return x * self.weight + self.bias
+    ret = x * self.weight + self.bias
+    return ret
 
 def rory_lm_head():
   return None
