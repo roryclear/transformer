@@ -11,19 +11,19 @@ from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.shape.symbolic import Variable
 rorys = True #todo args
 
-##rory delete
-#what is layer norm
+x = Tensor([[[0,1,2,3,4]]])
+ln = LayerNorm(5)
+print(ln(x).numpy())
 
-a = Tensor([[[1.0,2.0,3.0],[1.0,2.0,3.0]]])
-print(a.numpy(),a.shape)
-ln = LayerNorm(3)
-tg_out = ln(a).numpy()
-print(tg_out)
-a = a.numpy()
-for x in range(len(a[0])):
-  a[0][x] = (a[0][x] - a[0][x].mean()) / a[0][x].std() * ln.weight.numpy() + ln.bias.numpy()
-print(a)
-#
+x = x.numpy()
+for i in range(len(x[0])):
+  #a = (a - a.mean()).mul(((a - a.mean())**2).mean().add(eps).rsqrt()) * ln.weight + ln.bias
+  amms = x[0][i] - x[0][i].mean() / np.sqrt(np.mean((x[0][i] - x[0][i].mean())**2) + ln.eps)
+  a = Tensor(x[0][i])
+  a = Tensor([amms]) * ln.weight + ln.bias
+  x[0][i] = a.numpy()
+  print(a.numpy())
+print(x)
 
 MAX_CONTEXT = getenv("MAX_CONTEXT", 128)
 
@@ -68,13 +68,15 @@ class Rory_LayerNorm:
     if x.shape[1] == 1:
       x = x.numpy()
       x = x[0][0]
-      x = ((x - x.mean()) / x.std()) * self.weight.numpy() + self.bias.numpy()
+      x = (x - x.mean()) / np.sqrt(np.mean((x - x.mean())**2) + self.eps)\
+      * self.weight.numpy() + self.bias.numpy()
       x = [[x]]
       return Tensor(x)
     assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
     x = x.numpy()
     for i in range(len(x[0])):
-      x[0][i] = (x[0][i] - x[0][i].mean()) / x[0][i].std() * self.weight.numpy() + self.bias.numpy()
+      x[0][i] = (x[0][i] - x[0][i].mean()) / np.sqrt(np.mean((x[0][i] - x[0][i].mean())**2) + self.eps)\
+      * self.weight.numpy() + self.bias.numpy()
     return Tensor(x)
 
 def rory_lm_head():
