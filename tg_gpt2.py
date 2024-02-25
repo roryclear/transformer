@@ -14,15 +14,14 @@ rorys = True #todo args
 ##rory delete
 #what is layer norm
 
-a = Tensor([0,1,2,3,4,5])
-ln = LayerNorm(6)
-ln.weight = Tensor([0,1,2,3,4,5])
-ln.bias = Tensor([420,419,421,0,100,-100])
-tg_out = ln(a)
-print(tg_out.numpy())
-
+a = Tensor([[[1.0,2.0,3.0],[1.0,2.0,3.0]]])
+print(a.numpy(),a.shape)
+ln = LayerNorm(3)
+tg_out = ln(a).numpy()
+print(tg_out)
 a = a.numpy()
-a = ((a - a.mean()) / a.std()) * ln.weight.numpy() + ln.bias.numpy()
+for x in range(len(a[0])):
+  a[0][x] = (a[0][x] - a[0][x].mean()) / a[0][x].std() * ln.weight.numpy() + ln.bias.numpy()
 print(a)
 #
 
@@ -73,10 +72,10 @@ class Rory_LayerNorm:
       x = [[x]]
       return Tensor(x)
     assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
-    x = x.layernorm(eps=self.eps, axis=self.axis)
-    if not self.elementwise_affine: return x
-    ret = x * self.weight + self.bias
-    return ret
+    x = x.numpy()
+    for i in range(len(x[0])):
+      x[0][i] = (x[0][i] - x[0][i].mean()) / x[0][i].std() * self.weight.numpy() + self.bias.numpy()
+    return Tensor(x)
 
 def rory_lm_head():
   return None
