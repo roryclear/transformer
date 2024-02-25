@@ -66,8 +66,7 @@ class Rory_LayerNorm:
 
   def __call__(self, x:Tensor):
     if x.shape[1] == 1:
-      x = x.numpy()
-      x = x[0][0]
+      x = x[0][0].numpy()
       x = (x - x.mean()) / np.sqrt(np.mean((x - x.mean())**2) + self.eps)\
       * self.weight.numpy() + self.bias.numpy()
       x = [[x]]
@@ -147,10 +146,14 @@ class TransformerBlock:
     self.attn = Attention(dim, n_heads)
     self.mlp = FeedForward(dim, 4*dim)
     self.ln_1 = LayerNorm(dim, norm_eps)
+    self.rory_ln_1 = Rory_LayerNorm(dim,norm_eps)
     self.ln_2 = LayerNorm(dim, norm_eps)
 
   def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]):
-    h = x + self.attn(self.ln_1(x), start_pos, mask).float()
+    if rorys and x.shape[1] == 1:
+      h = x + self.attn(self.rory_ln_1(x), start_pos, mask).float()
+    else:
+      h = x + self.attn(self.ln_1(x), start_pos, mask).float()
     return (h + self.mlp(self.ln_2(h)))
 
 class Transformer:
@@ -218,6 +221,9 @@ class GPT2:
     weights['rory_lm_head.weight'] = weights['wte.weight']
     weights['rory_ln_f.weight'] = weights['ln_f.weight']
     weights['rory_ln_f.bias'] = weights['ln_f.bias']
+    for i in range(12):
+      weights['h.'+str(i)+'.rory_ln_1.weight'] = weights['h.'+str(i)+'.ln_1.weight']
+      weights['h.'+str(i)+'.rory_ln_1.bias'] = weights['h.'+str(i)+'.ln_1.bias']
     model.rory_lm_head.weight = model.lm_head.weight #todo properly later
     load_state_dict(model, weights)
 
