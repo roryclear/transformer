@@ -172,8 +172,9 @@ class Rory_Embedding:
     if idxn.shape[1] == 1:
       b = np.repeat(False,self.vocab_size)
       b[idx.numpy()] = True
-      b = Tensor([[b]])
-      ret = b.expand(*idx.shape, self.vocab_size) @ self.weight 
+      w = self.weight.numpy()
+      ret = [[np.matmul(b,w)]]
+      ret = Tensor(ret)
       return ret
     
     b = np.empty((1,13,self.vocab_size),dtype=bool)
