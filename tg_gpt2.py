@@ -134,8 +134,8 @@ class Attention:
 
 class Rory_Attention:
   def __init__(self, dim, n_heads):
-    self.c_attn = Linear(dim, 3*dim, bias=True)
-    self.c_proj = Linear(dim, dim, bias=True)
+    self.c_attn = Rory_Linear(dim, 3*dim, bias=True)
+    self.c_proj = Rory_Linear(dim, dim, bias=True)
     self.n_heads = n_heads
     self.dim = dim
     self.head_dim = dim // n_heads
@@ -146,7 +146,9 @@ class Rory_Attention:
       start_pos = start_pos.val
 
     xqkv = self.c_attn(x)
-    xq, xk, xv = [xqkv.shrink((None, None, (i*self.dim, (i+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim) for i in range(3)]
+    xq = xqkv.shrink((None, None, (0*self.dim, (0+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim)
+    xk = xqkv.shrink((None, None, (1*self.dim, (1+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim)
+    xv = xqkv.shrink((None, None, (2*self.dim, (2+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim)
     bsz, seqlen, _, _ = xq.shape
     
     # create kv cache
