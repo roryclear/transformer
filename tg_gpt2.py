@@ -162,27 +162,28 @@ class Rory_Embedding:
   def __call__(self, idx:Tensor) -> Tensor:
     if not hasattr(self, 'vocab_counter'):
       self.vocab_counter = [[np.arange(start=0,stop=self.vocab_size)]]
-    idxn = idx.numpy()
+    idx = idx.numpy()
     batch_size, seqlen = idx.shape
     if seqlen == 0:
       print("rory seq len is 0")
       exit() 
       return Tensor.empty(batch_size, 0, self.embed_size, device=self.weight.device)
 
-    if idxn.shape[1] == 1:
+    if idx.shape[1] == 1:
       b = np.repeat(False,self.vocab_size)
-      b[idx.numpy()] = True
+      b[idx] = True
       w = self.weight.numpy()
       ret = [[np.matmul(b,w)]]
       ret = Tensor(ret)
       return ret
     
-    b = np.empty((1,13,self.vocab_size),dtype=bool)
+    b = np.empty((1,idx.shape[1],self.vocab_size),dtype=bool)
     b.fill(False)
+    w = self.weight.numpy()
     for i in range(len(b[0])):
       b[0][i][i] = True
-    b = Tensor(b)
-    return b.expand(*idx.shape, self.vocab_size) @ self.weight
+    ret = np.matmul(b,w)
+    return Tensor(ret)
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
