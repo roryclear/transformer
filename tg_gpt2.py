@@ -72,6 +72,10 @@ class Rory_LayerNorm:
       x = [[x]]
       return Tensor(x)
     assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
+    x = x.layernorm(eps=self.eps, axis=self.axis)
+    if not self.elementwise_affine: return x
+    return x * self.weight + self.bias
+    #it doesnt work still with actual copy?
     x = x.numpy()
     for i in range(len(x[0])):
       x[0][i] = (x[0][i] - x[0][i].mean()) / np.sqrt(np.mean((x[0][i] - x[0][i].mean())**2) + self.eps)\
@@ -114,7 +118,7 @@ class Attention:
     xqkv = self.c_attn(x)
     xq, xk, xv = [xqkv.shrink((None, None, (i*self.dim, (i+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim) for i in range(3)]
     bsz, seqlen, _, _ = xq.shape
-
+    
     # create kv cache
     if not hasattr(self, "cache_kv"):
       self.cache_kv = Tensor.zeros(2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim, dtype=x.dtype)
@@ -131,7 +135,9 @@ class Attention:
     self.cache_kv.assign(new_cache).realize()
 
     xq, keys, values = xq.transpose(1, 2), keys.transpose(1, 2), values.transpose(1, 2)
-    return self.c_proj(xq.scaled_dot_product_attention(keys, values, mask).transpose(1, 2).reshape(bsz, seqlen, self.dim))
+    xq = xq.scaled_dot_product_attention(keys, values, mask)
+    ret = self.c_proj(xq.transpose(1, 2).reshape(bsz, seqlen, self.dim))
+    return ret
 
 class FeedForward:
   def __init__(self, dim, hidden_dim):
@@ -145,15 +151,21 @@ class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
     self.attn = Attention(dim, n_heads)
     self.mlp = FeedForward(dim, 4*dim)
-    self.ln_1 = LayerNorm(dim, norm_eps)
+    self.ln_1 = LayerNorm(dim, norm_eps) #partly done
     self.rory_ln_1 = Rory_LayerNorm(dim,norm_eps)
-    self.ln_2 = LayerNorm(dim, norm_eps)
+    self.ln_2 = LayerNorm(dim, norm_eps) #done
+    self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps)
 
   def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]):
-    if rorys and x.shape[1] == 1:
-      h = x + self.attn(self.rory_ln_1(x), start_pos, mask).float()
+    if rorys:
+      if x.shape[1] == 1:
+        h = x + self.attn(self.rory_ln_1(x), start_pos, mask).float()
+      else:
+        h = x + self.attn(self.ln_1(x), start_pos, mask).float()
+      return (h + self.mlp(self.rory_ln_2(h)))
     else:
-      h = x + self.attn(self.ln_1(x), start_pos, mask).float()
+      # 1 13 768 shape doesnt work?? acc crashes after i think
+      h = x + self.attn(self.rory_ln_1(x), start_pos, mask).float()
     return (h + self.mlp(self.ln_2(h)))
 
 class Transformer:
@@ -224,6 +236,8 @@ class GPT2:
     for i in range(12):
       weights['h.'+str(i)+'.rory_ln_1.weight'] = weights['h.'+str(i)+'.ln_1.weight']
       weights['h.'+str(i)+'.rory_ln_1.bias'] = weights['h.'+str(i)+'.ln_1.bias']
+      weights['h.'+str(i)+'.rory_ln_2.weight'] = weights['h.'+str(i)+'.ln_2.weight']
+      weights['h.'+str(i)+'.rory_ln_2.bias'] = weights['h.'+str(i)+'.ln_2.bias']
     model.rory_lm_head.weight = model.lm_head.weight #todo properly later
     load_state_dict(model, weights)
 
