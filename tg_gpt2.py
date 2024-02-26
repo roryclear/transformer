@@ -151,19 +151,18 @@ class Rory_Attention:
     xq = np.zeros(shape=(1,xqkv.shape[1],self.dim))
     for i in range(xq.shape[1]):
       xq[0][i] = xqkv.numpy()[0][i][0:self.dim]
-    xq = Tensor(xq)
+    xq = xq.reshape(1,xq.shape[1],self.n_heads,self.head_dim)
     xk = np.zeros(shape=(1,xqkv.shape[1],self.dim))
     for i in range(xk.shape[1]):
       xk[0][i] = xqkv.numpy()[0][i][self.dim:2*self.dim]
-    xk = Tensor(xk)
+    xk = xk.reshape(1,xk.shape[1],self.n_heads,self.head_dim)
     xv = np.zeros(shape=(1,xqkv.shape[1],self.dim))
     for i in range(xv.shape[1]):
       xv[0][i] = xqkv.numpy()[0][i][self.dim*2:3*self.dim]
-    xv = Tensor(xv)
-
-    xq = xq.reshape(None, None, self.n_heads, self.head_dim)
-    xk = xk.reshape(None, None, self.n_heads, self.head_dim)
-    xv = xv.reshape(None, None, self.n_heads, self.head_dim)
+    xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
+    xv = Tensor(xv) 
+    xq = Tensor(xq)
+    xk = Tensor(xk)
     bsz, seqlen, _, _ = xq.shape
     
     # create kv cache
