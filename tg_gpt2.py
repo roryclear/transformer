@@ -153,6 +153,31 @@ class Rory_FeedForward:
       x[0][i] = 0.5 * x[0][i] * (1 + np.tanh(x[0][i] * 0.7978845608 * (1 + 0.044715 * x[0][i] * x[0][i])))
     x = Tensor(x)
     return self.c_proj(x)
+  
+class Rory_Embedding:
+  def __init__(self, vocab_size:int, embed_size:int):
+    self.vocab_size, self.embed_size = vocab_size, embed_size
+    self.weight = Tensor.zeros(vocab_size, embed_size)
+
+  def __call__(self, idx:Tensor) -> Tensor:
+    if not hasattr(self, 'vocab_counter'):
+      self.vocab_counter = [[np.arange(start=0,stop=self.vocab_size)]]
+    idxn = idx.numpy()
+    batch_size, seqlen = idx.shape
+    if seqlen == 0:
+      print("rory seq len is 0")
+      exit() 
+      return Tensor.empty(batch_size, 0, self.embed_size, device=self.weight.device)
+
+    if idxn.shape[1] == 1:
+      b = np.repeat(False,self.vocab_size)
+      b[idx.numpy()] = True
+      b = Tensor([[b]])
+      ret = b.expand(*idx.shape, self.vocab_size) @ self.weight 
+      return ret
+    
+    return (Tensor(self.vocab_counter) == idx.unsqueeze(2)).expand(*idx.shape, self.vocab_size) @ self.weight
+    #return (Tensor(self.vocab_counter) == idx.unsqueeze(2)).expand(*idx.shape, self.vocab_size) @ self.weight
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
@@ -180,7 +205,9 @@ class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
     self.vocab_size = vocab_size
     self.wte = Embedding(vocab_size, dim)
+    self.rory_wte = Rory_Embedding(vocab_size,dim)
     self.wpe = Embedding(max_seq_len, dim)
+    self.rory_wpe = Rory_Embedding(max_seq_len,dim)
     self.h = [TransformerBlock(dim, n_heads, norm_eps) for _ in range(n_layers)]
     self.ln_f = LayerNorm(dim, norm_eps)
     self.rory_ln_f = Rory_LayerNorm(dim,norm_eps)
@@ -192,12 +219,18 @@ class Transformer:
     if not hasattr(self, 'allpos'): self.allpos = Tensor.arange(0, MAX_CONTEXT).reshape(1, -1).realize()
     if isinstance(tokens, Variable):
       seqlen = 1
-      tok_emb = self.wte.weight.shrink(((tokens, tokens+1), None))
+      if rorys:
+        tok_emb = tok_emb = self.rory_wte.weight.shrink(((tokens, tokens+1), None))
+      else:
+        tok_emb = self.wte.weight.shrink(((tokens, tokens+1), None))
     else:
       seqlen = tokens.shape[1]
       tok_emb = self.wte(tokens)
 
-    pos_emb = self.wpe(self.allpos.shrink((None, (start_pos, start_pos+seqlen))))
+    if rorys:
+      pos_emb = self.rory_wpe(self.allpos.shrink((None, (start_pos, start_pos+seqlen))))
+    else: 
+      pos_emb = self.wpe(self.allpos.shrink((None, (start_pos, start_pos+seqlen))))
     h = tok_emb + pos_emb
 
     mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf"), dtype=h.dtype).triu(start_pos.val+1) if seqlen > 1 else None
@@ -241,6 +274,8 @@ class GPT2:
     weights['rory_lm_head.weight'] = weights['wte.weight']
     weights['rory_ln_f.weight'] = weights['ln_f.weight']
     weights['rory_ln_f.bias'] = weights['ln_f.bias']
+    weights['rory_wte.weight'] = weights['wte.weight']
+    weights['rory_wpe.weight'] = weights['wpe.weight']
     for i in range(12):
       weights['h.'+str(i)+'.rory_ln_1.weight'] = weights['h.'+str(i)+'.ln_1.weight']
       weights['h.'+str(i)+'.rory_ln_1.bias'] = weights['h.'+str(i)+'.ln_1.bias']
