@@ -132,6 +132,43 @@ class Attention:
     ret = self.c_proj(xq.transpose(1, 2).reshape(bsz, seqlen, self.dim))
     return ret
 
+class Rory_Attention:
+  def __init__(self, dim, n_heads):
+    self.c_attn = Linear(dim, 3*dim, bias=True)
+    self.c_proj = Linear(dim, dim, bias=True)
+    self.n_heads = n_heads
+    self.dim = dim
+    self.head_dim = dim // n_heads
+
+  def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]) -> Tensor:
+    if mask is not None or start_pos.val == 0:
+      # no symbolic shape qkv when consuming prompts
+      start_pos = start_pos.val
+
+    xqkv = self.c_attn(x)
+    xq, xk, xv = [xqkv.shrink((None, None, (i*self.dim, (i+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim) for i in range(3)]
+    bsz, seqlen, _, _ = xq.shape
+    
+    # create kv cache
+    if not hasattr(self, "cache_kv"):
+      self.cache_kv = Tensor.zeros(2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim, dtype=x.dtype)
+
+    if start_pos > 0:
+      keys = self.cache_kv[0].shrink((None, (0, start_pos), None, None)).cat(xk, dim=1)
+      values = self.cache_kv[1].shrink((None, (0, start_pos), None, None)).cat(xv, dim=1)
+    else:
+      keys = xk
+      values = xv
+
+    # update the cache
+    new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
+    self.cache_kv.assign(new_cache).realize()
+
+    xq, keys, values = xq.transpose(1, 2), keys.transpose(1, 2), values.transpose(1, 2)
+    xq = xq.scaled_dot_product_attention(keys, values, mask)
+    ret = self.c_proj(xq.transpose(1, 2).reshape(bsz, seqlen, self.dim))
+    return ret
+
 class FeedForward:
   def __init__(self, dim, hidden_dim):
     self.c_fc = Linear(dim, hidden_dim, bias=True)
@@ -188,6 +225,7 @@ class Rory_Embedding:
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
     self.attn = Attention(dim, n_heads)
+    self.rory_attn = Rory_Attention(dim,n_heads)
     self.mlp = FeedForward(dim, 4*dim)
     self.rory_mlp = Rory_FeedForward(dim, 4*dim)
     self.ln_1 = LayerNorm(dim, norm_eps) #partly done
@@ -198,9 +236,9 @@ class TransformerBlock:
   def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]):
     if rorys:
       if x.shape[1] == 1:
-        h = x + self.attn(self.rory_ln_1(x), start_pos, mask).float()
+        h = x + self.rory_attn(self.rory_ln_1(x), start_pos, mask).float()
       else:
-        h = x + self.attn(self.ln_1(x), start_pos, mask).float()
+        h = x + self.rory_attn(self.ln_1(x), start_pos, mask).float()
       return (h + self.rory_mlp(self.rory_ln_2(h)))
     else:
       # 1 13 768 shape doesnt work?? acc crashes after i think
@@ -291,6 +329,10 @@ class GPT2:
       weights['h.'+str(i)+'.rory_mlp.c_fc.bias'] = weights['h.'+str(i)+'.mlp.c_fc.bias']
       weights['h.'+str(i)+'.rory_mlp.c_proj.weight'] = weights['h.'+str(i)+'.mlp.c_proj.weight']
       weights['h.'+str(i)+'.rory_mlp.c_proj.bias'] = weights['h.'+str(i)+'.mlp.c_proj.bias']
+      weights['h.'+str(i)+'.rory_attn.c_attn.weight'] = weights['h.'+str(i)+'.attn.c_attn.weight']
+      weights['h.'+str(i)+'.rory_attn.c_attn.bias'] = weights['h.'+str(i)+'.attn.c_attn.bias']
+      weights['h.'+str(i)+'.rory_attn.c_proj.weight'] = weights['h.'+str(i)+'.attn.c_proj.weight']
+      weights['h.'+str(i)+'.rory_attn.c_proj.bias'] = weights['h.'+str(i)+'.attn.c_proj.bias']
     model.rory_lm_head.weight = model.lm_head.weight #todo properly later
     load_state_dict(model, weights)
 
