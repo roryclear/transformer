@@ -148,15 +148,23 @@ class Rory_Attention:
     xqkv = self.c_attn(x)
 
     if xqkv.shape[1] == 1:
-      xqkvnp = np.zeros(shape=(1,1,self.dim))
-      xqkvnp[0][0] = xqkv.numpy()[0][0][0:768]
-      xq = Tensor(xqkvnp)
+      xq = np.zeros(shape=(1,1,self.dim))
+      xq[0][0] = xqkv.numpy()[0][0][0:self.dim]
+      xq = Tensor(xq)
+      xk = np.zeros(shape=(1,1,self.dim))
+      xk[0][0] = xqkv.numpy()[0][0][self.dim:2*self.dim]
+      xk = Tensor(xk)
+      xv = np.zeros(shape=(1,1,self.dim))
+      xv[0][0] = xqkv.numpy()[0][0][self.dim*2:3*self.dim]
+      xv = Tensor(xv)
     else:
-      xq = xqkv.shrink((None, None, (0*self.dim, (0+1)*self.dim)))
+      xq = xqkv.shrink((None, None, (0*self.dim, 1*self.dim)))
+      xk = xqkv.shrink((None, None, (1*self.dim, 2*self.dim)))
+      xv = xqkv.shrink((None, None, (2*self.dim, 3*self.dim)))
 
     xq = xq.reshape(None, None, self.n_heads, self.head_dim)
-    xk = xqkv.shrink((None, None, (1*self.dim, (1+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim)
-    xv = xqkv.shrink((None, None, (2*self.dim, (2+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim)
+    xk = xk.reshape(None, None, self.n_heads, self.head_dim)
+    xv = xv.reshape(None, None, self.n_heads, self.head_dim)
     bsz, seqlen, _, _ = xq.shape
     
     # create kv cache
