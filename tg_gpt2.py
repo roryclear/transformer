@@ -146,7 +146,15 @@ class Rory_Attention:
       start_pos = start_pos.val
 
     xqkv = self.c_attn(x)
-    xq = xqkv.shrink((None, None, (0*self.dim, (0+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim)
+
+    if xqkv.shape[1] == 1:
+      xqkvnp = np.zeros(shape=(1,1,self.dim))
+      xqkvnp[0][0] = xqkv.numpy()[0][0][0:768]
+      xq = Tensor(xqkvnp)
+    else:
+      xq = xqkv.shrink((None, None, (0*self.dim, (0+1)*self.dim)))
+
+    xq = xq.reshape(None, None, self.n_heads, self.head_dim)
     xk = xqkv.shrink((None, None, (1*self.dim, (1+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim)
     xv = xqkv.shrink((None, None, (2*self.dim, (2+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim)
     bsz, seqlen, _, _ = xq.shape
