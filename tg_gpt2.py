@@ -147,20 +147,19 @@ class Rory_Attention:
 
     xqkv = self.c_attn(x)
 
-    if xqkv.shape[1] == 1:
-      xq = np.zeros(shape=(1,1,self.dim))
-      xq[0][0] = xqkv.numpy()[0][0][0:self.dim]
-      xq = Tensor(xq)
-      xk = np.zeros(shape=(1,1,self.dim))
-      xk[0][0] = xqkv.numpy()[0][0][self.dim:2*self.dim]
-      xk = Tensor(xk)
-      xv = np.zeros(shape=(1,1,self.dim))
-      xv[0][0] = xqkv.numpy()[0][0][self.dim*2:3*self.dim]
-      xv = Tensor(xv)
-    else:
-      xq = xqkv.shrink((None, None, (0*self.dim, 1*self.dim)))
-      xk = xqkv.shrink((None, None, (1*self.dim, 2*self.dim)))
-      xv = xqkv.shrink((None, None, (2*self.dim, 3*self.dim)))
+    # rory this is bad now obv
+    xq = np.zeros(shape=(1,xqkv.shape[1],self.dim))
+    for i in range(xq.shape[1]):
+      xq[0][i] = xqkv.numpy()[0][i][0:self.dim]
+    xq = Tensor(xq)
+    xk = np.zeros(shape=(1,xqkv.shape[1],self.dim))
+    for i in range(xk.shape[1]):
+      xk[0][i] = xqkv.numpy()[0][i][self.dim:2*self.dim]
+    xk = Tensor(xk)
+    xv = np.zeros(shape=(1,xqkv.shape[1],self.dim))
+    for i in range(xv.shape[1]):
+      xv[0][i] = xqkv.numpy()[0][i][self.dim*2:3*self.dim]
+    xv = Tensor(xv)
 
     xq = xq.reshape(None, None, self.n_heads, self.head_dim)
     xk = xk.reshape(None, None, self.n_heads, self.head_dim)
