@@ -139,26 +139,6 @@ class FeedForward:
 
   def __call__(self, x:Tensor) -> Tensor:
     return self.c_proj(self.c_fc(x).gelu())
-  
-#rory - delete, trying a feed forward thing
-'''
-ff = FeedForward(dim=3,hidden_dim=6)
-input = Tensor([[[1,2,3]]])
-print(input.shape)
-tg_out = ff(input)
-print(tg_out.numpy())
-
-
-x = input.numpy()
-x = x[0]
-w = ff.c_fc.weight.numpy().transpose()
-x = np.matmul(x,w) + ff.c_fc.bias.numpy()
-w = ff.c_proj.weight.numpy().transpose()
-x = np.matmul(x,w) + ff.c_proj.bias.numpy()
-print(x,"ffs")
-exit()
-'''
-#
 
 class Rory_FeedForward:
   def __init__(self, dim, hidden_dim):
@@ -166,7 +146,13 @@ class Rory_FeedForward:
     self.c_proj = Rory_Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x:Tensor) -> Tensor:
-    return self.c_proj(self.c_fc(x).gelu())
+    x = self.c_fc(x)
+    x = x.numpy()
+    for i in range(x.shape[1]):
+      # gelu() activation
+      x[0][i] = 0.5 * x[0][i] * (1 + np.tanh(x[0][i] * 0.7978845608 * (1 + 0.044715 * x[0][i] * x[0][i])))
+    x = Tensor(x)
+    return self.c_proj(x)
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
