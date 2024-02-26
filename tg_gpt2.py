@@ -9,21 +9,8 @@ from tinygrad.helpers import getenv, fetch, colored
 from tinygrad.nn import Embedding, Linear, LayerNorm
 from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.shape.symbolic import Variable
+import math
 rorys = True #todo args
-
-x = Tensor([[[0,1,2,3,4]]])
-ln = LayerNorm(5)
-print(ln(x).numpy())
-
-x = x.numpy()
-for i in range(len(x[0])):
-  #a = (a - a.mean()).mul(((a - a.mean())**2).mean().add(eps).rsqrt()) * ln.weight + ln.bias
-  amms = x[0][i] - x[0][i].mean() / np.sqrt(np.mean((x[0][i] - x[0][i].mean())**2) + ln.eps)
-  a = Tensor(x[0][i])
-  a = Tensor([amms]) * ln.weight + ln.bias
-  x[0][i] = a.numpy()
-  print(a.numpy())
-print(x)
 
 MAX_CONTEXT = getenv("MAX_CONTEXT", 128)
 
@@ -44,8 +31,11 @@ def rory_decode(index):
 #rory can we match linear??
 #start using numpy?
 class Rory_Linear():
-  def __init__(self,weight=None):
-    self.weight = weight
+  def __init__(self, in_features, out_features, bias=True):
+    # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
+    self.weight = Tensor.kaiming_uniform(out_features, in_features, a=math.sqrt(5))
+    bound = 1 / math.sqrt(in_features)
+    self.bias = Tensor.uniform(out_features, low=-bound, high=bound) if bias else None
 
   def __call__(self,x):
     #rory this is terrible atm obv
@@ -54,6 +44,9 @@ class Rory_Linear():
     x = x.numpy()
     x = x[0]
     ret = np.matmul(x,w)
+    if self.bias:
+      for x in range(ret.shape[0]):
+        ret[x] += self.bias.numpy()
     ret = [ret]
     ret = Tensor(ret)
     return ret
@@ -146,11 +139,40 @@ class FeedForward:
 
   def __call__(self, x:Tensor) -> Tensor:
     return self.c_proj(self.c_fc(x).gelu())
+  
+#rory - delete, trying a feed forward thing
+'''
+ff = FeedForward(dim=3,hidden_dim=6)
+input = Tensor([[[1,2,3]]])
+print(input.shape)
+tg_out = ff(input)
+print(tg_out.numpy())
+
+
+x = input.numpy()
+x = x[0]
+w = ff.c_fc.weight.numpy().transpose()
+x = np.matmul(x,w) + ff.c_fc.bias.numpy()
+w = ff.c_proj.weight.numpy().transpose()
+x = np.matmul(x,w) + ff.c_proj.bias.numpy()
+print(x,"ffs")
+exit()
+'''
+#
+
+class Rory_FeedForward:
+  def __init__(self, dim, hidden_dim):
+    self.c_fc = Rory_Linear(dim, hidden_dim, bias=True)
+    self.c_proj = Rory_Linear(hidden_dim, dim, bias=True)
+
+  def __call__(self, x:Tensor) -> Tensor:
+    return self.c_proj(self.c_fc(x).gelu())
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
     self.attn = Attention(dim, n_heads)
     self.mlp = FeedForward(dim, 4*dim)
+    self.rory_mlp = Rory_FeedForward(dim, 4*dim)
     self.ln_1 = LayerNorm(dim, norm_eps) #partly done
     self.rory_ln_1 = Rory_LayerNorm(dim,norm_eps)
     self.ln_2 = LayerNorm(dim, norm_eps) #done
@@ -162,7 +184,7 @@ class TransformerBlock:
         h = x + self.attn(self.rory_ln_1(x), start_pos, mask).float()
       else:
         h = x + self.attn(self.ln_1(x), start_pos, mask).float()
-      return (h + self.mlp(self.rory_ln_2(h)))
+      return (h + self.rory_mlp(self.rory_ln_2(h)))
     else:
       # 1 13 768 shape doesnt work?? acc crashes after i think
       h = x + self.attn(self.rory_ln_1(x), start_pos, mask).float()
@@ -177,7 +199,7 @@ class Transformer:
     self.ln_f = LayerNorm(dim, norm_eps)
     self.rory_ln_f = Rory_LayerNorm(dim,norm_eps)
     self.lm_head = Linear(dim, vocab_size, bias=False)
-    self.rory_lm_head = Rory_Linear(Tensor(0)) #fix late
+    self.rory_lm_head = Rory_Linear(dim, vocab_size, bias=False) #fix late
     self.forward_jit = TinyJit(self.forward)
 
   def forward(self, tokens:Union[Tensor,Variable], start_pos:Variable, temperature:float=0.0):
@@ -238,6 +260,10 @@ class GPT2:
       weights['h.'+str(i)+'.rory_ln_1.bias'] = weights['h.'+str(i)+'.ln_1.bias']
       weights['h.'+str(i)+'.rory_ln_2.weight'] = weights['h.'+str(i)+'.ln_2.weight']
       weights['h.'+str(i)+'.rory_ln_2.bias'] = weights['h.'+str(i)+'.ln_2.bias']
+      weights['h.'+str(i)+'.rory_mlp.c_fc.weight'] = weights['h.'+str(i)+'.mlp.c_fc.weight']
+      weights['h.'+str(i)+'.rory_mlp.c_fc.bias'] = weights['h.'+str(i)+'.mlp.c_fc.bias']
+      weights['h.'+str(i)+'.rory_mlp.c_proj.weight'] = weights['h.'+str(i)+'.mlp.c_proj.weight']
+      weights['h.'+str(i)+'.rory_mlp.c_proj.bias'] = weights['h.'+str(i)+'.mlp.c_proj.bias']
     model.rory_lm_head.weight = model.lm_head.weight #todo properly later
     load_state_dict(model, weights)
 
