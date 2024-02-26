@@ -176,8 +176,12 @@ class Rory_Embedding:
       ret = b.expand(*idx.shape, self.vocab_size) @ self.weight 
       return ret
     
-    return (Tensor(self.vocab_counter) == idx.unsqueeze(2)).expand(*idx.shape, self.vocab_size) @ self.weight
-    #return (Tensor(self.vocab_counter) == idx.unsqueeze(2)).expand(*idx.shape, self.vocab_size) @ self.weight
+    b = np.empty((1,13,self.vocab_size),dtype=bool)
+    b.fill(False)
+    for i in range(len(b[0])):
+      b[0][i][i] = True
+    b = Tensor(b)
+    return b.expand(*idx.shape, self.vocab_size) @ self.weight
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
