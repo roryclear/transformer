@@ -47,8 +47,8 @@ def my_new_cache(keys,values,xv,xk,start_pos):
             for c in range(start_pos.unbind()[1]+1,len(ret[0][0])):
                 ret[a][b][c] = np.zeros_like(ret[a][b][c])
         if start_pos.unbind()[1] > -1 and start_pos.unbind()[1] < len(ret[0][0]):
-            ret[0][b][start_pos.unbind()[1]] = np.full_like(ret[a][b][0],xk[0][0][0][0])
-            ret[1][b][start_pos.unbind()[1]] = np.full_like(ret[a][b][0],xv[0][0][0][0])
+            ret[0][b][start_pos.unbind()[1]] = xk[0][0]
+            ret[1][b][start_pos.unbind()[1]] = xv[0][0]
     return ret
 
 ######my attempt#######
@@ -83,10 +83,8 @@ my_cache = my_new_cache(keys,values,xv,xk,start_pos)
 np.testing.assert_allclose(new_cache,my_cache)
 
 start_pos = Variable("start_pos",1,4).bind(3)
-xv = Tensor.ones(1,1,3,2)
-xv = Tensor.full_like(xv,6)
-xk = Tensor.ones(1,1,3,2)
-xk = Tensor.full_like(xk,7)
+xv = Tensor.rand(1,1,3,2)
+xk = Tensor.rand(1,1,3,2)
 keys = Tensor.ones(1,20,3,2)
 values = Tensor.ones(1,20,3,2)
 keys = Tensor.full_like(keys,5)
