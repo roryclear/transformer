@@ -11,6 +11,7 @@ from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.shape.symbolic import Variable
 import math
 rorys = True #todo args
+import inspect
 
 MAX_CONTEXT = getenv("MAX_CONTEXT", 128)
 
@@ -65,9 +66,9 @@ class Rory_LayerNorm:
       x = [[x]]
       return Tensor(x)
     assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
-    x = x.layernorm(eps=self.eps, axis=self.axis)
-    if not self.elementwise_affine: return x
-    return x * self.weight + self.bias
+    #x = x.layernorm(eps=self.eps, axis=self.axis)
+    #if not self.elementwise_affine: return x
+    #return x * self.weight + self.bias
     #it doesnt work still with actual copy?
     x = x.numpy()
     for i in range(len(x[0])):
@@ -88,7 +89,6 @@ def rory_encode(x):
     while token == None:
       i+=1
       s = x[:min(max_token_length,len(x))-i]
-      #print("s =",s)
       if s in token_dict:
         token = token_dict[s]
     ret.append(token)
@@ -167,22 +167,52 @@ class Rory_Attention:
     
     # create kv cache
     if not hasattr(self, "cache_kv"):
-      self.cache_kv = Tensor.zeros(2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim, dtype=x.dtype)
+      self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
+      self.cache_kv = Tensor(self.cache_kv)
+    #print("rory cache_kv shape =",self.cache_kv.shape)
+
+    #rory, where does it become un-numpyible????
+    #A: keys.shrink
+    #where does it become numpyible???
 
     if start_pos > 0:
-      keys = self.cache_kv[0].shrink((None, (0, start_pos), None, None)).cat(xk, dim=1)
-      values = self.cache_kv[1].shrink((None, (0, start_pos), None, None)).cat(xv, dim=1)
+      keys = self.cache_kv[0]
+      values = self.cache_kv[1]
+      keys_np = keys.numpy()
+      values_np = values.numpy()
+      xv_np = xv.numpy()
+      xk_np = xk.numpy()
+      #mess todo later
+      s = list(np.shape(keys))
+      keys_small = np.zeros(shape=s)
+      values_small = np.zeros(shape=s)
+      keys_small[0] = keys_np[0]
+      values_small[0] = values_np[0]
+      ret = [keys_small,values_small]
+      #terrible loop
+      for a in range(len(ret)):
+          for b in range(len(ret[0])):
+              for c in range(start_pos.unbind()[1]+1,len(ret[0][0])):
+                  ret[a][b][c] = np.zeros_like(ret[a][b][c])
+          if start_pos.unbind()[1] > -1 and start_pos.unbind()[1] < len(ret[0][0]):
+              ret[0][b][start_pos.unbind()[1]] = xk_np[0][0]
+              ret[1][b][start_pos.unbind()[1]] = xv_np[0][0]
+      new_cache = Tensor(ret)
+      self.cache_kv.assign(new_cache).realize()
+      keys = keys.shrink((None, (0, start_pos), None, None))
+      keys = keys.cat(xk, dim=1)
+      values = values.shrink((None, (0, start_pos), None, None)).cat(xv, dim=1)
     else:
       keys = xk
       values = xv
-
-    # update the cache
-    new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
-    self.cache_kv.assign(new_cache).realize()
+      new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
+      self.cache_kv.assign(new_cache).realize()
 
     xq, keys, values = xq.transpose(1, 2), keys.transpose(1, 2), values.transpose(1, 2)
     xq = xq.scaled_dot_product_attention(keys, values, mask)
-    ret = self.c_proj(xq.transpose(1, 2).reshape(bsz, seqlen, self.dim))
+    xq = xq.transpose(1, 2)
+    xq = xq.reshape(bsz, seqlen, self.dim)
+    ret = self.c_proj(xq)
     return ret
 
 class FeedForward:
@@ -251,10 +281,7 @@ class TransformerBlock:
 
   def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]):
     if rorys:
-      if x.shape[1] == 1:
-        h = x + self.rory_attn(self.rory_ln_1(x), start_pos, mask).float()
-      else:
-        h = x + self.rory_attn(self.ln_1(x), start_pos, mask).float()
+      h = x + self.rory_attn(self.rory_ln_1(x), start_pos, mask).float()
       return (h + self.rory_mlp(self.rory_ln_2(h)))
     else:
       # 1 13 768 shape doesnt work?? acc crashes after i think
