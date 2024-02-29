@@ -31,14 +31,24 @@ def tg_new_cache(keys,values,xv,xk,start_pos):
 def my_new_cache(keys,values,xv,xk,start_pos):
     keys = keys.numpy()
     values = values.numpy()
-    ret = [keys,values]
+    xv = xv.numpy()
+    xk = xk.numpy()
+    #mess todo later
+    s = list(np.shape(keys))
+    s[1] = 4
+    keys_small = np.zeros(shape=s)
+    values_small = np.zeros(shape=s)
+    keys_small[0] = keys[0][0:4]
+    values_small[0] = values[0][0:4]
+    ret = [keys_small,values_small]
     #terrible loop
     for a in range(len(ret)):
         for b in range(len(ret[0])):
             for c in range(start_pos.unbind()[1]+1,len(ret[0][0])):
                 ret[a][b][c] = np.zeros_like(ret[a][b][c])
         if start_pos.unbind()[1] > -1 and start_pos.unbind()[1] < len(ret[0][0]):
-            ret[a][b][start_pos.unbind()[1]] = np.ones_like(ret[a][b][0])
+            ret[0][b][start_pos.unbind()[1]] = np.full_like(ret[a][b][0],xk[0][0][0][0])
+            ret[1][b][start_pos.unbind()[1]] = np.full_like(ret[a][b][0],xv[0][0][0][0])
     return ret
 
 ######my attempt#######
@@ -64,6 +74,33 @@ for i in range(1,5):
     new_cache = tg_new_cache(keys,values,xv,xk,start_pos)
     my_cache = my_new_cache(keys,values,xv,xk,start_pos)
     np.testing.assert_allclose(new_cache,my_cache)
+
+start_pos = Variable("start_pos",1,4).bind(3)
+keys = Tensor.rand(keys.shape)
+values = Tensor.rand(values.shape)
+new_cache = tg_new_cache(keys,values,xv,xk,start_pos)
+my_cache = my_new_cache(keys,values,xv,xk,start_pos)
+np.testing.assert_allclose(new_cache,my_cache)
+
+start_pos = Variable("start_pos",1,4).bind(3)
+xv = Tensor.ones(1,1,3,2)
+xv = Tensor.full_like(xv,6)
+xk = Tensor.ones(1,1,3,2)
+xk = Tensor.full_like(xk,7)
+keys = Tensor.ones(1,20,3,2)
+values = Tensor.ones(1,20,3,2)
+keys = Tensor.full_like(keys,5)
+values = Tensor.full_like(values,4)
+new_cache = tg_new_cache(keys,values,xv,xk,start_pos)
+my_cache = my_new_cache(keys,values,xv,xk,start_pos)
+#print(np.shape(new_cache))
+print(new_cache,np.shape(new_cache))
+print("MINE =\n")
+print(my_cache,np.shape(new_cache))
+#print(np.shape(my_cache))
+np.testing.assert_allclose(new_cache,my_cache)
+
+#actual shape is (1, 128, 12, 64)
 
 '''
 keys = Tensor.zeros(1,4,3,2)
