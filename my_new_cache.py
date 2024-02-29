@@ -29,7 +29,15 @@ def tg_new_cache(keys,values,xv,xk,start_pos):
     return new_cache.numpy()
 
 def my_new_cache(keys,values,xv,xk,start_pos):
-    return [keys.numpy(),values.numpy()]
+    keys = keys.numpy()
+    values = values.numpy()
+    ret = [keys,values]
+    #terrible loop
+    for a in range(len(ret)):
+        for b in range(len(ret[0])):
+            for c in range(start_pos.unbind()[1]+1,len(ret[0][0])):
+                ret[a][b][c] = np.zeros_like(ret[a][b][c])
+    return ret
 
 ######my attempt#######
 start_pos = Variable("start_pos",1,4).bind(3)
@@ -38,5 +46,22 @@ values = Tensor.ones(1,4,3,2)
 xv = Tensor.ones(1,1,3,2)
 xk = Tensor.ones(1,1,3,2)
 new_cache = tg_new_cache(keys,values,xv,xk,start_pos)
-my_new_cache = my_new_cache(keys,values,xv,xk,start_pos)
-np.testing.assert_allclose(new_cache,my_new_cache)
+my_cache = my_new_cache(keys,values,xv,xk,start_pos)
+np.testing.assert_allclose(new_cache,my_cache)
+
+for i in range(1,5):
+    start_pos = Variable("start_pos",1,4).bind(i)
+    new_cache = tg_new_cache(keys,values,xv,xk,start_pos)
+    my_cache = my_new_cache(keys,values,xv,xk,start_pos)
+    np.testing.assert_allclose(new_cache,my_cache)
+
+'''
+keys = Tensor.zeros(1,4,3,2)
+keys = Tensor.full_like(keys,5)
+start_pos = Variable("start_pos",1,4).bind(2)
+new_cache = tg_new_cache(keys,values,xv,xk,start_pos)
+my_cache = my_new_cache(keys,values,xv,xk,start_pos)
+print("ANSWER = ",new_cache)
+print("MY CACHE =",my_cache)
+np.testing.assert_allclose(new_cache,my_cache)
+'''
