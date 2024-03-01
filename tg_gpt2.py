@@ -182,13 +182,7 @@ class Rory_Attention:
       values_np = values.numpy()
       xv_np = xv.numpy()
       xk_np = xk.numpy()
-      #mess todo later
-      s = list(np.shape(keys))
-      keys_small = np.zeros(shape=s)
-      values_small = np.zeros(shape=s)
-      keys_small[0] = keys_np[0]
-      values_small[0] = values_np[0]
-      ret = [keys_small,values_small]
+      ret = [keys_np,values_np]
       #terrible loop
       for a in range(len(ret)):
           for b in range(len(ret[0])):
@@ -199,13 +193,24 @@ class Rory_Attention:
               ret[1][b][start_pos.unbind()[1]] = xv_np[0][0]
       new_cache = Tensor(ret)
       self.cache_kv.assign(new_cache).realize()
+      #todo below
       keys = keys.shrink((None, (0, start_pos), None, None))
       keys = keys.cat(xk, dim=1)
       values = values.shrink((None, (0, start_pos), None, None)).cat(xv, dim=1)
     else:
       keys = xk
       values = xv
-      new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
+      keys_np = keys.numpy()
+      values_np = values.numpy()
+      s = list(np.shape(keys))
+      s[1] = MAX_CONTEXT
+      new_cache = np.zeros(shape=s)
+      new_cache = [np.copy(new_cache),np.copy(new_cache)]
+      for i in range(len(keys_np[0])):
+        new_cache[0][0][i] = keys_np[0][i]
+        new_cache[1][0][i] = values_np[0][i]       
+      new_cache = Tensor(new_cache)
+      #new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
       self.cache_kv.assign(new_cache).realize()
 
     xq, keys, values = xq.transpose(1, 2), keys.transpose(1, 2), values.transpose(1, 2)
