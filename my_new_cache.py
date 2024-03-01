@@ -51,6 +51,22 @@ def my_new_cache(keys,values,xv,xk,start_pos):
             ret[1][b][start_pos.unbind()[1]] = xv[0][0]
     return ret
 
+def zero_tg_new_cache(keys,values,seqlen,start_pos=0): 
+    ret = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
+    return ret
+
+def zero_my_new_cache(keys,values,seqlen):
+    keys = keys.numpy()
+    values = values.numpy()
+    s = list(np.shape(keys))
+    s[1] = MAX_CONTEXT
+    ret = np.zeros(shape=s)
+    ret = [np.copy(ret),np.copy(ret)]
+    for i in range(len(keys[0])):
+        ret[0][0][i] = keys[0][i]
+        ret[1][0][i] = values[0][i]       
+    return ret
+
 ######my attempt#######
 start_pos = Variable("start_pos",1,4).bind(3)
 keys = Tensor.ones(1,4,3,2)
@@ -92,22 +108,30 @@ values = Tensor.rand(1,18,3,2)
 #values = Tensor.full_like(values,4)
 new_cache = tg_new_cache(keys,values,xv,xk,start_pos)
 my_cache = my_new_cache(keys,values,xv,xk,start_pos)
-#print(np.shape(new_cache))
-print(new_cache,np.shape(new_cache))
-print("MINE =\n")
-print(my_cache,np.shape(new_cache))
-#print(np.shape(my_cache))
 np.testing.assert_allclose(new_cache,my_cache)
 
-#actual shape is (1, 128, 12, 64)
 
-'''
-keys = Tensor.zeros(1,4,3,2)
-keys = Tensor.full_like(keys,5)
-start_pos = Variable("start_pos",1,4).bind(1)
-new_cache = tg_new_cache(keys,values,xv,xk,start_pos)
-my_cache = my_new_cache(keys,values,xv,xk,start_pos)
-print("ANSWER = ",new_cache)
-print("MY CACHE =",my_cache)
-np.testing.assert_allclose(new_cache,my_cache)
-'''
+## for case where start_pos <= 0
+start_pos = 0 #always 0 and type int
+# keys and values shapes are (1, 13, 12, 64) (13 is the length of the prompt)
+# nothing else in the shape of keys, values and new_cache shapes are dependent on the prompt
+# new_values shapes = (2, 1, 128, 12, 64)
+# if this func it is (2, 1, 16, 12, 64)
+
+MAX_CONTEXT=128
+
+seqlen = 13 #length of the prompt !
+keys = Tensor.ones(1,seqlen,3,4)
+values = Tensor.ones(1,seqlen,3,4)
+values = Tensor.full_like(values,2)
+print("shapes k v =",keys.shape,values.shape)
+new_cache = zero_tg_new_cache(keys,values,seqlen,0)
+my_new_cache = zero_my_new_cache(keys,values,seqlen)
+print("new_cache shape =",new_cache.shape)
+print("my_new_cache shape =",np.shape(my_new_cache))
+
+print(new_cache.numpy(),new_cache.shape)
+print("\n\nMINE\n",my_new_cache,np.shape(my_new_cache))
+
+np.testing.assert_allclose(new_cache.numpy(),my_new_cache)
+#print("rory new_cache =",new_cache.numpy())
