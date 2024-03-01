@@ -213,7 +213,11 @@ class Rory_Attention:
       #new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
       self.cache_kv.assign(new_cache).realize()
 
-    xq, keys, values = xq.transpose(1, 2), keys.transpose(1, 2), values.transpose(1, 2)
+    xq = xq.numpy()
+    xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
+    xq = Tensor(xq)
+
+    keys, values = keys.transpose(1, 2), values.transpose(1, 2)
     xq = xq.scaled_dot_product_attention(keys, values, mask)
     xq = xq.transpose(1, 2)
     xq = xq.reshape(bsz, seqlen, self.dim)
