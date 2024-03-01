@@ -42,21 +42,22 @@ def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Opt
   my_mask = np.triu(np.full([x.shape[2],x.shape[2]],-np.inf))
   my_mask = [[my_mask]]
 
-  key = key.numpy()
+  key, value = key.numpy(), value.numpy()
   key = key.transpose((0,1,3,2))
   x = x.numpy()
   qk = np.matmul(x,key)
   qk = qk / math.sqrt(x.shape[-1])
   qk = Tensor(qk)
-  qk = qk+attn_mask #todo just this here!
+  qk = qk+attn_mask #todo just this here
   qk = qk.numpy()
   for a in range(len(qk)):
     for b in range(len(qk[0])):
       for c in range(len(qk[0][0])):
         qk[a][b][c] = np.exp(qk[a][b][c] - np.max(qk[a][b][c]))
         qk[a][b][c] = qk[a][b][c] / qk[a][b][c].sum()
+  qk = np.matmul(qk,value)
   qk = Tensor(qk)
-  return qk @ value
+  return qk
 
 
 #rory can we match linear??
