@@ -217,8 +217,20 @@ class Rory_Attention:
     xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
     xq = Tensor(xq)
 
+    if start_pos == 0:
+      #can't numpy them outside this if!
+      keys, values = keys.numpy(),values.numpy()
+      keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
+      keys, values = Tensor(keys),Tensor(values)
+      xq = xq.scaled_dot_product_attention(keys, values, mask)
+      xq = xq.transpose(1, 2)
+      xq = xq.reshape(bsz, seqlen, self.dim)
+      ret = self.c_proj(xq)
+      return ret
+
     keys, values = keys.transpose(1, 2), values.transpose(1, 2)
     xq = xq.scaled_dot_product_attention(keys, values, mask)
+    #print("xq =",xq.numpy()) #this can be numpied
     xq = xq.transpose(1, 2)
     xq = xq.reshape(bsz, seqlen, self.dim)
     ret = self.c_proj(xq)
