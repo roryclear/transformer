@@ -5,10 +5,11 @@ from typing import Optional, Union, Tuple
 from tqdm import trange
 import numpy as np
 from tinygrad import Tensor, TinyJit, Device
-from tinygrad.helpers import getenv, fetch, colored
+from tinygrad.helpers import getenv, fetch, colored, all_int
 from tinygrad.nn import Embedding, Linear, LayerNorm
 from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.shape.symbolic import Variable
+from tinygrad.dtype import dtypes
 import math
 rorys = True #todo args
 import inspect
@@ -28,6 +29,35 @@ def rory_decode(index):
   for i in index:
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
+
+
+def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Optional[Tensor]=None,
+                                  dropout_p:float=0.0, is_causal:bool=False) -> Tensor:
+  # NOTE: it works if key, value have symbolic shape
+  assert all_int(x.shape), f"does not support symbolic shape {x.shape}"
+  if is_causal: attn_mask = Tensor.ones(x.shape[-2], key.shape[-2], requires_grad=False, device=x.device).tril(0).cast(dtypes.bool)
+  if attn_mask is not None and attn_mask.dtype == dtypes.bool: attn_mask = (attn_mask == 0).where(-float("inf"), 0)
+  
+  #todo something about inf breaks whole program
+  my_mask = np.triu(np.full([x.shape[2],x.shape[2]],-np.inf))
+  my_mask = [[my_mask]]
+
+  key = key.numpy()
+  key = key.transpose((0,1,3,2))
+  x = x.numpy()
+  qk = np.matmul(x,key)
+  qk = qk / math.sqrt(x.shape[-1])
+  qk = Tensor(qk)
+  qk = qk+attn_mask #todo just this here!
+  qk = qk.numpy()
+  for a in range(len(qk)):
+    for b in range(len(qk[0])):
+      for c in range(len(qk[0][0])):
+        qk[a][b][c] = np.exp(qk[a][b][c] - np.max(qk[a][b][c]))
+        qk[a][b][c] = qk[a][b][c] / qk[a][b][c].sum()
+  qk = Tensor(qk)
+  return qk @ value
+
 
 #rory can we match linear??
 #start using numpy?
@@ -222,7 +252,7 @@ class Rory_Attention:
       keys, values = keys.numpy(),values.numpy()
       keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
       keys, values = Tensor(keys),Tensor(values)
-      xq = xq.scaled_dot_product_attention(keys, values, mask)
+      xq = rory_scaled_dot_product_attention(xq,keys,values,mask)
       xq = xq.transpose(1, 2)
       xq = xq.reshape(bsz, seqlen, self.dim)
       ret = self.c_proj(xq)
@@ -235,6 +265,7 @@ class Rory_Attention:
     xq = xq.reshape(bsz, seqlen, self.dim)
     ret = self.c_proj(xq)
     return ret
+  
 
 class FeedForward:
   def __init__(self, dim, hidden_dim):
