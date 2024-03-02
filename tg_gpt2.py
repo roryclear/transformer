@@ -214,24 +214,27 @@ class Rory_Attention:
       new_cache = Tensor(ret)
       self.cache_kv.assign(new_cache).realize()
       
-      #todo below
-      keys = keys.shrink((None, (0, start_pos), None, None))
-      keys = keys.cat(xk, dim=1)
-      values = values.shrink((None, (0, start_pos), None, None)).cat(xv, dim=1)
       xq = xq.numpy()
       xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
       xq = Tensor(xq)
+
+      #todo below 
+      # start pos = start_pos[1-MAX_CONTENT=pos] so [1-128=13] ...[1-128=11]
+      # keys and values both shape (1,128,12,64)
+      # xq shape is (1,128,1,64)
+      keys = keys.shrink((None, (0, start_pos), None, None))
+      keys = keys.cat(xk, dim=1)
+      values = values.shrink((None, (0, start_pos), None, None))
+      values = values.cat(xv, dim=1)
       keys, values = keys.transpose(1, 2), values.transpose(1, 2)
-      
-      #if mask is not None and mask.dtype == dtypes.bool: mask = (mask == 0).where(-float("inf"), 0)
       qk2 = xq @ keys.transpose(-2,-1) / math.sqrt(xq.shape[-1])
-      xq = ((qk2+mask) if mask is not None else qk2).softmax(-1) @ values
+      xq = qk2.softmax(-1) @ values
+      #####
 
-      #print("xq =",xq.numpy()) #this can be numpied, keys, values above cannot be!
-      # where can they be numpied then?
-
-      xq = xq.transpose(1, 2)
-      xq = xq.reshape(bsz, seqlen, self.dim)
+      xq = xq.numpy()
+      xq = xq.transpose((0,2,1,3))
+      xq = xq.reshape((bsz,seqlen,self.dim))
+      xq = Tensor(xq)
       ret = self.c_proj(xq)
       return ret
 
