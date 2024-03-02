@@ -33,13 +33,10 @@ def rory_decode(index):
 
 def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Optional[Tensor]=None,
                                   dropout_p:float=0.0, is_causal:bool=False) -> Tensor:
-  # NOTE: it works if key, value have symbolic shape
-  assert all_int(x.shape), f"does not support symbolic shape {x.shape}"
-  if is_causal: attn_mask = Tensor.ones(x.shape[-2], key.shape[-2], requires_grad=False, device=x.device).tril(0).cast(dtypes.bool)
-  if attn_mask is not None and attn_mask.dtype == dtypes.bool: attn_mask = (attn_mask == 0).where(-float("inf"), 0)
-  
-  #todo something about inf breaks whole program
-  my_mask = np.triu(np.full([x.shape[2],x.shape[2]],-np.inf))
+  my_mask = np.triu(np.full([x.shape[2],x.shape[2]],1)) 
+  my_mask = (my_mask - np.eye(x.shape[2])) * -math.inf
+  my_mask[np.isnan(my_mask)] = 0
+  np.where(np.isnan(my_mask), 0, my_mask) # inf * 0 = nan
   my_mask = [[my_mask]]
 
   key, value = key.numpy(), value.numpy()
@@ -47,9 +44,7 @@ def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Opt
   x = x.numpy()
   qk = np.matmul(x,key)
   qk = qk / math.sqrt(x.shape[-1])
-  qk = Tensor(qk)
-  qk = qk+attn_mask #todo just this here
-  qk = qk.numpy()
+  qk = qk + my_mask
   for a in range(len(qk)):
     for b in range(len(qk[0])):
       for c in range(len(qk[0][0])):
@@ -58,6 +53,15 @@ def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Opt
   qk = np.matmul(qk,value)
   qk = Tensor(qk)
   return qk
+
+def rory_scaled_dot_product_attention_2(x, key:Tensor, value:Tensor, attn_mask:Optional[Tensor]=None,
+                                  dropout_p:float=0.0, is_causal:bool=False) -> Tensor:
+  # NOTE: it works if key, value have symbolic shape
+  assert all_int(x.shape), f"does not support symbolic shape {x.shape}"
+  if is_causal: attn_mask = Tensor.ones(x.shape[-2], key.shape[-2], requires_grad=False, device=x.device).tril(0).cast(dtypes.bool)
+  if attn_mask is not None and attn_mask.dtype == dtypes.bool: attn_mask = (attn_mask == 0).where(-float("inf"), 0)
+  qk = x @ key.transpose(-2,-1) / math.sqrt(x.shape[-1])
+  return ((qk+attn_mask) if attn_mask is not None else qk).softmax(-1).dropout(dropout_p) @ value
 
 
 #rory can we match linear??
@@ -159,7 +163,7 @@ class Attention:
     self.cache_kv.assign(new_cache).realize()
 
     xq, keys, values = xq.transpose(1, 2), keys.transpose(1, 2), values.transpose(1, 2)
-    xq = xq.scaled_dot_product_attention(keys, values, mask)
+    xq = xq.scaled_dot_product_attention(keys,values,mask)
     ret = self.c_proj(xq.transpose(1, 2).reshape(bsz, seqlen, self.dim))
     return ret
 
@@ -260,8 +264,8 @@ class Rory_Attention:
       return ret
 
     keys, values = keys.transpose(1, 2), values.transpose(1, 2)
-    xq = xq.scaled_dot_product_attention(keys, values, mask)
-    #print("xq =",xq.numpy()) #this can be numpied
+    xq = rory_scaled_dot_product_attention_2(xq,keys, values, mask)
+    #print("xq =",xq.numpy()) #this can be numpied, keys, values above cannot be!
     xq = xq.transpose(1, 2)
     xq = xq.reshape(bsz, seqlen, self.dim)
     ret = self.c_proj(xq)
