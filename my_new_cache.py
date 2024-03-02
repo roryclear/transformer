@@ -1,6 +1,7 @@
 from tinygrad import Tensor
 from tinygrad.shape.symbolic import Variable
 import numpy as np
+import math
 
 # can we get new_cache like gpt2.py with np??????
 # makes output larger, but doesn't seem to change existing output?
@@ -124,14 +125,92 @@ seqlen = 13 #length of the prompt !
 keys = Tensor.ones(1,seqlen,3,4)
 values = Tensor.ones(1,seqlen,3,4)
 values = Tensor.full_like(values,2)
-print("shapes k v =",keys.shape,values.shape)
 new_cache = zero_tg_new_cache(keys,values,seqlen,0)
 my_new_cache = zero_my_new_cache(keys,values,seqlen)
-print("new_cache shape =",new_cache.shape)
-print("my_new_cache shape =",np.shape(my_new_cache))
-
-print(new_cache.numpy(),new_cache.shape)
-print("\n\nMINE\n",my_new_cache,np.shape(my_new_cache))
 
 np.testing.assert_allclose(new_cache.numpy(),my_new_cache)
-#print("rory new_cache =",new_cache.numpy())
+
+# start pos = start_pos[1-MAX_CONTENT=pos] so [1-128=13] ...[1-128=111]
+# keys and values both shape (1,128,12,64)
+# xq shape is (1, 1, 12, 64)
+def make_xq(keys,values,xq,xk,xv,start_pos):
+    keys = keys.shrink((None, (0, start_pos), None, None))
+    keys = keys.cat(xk, dim=1)
+    values = values.shrink((None, (0, start_pos), None, None))
+    values = values.cat(xv, dim=1)
+    keys, values = keys.transpose(1, 2), values.transpose(1, 2)
+    qk2 = xq @ keys.transpose(-2,-1) / math.sqrt(xq.shape[-1])
+    xq = qk2.softmax(-1) @ values
+    return xq
+
+def my_make_xq(keys,values,xq,xk,xv,start_pos):
+    xk = xk.numpy()
+    xv = xv.numpy()
+    values = values.numpy()
+    ret = np.zeros((1,np.shape(xk)[2],np.shape(xk)[2],np.shape(xk)[3]))
+    ret = np.array(ret)
+    ret += xv / (start_pos.unbind()[1] + 1)
+    ret = ret.transpose(0,2,1,3)
+    
+    '''passes last test, fails others
+    for a in range(len(ret[0])):
+        for b in range(len(ret[0][a])):
+            for c in range(len(ret[0][a][b])):
+                ret[0][a][b][c] = values[0][a][b][c]*(1-1/(start_pos.unbind()[1] + 1)) 
+    '''
+    print(np.shape(ret),np.shape(values))
+    return ret
+
+
+MAX_CONTEXT = 128
+start_pos = Variable("start_pos",1,MAX_CONTEXT).bind(14)
+xk = Tensor.zeros((1,1,12,64))
+xv = Tensor.zeros((1,1,12,64))
+xq = Tensor.zeros((1,1,12,64))
+keys = Tensor.zeros((1,128,12,64))
+values = Tensor.zeros((1,128,12,64))
+xq_out = make_xq(keys,values,xq,xk,xv,start_pos)
+my_xq_out = my_make_xq(keys,values,xq,xk,xv,start_pos)
+np.testing.assert_allclose(xq_out.numpy(),my_xq_out)
+
+MAX_CONTEXT = 8
+start_pos = Variable("start_pos",1,MAX_CONTEXT).bind(4)
+xk = Tensor.zeros((1,1,4,5))
+xv = Tensor.ones((1,1,4,5))
+xq = Tensor.zeros((1,1,4,5))
+keys = Tensor.zeros((1,MAX_CONTEXT,4,5))
+values = Tensor.zeros((1,MAX_CONTEXT,4,5))
+xq_out = make_xq(keys,values,xq,xk,xv,start_pos)
+my_xq_out = my_make_xq(keys,values,xq,xk,xv,start_pos)
+np.testing.assert_allclose(xq_out.numpy(),my_xq_out)
+
+MAX_CONTEXT = 8
+start_pos = Variable("start_pos",1,MAX_CONTEXT).bind(4)
+xk = Tensor.zeros((1,1,4,5))
+xv = Tensor.rand((1,1,4,5))
+xq = Tensor.zeros((1,1,4,5))
+keys = Tensor.zeros((1,MAX_CONTEXT,4,5))
+values = Tensor.zeros((1,MAX_CONTEXT,4,5))
+xq_out = make_xq(keys,values,xq,xk,xv,start_pos)
+my_xq_out = my_make_xq(keys,values,xq,xk,xv,start_pos)
+np.testing.assert_allclose(xq_out.numpy(),my_xq_out,atol=1e-6)
+'''
+MAX_CONTEXT = 8
+start_pos = Variable("start_pos",1,MAX_CONTEXT).bind(4)
+xk = Tensor.zeros((1,1,4,5))
+#xk = Tensor.full_like(xk,2)
+xv = Tensor.zeros((1,1,4,5))
+xq = Tensor.zeros((1,1,4,5))
+keys = Tensor.zeros((1,MAX_CONTEXT,4,5))
+values = Tensor.zeros((1,MAX_CONTEXT,4,5))
+values = Tensor.full_like(values,2)
+values = values.numpy()
+
+values = Tensor(values)
+xq_out = make_xq(keys,values,xq,xk,xv,start_pos)
+my_xq_out = my_make_xq(keys,values,xq,xk,xv,start_pos)
+print(xq_out.numpy())
+print("\nMINE:\n",my_xq_out)
+print("rory values =",values.numpy())
+np.testing.assert_allclose(xq_out.numpy(),my_xq_out,atol=1e-6)
+'''
