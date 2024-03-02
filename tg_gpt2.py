@@ -204,11 +204,6 @@ class Rory_Attention:
     if not hasattr(self, "cache_kv"):
       self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
       self.cache_kv = Tensor(self.cache_kv)
-    #print("rory cache_kv shape =",self.cache_kv.shape)
-
-    #rory, where does it become un-numpyible????
-    #A: keys.shrink
-    #where does it become numpyible???
 
     if start_pos > 0:
       keys = self.cache_kv[0]
@@ -228,44 +223,45 @@ class Rory_Attention:
               ret[1][b][start_pos.unbind()[1]] = xv_np[0][0]
       new_cache = Tensor(ret)
       self.cache_kv.assign(new_cache).realize()
+      
       #todo below
       keys = keys.shrink((None, (0, start_pos), None, None))
       keys = keys.cat(xk, dim=1)
       values = values.shrink((None, (0, start_pos), None, None)).cat(xv, dim=1)
-    else:
-      keys = xk
-      values = xv
-      keys_np = keys.numpy()
-      values_np = values.numpy()
-      s = list(np.shape(keys))
-      s[1] = MAX_CONTEXT
-      new_cache = np.zeros(shape=s)
-      new_cache = [np.copy(new_cache),np.copy(new_cache)]
-      for i in range(len(keys_np[0])):
-        new_cache[0][0][i] = keys_np[0][i]
-        new_cache[1][0][i] = values_np[0][i]       
-      new_cache = Tensor(new_cache)
-      #new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
-      self.cache_kv.assign(new_cache).realize()
-
-    xq = xq.numpy()
-    xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
-    xq = Tensor(xq)
-
-    if start_pos == 0:
-      #can't numpy them outside this if!
-      keys, values = keys.numpy(),values.numpy()
-      keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
-      keys, values = Tensor(keys),Tensor(values)
-      xq = rory_scaled_dot_product_attention(xq,keys,values,mask)
+      xq = xq.numpy()
+      xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
+      xq = Tensor(xq)
+      keys, values = keys.transpose(1, 2), values.transpose(1, 2)
+      xq = rory_scaled_dot_product_attention_2(xq,keys, values, mask)
+      #print("xq =",xq.numpy()) #this can be numpied, keys, values above cannot be!
+      # where can they be numpied then?
       xq = xq.transpose(1, 2)
       xq = xq.reshape(bsz, seqlen, self.dim)
       ret = self.c_proj(xq)
       return ret
 
-    keys, values = keys.transpose(1, 2), values.transpose(1, 2)
-    xq = rory_scaled_dot_product_attention_2(xq,keys, values, mask)
-    #print("xq =",xq.numpy()) #this can be numpied, keys, values above cannot be!
+    keys = xk
+    values = xv
+    keys_np = keys.numpy()
+    values_np = values.numpy()
+    s = list(np.shape(keys))
+    s[1] = MAX_CONTEXT
+    new_cache = np.zeros(shape=s)
+    new_cache = [np.copy(new_cache),np.copy(new_cache)]
+    for i in range(len(keys_np[0])):
+      new_cache[0][0][i] = keys_np[0][i]
+      new_cache[1][0][i] = values_np[0][i]       
+    new_cache = Tensor(new_cache)
+    #new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
+    self.cache_kv.assign(new_cache).realize()
+    xq = xq.numpy()
+    xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
+    xq = Tensor(xq)
+    #can't numpy them outside this if!
+    keys, values = keys.numpy(),values.numpy()
+    keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
+    keys, values = Tensor(keys),Tensor(values)
+    xq = rory_scaled_dot_product_attention(xq,keys,values,mask)
     xq = xq.transpose(1, 2)
     xq = xq.reshape(bsz, seqlen, self.dim)
     ret = self.c_proj(xq)
