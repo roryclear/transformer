@@ -54,16 +54,6 @@ def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Opt
   qk = Tensor(qk)
   return qk
 
-def rory_scaled_dot_product_attention_2(x, key:Tensor, value:Tensor, attn_mask:Optional[Tensor]=None,
-                                  dropout_p:float=0.0, is_causal:bool=False) -> Tensor:
-  # NOTE: it works if key, value have symbolic shape
-  assert all_int(x.shape), f"does not support symbolic shape {x.shape}"
-  if is_causal: attn_mask = Tensor.ones(x.shape[-2], key.shape[-2], requires_grad=False, device=x.device).tril(0).cast(dtypes.bool)
-  if attn_mask is not None and attn_mask.dtype == dtypes.bool: attn_mask = (attn_mask == 0).where(-float("inf"), 0)
-  qk = x @ key.transpose(-2,-1) / math.sqrt(x.shape[-1])
-  return ((qk+attn_mask) if attn_mask is not None else qk).softmax(-1).dropout(dropout_p) @ value
-
-
 #rory can we match linear??
 #start using numpy?
 class Rory_Linear():
@@ -232,9 +222,14 @@ class Rory_Attention:
       xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
       xq = Tensor(xq)
       keys, values = keys.transpose(1, 2), values.transpose(1, 2)
-      xq = rory_scaled_dot_product_attention_2(xq,keys, values, mask)
+      
+      #if mask is not None and mask.dtype == dtypes.bool: mask = (mask == 0).where(-float("inf"), 0)
+      qk2 = xq @ keys.transpose(-2,-1) / math.sqrt(xq.shape[-1])
+      xq = ((qk2+mask) if mask is not None else qk2).softmax(-1) @ values
+
       #print("xq =",xq.numpy()) #this can be numpied, keys, values above cannot be!
       # where can they be numpied then?
+
       xq = xq.transpose(1, 2)
       xq = xq.reshape(bsz, seqlen, self.dim)
       ret = self.c_proj(xq)
