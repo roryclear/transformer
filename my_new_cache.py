@@ -152,13 +152,10 @@ def my_make_xq(keys,values,xq,xk,xv,start_pos):
     ret += xv / (start_pos.unbind()[1] + 1)
     ret = ret.transpose(0,2,1,3)
     
-    '''passes last test, fails others
     for a in range(len(ret[0])):
         for b in range(len(ret[0][a])):
             for c in range(len(ret[0][a][b])):
-                ret[0][a][b][c] = values[0][a][b][c]*(1-1/(start_pos.unbind()[1] + 1)) 
-    '''
-    print(np.shape(ret),np.shape(values))
+                ret[0][a][b][c] += values[0][a][b][c]*(1-1/(start_pos.unbind()[1] + 1)) 
     return ret
 
 
@@ -194,7 +191,7 @@ values = Tensor.zeros((1,MAX_CONTEXT,4,5))
 xq_out = make_xq(keys,values,xq,xk,xv,start_pos)
 my_xq_out = my_make_xq(keys,values,xq,xk,xv,start_pos)
 np.testing.assert_allclose(xq_out.numpy(),my_xq_out,atol=1e-6)
-'''
+
 MAX_CONTEXT = 8
 start_pos = Variable("start_pos",1,MAX_CONTEXT).bind(4)
 xk = Tensor.zeros((1,1,4,5))
@@ -209,8 +206,4 @@ values = values.numpy()
 values = Tensor(values)
 xq_out = make_xq(keys,values,xq,xk,xv,start_pos)
 my_xq_out = my_make_xq(keys,values,xq,xk,xv,start_pos)
-print(xq_out.numpy())
-print("\nMINE:\n",my_xq_out)
-print("rory values =",values.numpy())
 np.testing.assert_allclose(xq_out.numpy(),my_xq_out,atol=1e-6)
-'''
