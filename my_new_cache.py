@@ -151,11 +151,15 @@ def my_make_xq(keys,values,xq,xk,xv,start_pos):
     ret = np.array(ret)
     ret += xv / (start_pos.unbind()[1] + 1)
     ret = ret.transpose(0,2,1,3)
-    
     for a in range(len(ret[0])):
-        for b in range(len(ret[0][a])):
-            for c in range(len(ret[0][a][b])):
-                ret[0][a][b][c] += values[0][a][b][c]*(1-1/(start_pos.unbind()[1] + 1)) 
+        for b in range(len(ret[0][0])):
+            for c in range(len(ret[0][0][0])):
+                ret[0][a][b][c] += (values[0][0][a][c]*(1-1/(start_pos.unbind()[1] + 1))) / start_pos.unbind()[1]
+                ret[0][a][b][c] += (values[0][1][a][c]*(1-1/(start_pos.unbind()[1] + 1))) / start_pos.unbind()[1]
+                ret[0][a][b][c] += (values[0][2][a][c]*(1-1/(start_pos.unbind()[1] + 1))) / start_pos.unbind()[1]
+                ret[0][a][b][c] += (values[0][3][a][c]*(1-1/(start_pos.unbind()[1] + 1))) / start_pos.unbind()[1]
+                ret[0][a][b][c] += (values[0][4][a][c]*(1-1/(start_pos.unbind()[1] + 1))) / start_pos.unbind()[1]
+#    values[0][0][1][0] = 430
     return ret
 
 
@@ -192,17 +196,36 @@ xq_out = make_xq(keys,values,xq,xk,xv,start_pos)
 my_xq_out = my_make_xq(keys,values,xq,xk,xv,start_pos)
 np.testing.assert_allclose(xq_out.numpy(),my_xq_out,atol=1e-6)
 
+
 MAX_CONTEXT = 8
-start_pos = Variable("start_pos",1,MAX_CONTEXT).bind(4)
+start_pos = Variable("start_pos",1,MAX_CONTEXT).bind(5) #need to divide again??
 xk = Tensor.zeros((1,1,4,5))
-#xk = Tensor.full_like(xk,2)
 xv = Tensor.zeros((1,1,4,5))
 xq = Tensor.zeros((1,1,4,5))
 keys = Tensor.zeros((1,MAX_CONTEXT,4,5))
-values = Tensor.zeros((1,MAX_CONTEXT,4,5))
-values = Tensor.full_like(values,2)
+values = Tensor.rand((1,MAX_CONTEXT,4,5))
+values = Tensor.full_like(values,0)
 values = values.numpy()
 
+values[0][0][0][0] = 420
+values[0][0][0][1] = 210
+values[0][0][0][2] = 840
+values[0][0][0][3] = 1680
+values[0][0][0][4] = 210*10
+values[0][0][1][0] = 430
+values[0][0][1][1] = 10
+values[0][0][1][2] = 19
+values[0][0][1][3] = 430
+values[0][0][1][4] = 111
+
+values = Tensor(values)
+xq_out = make_xq(keys,values,xq,xk,xv,start_pos)
+my_xq_out = my_make_xq(keys,values,xq,xk,xv,start_pos)
+np.testing.assert_allclose(xq_out.numpy(),my_xq_out,atol=1e-6)
+
+values = Tensor.rand((1,MAX_CONTEXT,4,5))
+values = values.numpy()
+print(len(values))      
 values = Tensor(values)
 xq_out = make_xq(keys,values,xq,xk,xv,start_pos)
 my_xq_out = my_make_xq(keys,values,xq,xk,xv,start_pos)
