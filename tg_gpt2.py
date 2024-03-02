@@ -219,12 +219,15 @@ class Rory_Attention:
       xq = Tensor(xq)
 
       #todo below 
-      # start pos = start_pos[1-MAX_CONTENT=pos] so [1-128=13] ...[1-128=11]
+      # start pos = start_pos[1-MAX_CONTENT=pos] so [1-128=13] ...[1-128=111]
       # keys and values both shape (1,128,12,64)
       # xq shape is (1,128,1,64)
-      keys = keys.shrink((None, (0, start_pos), None, None))
+      # xk and xv shape is (1, 1, 12, 64)
+      # .... can numpy below not with start_pos.unbind()[1]
+
+      keys = keys.shrink((None, (0,start_pos.unbind()[1]), None, None))
       keys = keys.cat(xk, dim=1)
-      values = values.shrink((None, (0, start_pos), None, None))
+      values = values.shrink((None, (0,start_pos.unbind()[1]), None, None))
       values = values.cat(xv, dim=1)
       keys, values = keys.transpose(1, 2), values.transpose(1, 2)
       qk2 = xq @ keys.transpose(-2,-1) / math.sqrt(xq.shape[-1])
