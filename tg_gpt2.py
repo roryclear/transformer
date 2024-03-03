@@ -30,32 +30,6 @@ def rory_decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-def rory_multinomial(x:Tensor, num_samples:int = 1, replacement:bool = False) -> Tensor:
-  # was a walrus here but
-  x = x.numpy()
-  x = x.cumsum(1)
-  x = x / x[0][-1]
-  x = [x]
-  x = Tensor(x)
-  #can't get around not using tg here for e2e test?
-  #maybe store the output in a file
-  unif_samples = Tensor.rand(num_samples, x.shape[0], 1, device=x.device)
-  ##
-  x = x.numpy()
-  unif_samples = unif_samples.numpy()
-  b = np.empty_like(x,dtype=bool)
-  for i in range(len(x[0][0])):
-    if unif_samples[0][0][0] >= x[0][0][i]:
-      b[0][0][i] = True
-    else:
-      b[0][0][i] = False
-
-  unif_samples = Tensor(unif_samples)
-  x = Tensor(x)
-  b = b.sum(2)[0]
-  b = Tensor(b)
-  return b
-
 def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Optional[Tensor]=None,
                                   dropout_p:float=0.0, is_causal:bool=False) -> Tensor:
   my_mask = np.triu(np.full([x.shape[2],x.shape[2]],1)) 
@@ -449,9 +423,28 @@ class Transformer:
       logits = np.array(logits) / temperature
       logits[0] = np.exp(logits[0] - np.max(logits[0]))
       logits[0] = logits[0] / logits[0].sum()
+      logits = logits.cumsum(1)
+      logits = logits / logits[0][-1]
+      logits = [logits]
       logits = Tensor(logits)
-      ret = rory_multinomial(logits)
-    return ret.flatten().realize()
+      #can't get around not using tg here for e2e test?
+      #maybe store the output in a file
+      unif_samples = Tensor.rand(1, logits.shape[0], 1, device=logits.device)
+      ##
+      logits = logits.numpy()
+      unif_samples = unif_samples.numpy()
+      b = np.empty_like(logits,dtype=bool)
+      for i in range(len(logits[0][0])):
+        if unif_samples[0][0][0] >= logits[0][0][i]:
+          b[0][0][i] = True
+        else:
+          b[0][0][i] = False
+
+      unif_samples = Tensor(unif_samples)
+      b = b.sum(2)[0]
+      b = Tensor(b)
+      ret = b
+    return ret.realize() #why the realize? what calls this? the h hi loop?
 
   def __call__(self, tokens:Tensor, start_pos:Variable, temperature:float=0.0) -> Tensor:
     forward = (self.forward_jit if (isinstance(tokens, Variable) or tokens.shape[1] == 1) and getenv("JIT") else self.forward)
