@@ -87,7 +87,7 @@ class Rory_LayerNorm:
       x = (x - x.mean()) / np.sqrt(np.mean((x - x.mean())**2) + self.eps)\
       * w + b
       x = [[x]]
-      return Tensor(x)
+      return x
     assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
     #x = x.layernorm(eps=self.eps, axis=self.axis)
     #if not self.elementwise_affine: return x
@@ -96,7 +96,7 @@ class Rory_LayerNorm:
     for i in range(len(x[0])):
       x[0][i] = (x[0][i] - x[0][i].mean()) / np.sqrt(np.mean((x[0][i] - x[0][i].mean())**2) + self.eps)\
       * w + b
-    return Tensor(x)
+    return x
 
 def rory_lm_head():
   return None
@@ -328,8 +328,8 @@ class TransformerBlock:
     self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps)
 
   def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]):
-    h = x + self.rory_attn(self.rory_ln_1(x), start_pos, mask).float()
-    return (h + self.rory_mlp(self.rory_ln_2(h)))
+    h = x + self.rory_attn(Tensor(self.rory_ln_1(x)), start_pos, mask).float()
+    return (h + self.rory_mlp(Tensor(self.rory_ln_2(h))))
 
 class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
@@ -375,7 +375,6 @@ class Transformer:
       h = hi(h, start_pos, mask)
 
     h = self.rory_ln_f(h)
-    h = h.numpy() #todo
     logits = self.rory_lm_head(h)
 
     #if logits.shape[1] == 0:
