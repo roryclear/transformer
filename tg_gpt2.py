@@ -390,25 +390,42 @@ class Transformer:
       seqlen = tokens.shape[1]
       tok_emb = self.wte(tokens) #rorys todo
 
-    pos_emb = self.rory_wpe(self.allpos.shrink((None, (start_pos, start_pos+seqlen))))
+    s = list(self.allpos.shape)
+    s[1] = seqlen
+    self.allpos = self.allpos.numpy()
+    allpos_s = np.empty(s,dtype=np.int32)
+    for i in range(seqlen):
+      allpos_s[0][i] = self.allpos[0][start_pos.unbind()[1] + i]
+    self.allpos = Tensor(self.allpos)
+    allpos_s = Tensor(allpos_s)
+    pos_emb = self.rory_wpe(allpos_s)
     h = tok_emb + pos_emb
 
     mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf"), dtype=h.dtype).triu(start_pos.val+1) if seqlen > 1 else None
 
-    for hi in self.h: h = hi(h, start_pos, mask)
+    #rory - h self.h is the 12 transformer blocks, so this is just forward through all
+    for hi in self.h:
+      h = hi(h, start_pos, mask)
 
-    logits = self.rory_lm_head(self.rory_ln_f(h))
+    h = self.rory_ln_f(h)
+    logits = self.rory_lm_head(h)
 
-    if logits.shape[1] == 0:
+    #if logits.shape[1] == 0:
       # special case for empty prompt
-      logits = Tensor.ones((logits.shape[0], self.vocab_size), dtype=logits.dtype, device=logits.device)
-    else:
-      logits = logits[:, -1, :]
+      #logits = Tensor.ones((logits.shape[0], self.vocab_size), dtype=logits.dtype, device=logits.device)
+
+    logits = logits.numpy()
+    logits = [logits[0][-1]]
 
     if temperature < 1e-6:
       ret = logits.argmax(-1)
+      logits = Tensor(logits)
     else:
-      ret = (logits / temperature).softmax().multinomial()
+      logits = np.array(logits) / temperature
+      logits[0] = np.exp(logits[0] - np.max(logits[0]))
+      logits[0] = logits[0] / logits[0].sum()
+      logits = Tensor(logits)
+      ret = logits.multinomial()
     return ret.flatten().realize()
 
   def __call__(self, tokens:Tensor, start_pos:Variable, temperature:float=0.0) -> Tensor:
@@ -474,6 +491,10 @@ if __name__ == "__main__":
   Tensor.no_grad = True
   print(f"using {Device.DEFAULT} backend")
   default_prompt = "What is the answer to life, the universe, and everything?"
+  #default_prompt = "What happened in 1939?"
+  #should output:
+  #It was a very fateful day.
+  #When the Nazis occupied Poland in 1939....
 
   Tensor.manual_seed(420)
   np.random.seed(420)
