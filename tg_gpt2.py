@@ -32,17 +32,15 @@ def rory_decode(index):
 
 def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Optional[Tensor]=None,
                                   dropout_p:float=0.0, is_causal:bool=False) -> Tensor:
-  my_mask = np.triu(np.full([x.shape[2],x.shape[2]],1)) 
-  my_mask = (my_mask - np.eye(x.shape[2])) * -math.inf
+  key, value, x = key.numpy(), value.numpy(), x.numpy()
+  my_mask = np.triu(np.full([np.shape(x)[2],np.shape(x)[2]],1)) 
+  my_mask = (my_mask - np.eye(np.shape(x)[2])) * -math.inf
   my_mask[np.isnan(my_mask)] = 0
   np.where(np.isnan(my_mask), 0, my_mask) # inf * 0 = nan
   my_mask = [[my_mask]]
-
-  key, value = key.numpy(), value.numpy()
-  key = key.transpose((0,1,3,2))
-  x = x.numpy()
+  key = np.transpose(key,(0,1,3,2))
   qk = np.matmul(x,key)
-  qk = qk / math.sqrt(x.shape[-1])
+  qk = qk / math.sqrt(np.shape(x)[-1])
   qk = qk + my_mask
   for a in range(len(qk)):
     for b in range(len(qk[0])):
@@ -65,13 +63,15 @@ class Rory_Linear():
   def __call__(self,x):
     #rory this is terrible atm obv
     w = self.weight.numpy()
+    if self.bias:
+      b = self.bias.numpy()
     w = w.transpose()
     x = x.numpy()
     x = x[0]
     ret = np.matmul(x,w)
     if self.bias:
       for x in range(ret.shape[0]):
-        ret[x] += self.bias.numpy()
+        ret[x] += b
     ret = [ret]
     ret = Tensor(ret)
     return ret
@@ -83,10 +83,11 @@ class Rory_LayerNorm:
     self.weight, self.bias = (Tensor.ones(*self.normalized_shape), Tensor.zeros(*self.normalized_shape)) if elementwise_affine else (None, None)
 
   def __call__(self, x:Tensor):
-    if x.shape[1] == 1:
-      x = x[0][0].numpy()
+    w,b,x = self.weight.numpy(),self.bias.numpy(),x.numpy()
+    if np.shape(x)[1] == 1:
+      x = x[0][0]
       x = (x - x.mean()) / np.sqrt(np.mean((x - x.mean())**2) + self.eps)\
-      * self.weight.numpy() + self.bias.numpy()
+      * w + b
       x = [[x]]
       return Tensor(x)
     assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
@@ -94,10 +95,9 @@ class Rory_LayerNorm:
     #if not self.elementwise_affine: return x
     #return x * self.weight + self.bias
     #it doesnt work still with actual copy?
-    x = x.numpy()
     for i in range(len(x[0])):
       x[0][i] = (x[0][i] - x[0][i].mean()) / np.sqrt(np.mean((x[0][i] - x[0][i].mean())**2) + self.eps)\
-      * self.weight.numpy() + self.bias.numpy()
+      * w + b
     return Tensor(x)
 
 def rory_lm_head():
@@ -121,40 +121,10 @@ def rory_encode(x):
 
 class Attention:
   def __init__(self, dim, n_heads):
-    self.c_attn = Linear(dim, 3*dim, bias=True)
-    self.c_proj = Linear(dim, dim, bias=True)
-    self.n_heads = n_heads
-    self.dim = dim
-    self.head_dim = dim // n_heads
+    self = self
 
   def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]) -> Tensor:
-    if mask is not None or start_pos.val == 0:
-      # no symbolic shape qkv when consuming prompts
-      start_pos = start_pos.val
-
-    xqkv = self.c_attn(x)
-    xq, xk, xv = [xqkv.shrink((None, None, (i*self.dim, (i+1)*self.dim))).reshape(None, None, self.n_heads, self.head_dim) for i in range(3)]
-    bsz, seqlen, _, _ = xq.shape
-    
-    # create kv cache
-    if not hasattr(self, "cache_kv"):
-      self.cache_kv = Tensor.zeros(2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim, dtype=x.dtype)
-
-    if start_pos > 0:
-      keys = self.cache_kv[0].shrink((None, (0, start_pos), None, None)).cat(xk, dim=1)
-      values = self.cache_kv[1].shrink((None, (0, start_pos), None, None)).cat(xv, dim=1)
-    else:
-      keys = xk
-      values = xv
-
-    # update the cache
-    new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
-    self.cache_kv.assign(new_cache).realize()
-
-    xq, keys, values = xq.transpose(1, 2), keys.transpose(1, 2), values.transpose(1, 2)
-    xq = xq.scaled_dot_product_attention(keys,values,mask)
-    ret = self.c_proj(xq.transpose(1, 2).reshape(bsz, seqlen, self.dim))
-    return ret
+    return None
 
 class Rory_Attention:
   def __init__(self, dim, n_heads):
@@ -170,19 +140,20 @@ class Rory_Attention:
       start_pos = start_pos.val
 
     xqkv = self.c_attn(x)
+    xqkv = xqkv.numpy() #todo return np
 
     # rory this is bad now obv
-    xq = np.zeros(shape=(1,xqkv.shape[1],self.dim))
+    xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
     for i in range(xq.shape[1]):
-      xq[0][i] = xqkv.numpy()[0][i][0:self.dim]
+      xq[0][i] = xqkv[0][i][0:self.dim]
     xq = xq.reshape(1,xq.shape[1],self.n_heads,self.head_dim)
-    xk = np.zeros(shape=(1,xqkv.shape[1],self.dim))
+    xk = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
     for i in range(xk.shape[1]):
-      xk[0][i] = xqkv.numpy()[0][i][self.dim:2*self.dim]
+      xk[0][i] = xqkv[0][i][self.dim:2*self.dim]
     xk = xk.reshape(1,xk.shape[1],self.n_heads,self.head_dim)
-    xv = np.zeros(shape=(1,xqkv.shape[1],self.dim))
+    xv = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
     for i in range(xv.shape[1]):
-      xv[0][i] = xqkv.numpy()[0][i][self.dim*2:3*self.dim]
+      xv[0][i] = xqkv[0][i][self.dim*2:3*self.dim]
     xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
     xv = Tensor(xv) 
     xq = Tensor(xq)
@@ -297,11 +268,7 @@ class Rory_Attention:
 
 class FeedForward:
   def __init__(self, dim, hidden_dim):
-    self.c_fc = Linear(dim, hidden_dim, bias=True)
-    self.c_proj = Linear(hidden_dim, dim, bias=True)
-
-  def __call__(self, x:Tensor) -> Tensor:
-    return self.c_proj(self.c_fc(x).gelu())
+    self = self
 
 class Rory_FeedForward:
   def __init__(self, dim, hidden_dim):
