@@ -30,6 +30,20 @@ def rory_decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
+def rory_multinomial(x:Tensor, num_samples:int = 1, replacement:bool = False) -> Tensor:
+  # was a walrus here but
+  x = x.numpy()
+  x = x.cumsum(1)
+  x = x / x[0][-1]
+  x = [x]
+  x = Tensor(x)
+  #unif_samples = np.random.rand(num_samples,x.shape[0],1)
+  #unif_samples = Tensor(unif_samples)
+  unif_samples = Tensor.rand(num_samples, x.shape[0], 1, device=x.device)
+  unif_samples = unif_samples.expand((-1, -1, x.shape[1]))
+  b = unif_samples >= x
+  indices = (b).sum(2).permute((1, 0))
+  return (indices.squeeze(0) if x.ndim == 1 else indices).cast(dtypes.default_int)
 
 def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Optional[Tensor]=None,
                                   dropout_p:float=0.0, is_causal:bool=False) -> Tensor:
@@ -425,7 +439,7 @@ class Transformer:
       logits[0] = np.exp(logits[0] - np.max(logits[0]))
       logits[0] = logits[0] / logits[0].sum()
       logits = Tensor(logits)
-      ret = logits.multinomial()
+      ret = rory_multinomial(logits)
     return ret.flatten().realize()
 
   def __call__(self, tokens:Tensor, start_pos:Variable, temperature:float=0.0) -> Tensor:
