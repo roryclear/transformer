@@ -225,16 +225,42 @@ class Rory_Attention:
       # xk and xv shape is (1, 1, 12, 64)
       # .... can numpy below not with start_pos.unbind()[1]
 
-      keys = keys.shrink((None, (0,start_pos.unbind()[1]), None, None))
-      keys = keys.cat(xk, dim=1)
-      values = values.shrink((None, (0,start_pos.unbind()[1]), None, None))
-      values = values.cat(xv, dim=1)
-      keys, values = keys.transpose(1, 2), values.transpose(1, 2)
-      qk2 = xq @ keys.transpose(-2,-1) / math.sqrt(xq.shape[-1])
-      xq = qk2.softmax(-1) @ values
-      #####
-
-      xq = xq.numpy()
+      keys = keys.numpy()
+      values = values.numpy()
+      s = list(np.shape(keys))
+      s[1] = start_pos.unbind()[1]
+      keys_small = np.empty(s)
+      values_small = np.empty(s)
+      for i in range(len(keys_small[0])):
+        keys_small[0][i] = keys[0][i]
+        values_small[0][i] = values[0][i]
+      keys = keys_small
+      values = values_small
+      values = Tensor(values)
+      xk = xk.numpy()
+      keys = np.concatenate([keys,xk],axis=1)
+      keys = Tensor(keys)
+      xk = Tensor(xk)
+      values = values.numpy()
+      xv = xv.numpy()
+      values = np.concatenate([values,xv],1)
+      values = Tensor(values)
+      xv = Tensor(xv)
+      keys, values = keys.numpy(), values.numpy()
+      keys, values = keys.transpose(0,2,1,3), values.transpose(0,2,1,3)
+      keys = keys.transpose(0,1,3,2)
+      keys, values = Tensor(keys), Tensor(values)
+      xq, keys = xq.numpy(), keys.numpy()
+      qk2 = np.matmul(xq,keys)
+      xq, keys = Tensor(xq), Tensor(keys)
+      qk2 = qk2 / math.sqrt(xq.shape[-1])
+      for a in range(len(qk2[0])):
+        for b in range(len(qk2[0][a])):
+          qk2[0][a][b] = np.exp(qk2[0][a][b]  - np.max(qk2[0][a][b] ))
+          qk2[0][a][b]  = qk2[0][a][b]  / qk2[0][a][b] .sum()
+      xq = qk2
+      xq = np.matmul(xq,values)
+      
       xq = xq.transpose((0,2,1,3))
       xq = xq.reshape((bsz,seqlen,self.dim))
       xq = Tensor(xq)
@@ -361,7 +387,7 @@ class Transformer:
     if isinstance(tokens, Variable):
       seqlen = 1
       if rorys:
-        tok_emb = tok_emb = self.rory_wte.weight.shrink(((tokens, tokens+1), None))
+        tok_emb = self.rory_wte.weight.shrink(((tokens, tokens+1), None))
       else:
         tok_emb = self.wte.weight.shrink(((tokens, tokens+1), None))
     else:
