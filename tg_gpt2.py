@@ -37,13 +37,24 @@ def rory_multinomial(x:Tensor, num_samples:int = 1, replacement:bool = False) ->
   x = x / x[0][-1]
   x = [x]
   x = Tensor(x)
-  #unif_samples = np.random.rand(num_samples,x.shape[0],1)
-  #unif_samples = Tensor(unif_samples)
+  #can't get around not using tg here for e2e test?
+  #maybe store the output in a file
   unif_samples = Tensor.rand(num_samples, x.shape[0], 1, device=x.device)
-  unif_samples = unif_samples.expand((-1, -1, x.shape[1]))
-  b = unif_samples >= x
-  indices = (b).sum(2).permute((1, 0))
-  return (indices.squeeze(0) if x.ndim == 1 else indices).cast(dtypes.default_int)
+  ##
+  x = x.numpy()
+  unif_samples = unif_samples.numpy()
+  b = np.empty_like(x,dtype=bool)
+  for i in range(len(x[0][0])):
+    if unif_samples[0][0][0] >= x[0][0][i]:
+      b[0][0][i] = True
+    else:
+      b[0][0][i] = False
+
+  unif_samples = Tensor(unif_samples)
+  x = Tensor(x)
+  b = b.sum(2)[0]
+  b = Tensor(b)
+  return b
 
 def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Optional[Tensor]=None,
                                   dropout_p:float=0.0, is_causal:bool=False) -> Tensor:
