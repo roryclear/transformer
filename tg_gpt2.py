@@ -66,14 +66,12 @@ class Rory_Linear():
     if self.bias:
       b = self.bias.numpy()
     w = w.transpose()
-    x = x.numpy()
     x = x[0]
     ret = np.matmul(x,w)
     if self.bias:
       for x in range(ret.shape[0]):
         ret[x] += b
     ret = [ret]
-    ret = Tensor(ret)
     return ret
   
 class Rory_LayerNorm:
@@ -135,12 +133,12 @@ class Rory_Attention:
     self.head_dim = dim // n_heads
 
   def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]) -> Tensor:
+    x = x.numpy()
     if mask is not None or start_pos.val == 0:
       # no symbolic shape qkv when consuming prompts
       start_pos = start_pos.val
 
     xqkv = self.c_attn(x)
-    xqkv = xqkv.numpy() #todo return np
 
     # rory this is bad now obv
     xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
@@ -234,8 +232,8 @@ class Rory_Attention:
       xq = xq.numpy()
       xq = xq.transpose((0,2,1,3))
       xq = xq.reshape((bsz,seqlen,self.dim))
-      xq = Tensor(xq)
       ret = self.c_proj(xq)
+      ret = Tensor(ret)
       return ret
 
     keys = xk
@@ -262,7 +260,9 @@ class Rory_Attention:
     xq = rory_scaled_dot_product_attention(xq,keys,values,mask)
     xq = xq.transpose(1, 2)
     xq = xq.reshape(bsz, seqlen, self.dim)
+    xq = xq.numpy() #todo 
     ret = self.c_proj(xq)
+    ret = Tensor(ret)
     return ret
   
 
@@ -276,13 +276,14 @@ class Rory_FeedForward:
     self.c_proj = Rory_Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x:Tensor) -> Tensor:
-    x = self.c_fc(x)
     x = x.numpy()
-    for i in range(x.shape[1]):
+    x = self.c_fc(x)
+    for i in range(np.shape(x)[1]):
       # gelu() activation
       x[0][i] = 0.5 * x[0][i] * (1 + np.tanh(x[0][i] * 0.7978845608 * (1 + 0.044715 * x[0][i] * x[0][i])))
-    x = Tensor(x)
-    return self.c_proj(x)
+    ret = self.c_proj(x)
+    ret = Tensor(ret)
+    return ret
   
 class Rory_Embedding:
   def __init__(self, vocab_size:int, embed_size:int):
@@ -374,13 +375,12 @@ class Transformer:
       h = hi(h, start_pos, mask)
 
     h = self.rory_ln_f(h)
+    h = h.numpy() #todo
     logits = self.rory_lm_head(h)
 
     #if logits.shape[1] == 0:
       # special case for empty prompt
       #logits = Tensor.ones((logits.shape[0], self.vocab_size), dtype=logits.dtype, device=logits.device)
-
-    logits = logits.numpy()
     logits = [logits[0][-1]]
 
     if temperature < 1e-6:
