@@ -361,13 +361,8 @@ class TransformerBlock:
     self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps)
 
   def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]):
-    if rorys:
-      h = x + self.rory_attn(self.rory_ln_1(x), start_pos, mask).float()
-      return (h + self.rory_mlp(self.rory_ln_2(h)))
-    else:
-      # 1 13 768 shape doesnt work?? acc crashes after i think
-      h = x + self.attn(self.rory_ln_1(x), start_pos, mask).float()
-    return (h + self.mlp(self.ln_2(h)))
+    h = x + self.rory_attn(self.rory_ln_1(x), start_pos, mask).float()
+    return (h + self.rory_mlp(self.rory_ln_2(h)))
 
 class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
@@ -387,28 +382,22 @@ class Transformer:
     if not hasattr(self, 'allpos'): self.allpos = Tensor.arange(0, MAX_CONTEXT).reshape(1, -1).realize()
     if isinstance(tokens, Variable):
       seqlen = 1
-      if rorys:
-        tok_emb = self.rory_wte.weight.shrink(((tokens, tokens+1), None))
-      else:
-        tok_emb = self.wte.weight.shrink(((tokens, tokens+1), None))
+      tok_emb = self.rory_wte.weight
+      tok_emb = tok_emb.numpy()
+      tok_emb = tok_emb[tokens.unbind()[1]] # same as tok_emb.shrink(((tokens, tokens+1), None))
+      tok_emb = Tensor(tok_emb)
     else:
       seqlen = tokens.shape[1]
-      tok_emb = self.wte(tokens)
+      tok_emb = self.wte(tokens) #rorys todo
 
-    if rorys:
-      pos_emb = self.rory_wpe(self.allpos.shrink((None, (start_pos, start_pos+seqlen))))
-    else: 
-      pos_emb = self.wpe(self.allpos.shrink((None, (start_pos, start_pos+seqlen))))
+    pos_emb = self.rory_wpe(self.allpos.shrink((None, (start_pos, start_pos+seqlen))))
     h = tok_emb + pos_emb
 
     mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf"), dtype=h.dtype).triu(start_pos.val+1) if seqlen > 1 else None
 
     for hi in self.h: h = hi(h, start_pos, mask)
 
-    if rorys:
-      logits = self.rory_lm_head(self.rory_ln_f(h))
-    else:
-      logits = self.lm_head(self.ln_f(h))
+    logits = self.rory_lm_head(self.rory_ln_f(h))
 
     if logits.shape[1] == 0:
       # special case for empty prompt
