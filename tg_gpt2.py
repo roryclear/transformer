@@ -249,7 +249,7 @@ class Rory_Attention:
       keys, values = keys.numpy(), values.numpy()
       keys, values = keys.transpose(0,2,1,3), values.transpose(0,2,1,3)
       keys = keys.transpose(0,1,3,2)
-      keys, values = Tensor(keys), Tensor(values)
+      keys = Tensor(keys)
       xq, keys = xq.numpy(), keys.numpy()
       qk2 = np.matmul(xq,keys)
       xq, keys = Tensor(xq), Tensor(keys)
@@ -258,9 +258,10 @@ class Rory_Attention:
         for b in range(len(qk2[0][a])):
           qk2[0][a][b] = np.exp(qk2[0][a][b]  - np.max(qk2[0][a][b] ))
           qk2[0][a][b]  = qk2[0][a][b]  / qk2[0][a][b] .sum()
-      xq = qk2
-      xq = np.matmul(xq,values)
-      
+      qk2 = np.matmul(qk2,values)
+      qk2 = Tensor(qk2) 
+      xq = qk2 
+      xq = xq.numpy()
       xq = xq.transpose((0,2,1,3))
       xq = xq.reshape((bsz,seqlen,self.dim))
       xq = Tensor(xq)
