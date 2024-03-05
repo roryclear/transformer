@@ -30,9 +30,8 @@ def rory_decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Optional[Tensor]=None,
+def rory_scaled_dot_product_attention(x, key, value, attn_mask:Optional[Tensor]=None,
                                   dropout_p:float=0.0, is_causal:bool=False) -> Tensor:
-  key, value, x = key.numpy(), value.numpy(), x.numpy()
   my_mask = np.triu(np.full([np.shape(x)[2],np.shape(x)[2]],1)) 
   my_mask = (my_mask - np.eye(np.shape(x)[2])) * -math.inf
   my_mask[np.isnan(my_mask)] = 0
@@ -208,16 +207,14 @@ class Rory_Attention:
       keys, values = keys.transpose(0,2,1,3), values.transpose(0,2,1,3)
       keys = keys.transpose(0,1,3,2)
       qk2 = np.matmul(xq,keys)
-      keys = Tensor(keys)
+
       qk2 = qk2 / math.sqrt(xq.shape[-1])
       for a in range(len(qk2[0])):
         for b in range(len(qk2[0][a])):
           qk2[0][a][b] = np.exp(qk2[0][a][b]  - np.max(qk2[0][a][b] ))
           qk2[0][a][b]  = qk2[0][a][b]  / qk2[0][a][b] .sum()
       qk2 = np.matmul(qk2,values)
-      qk2 = Tensor(qk2) 
       xq = qk2 
-      xq = xq.numpy()
       xq = xq.transpose((0,2,1,3))
       xq = xq.reshape((bsz,seqlen,self.dim))
       ret = self.c_proj(xq)
@@ -238,14 +235,13 @@ class Rory_Attention:
     #new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
     self.cache_kv.assign(new_cache).realize()
     xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
-    xq = Tensor(xq)
     #can't numpy them outside this if!
     keys = keys.numpy()
     keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
-    keys, values = Tensor(keys),Tensor(values)
     xq = rory_scaled_dot_product_attention(xq,keys,values,mask)
+    xq = xq.transpose((0,2,1,3))
+    #xq = xq.transpose(1, 2)
     xq = Tensor(xq)
-    xq = xq.transpose(1, 2)
     xq = xq.reshape(bsz, seqlen, self.dim)
     xq = xq.numpy() #todo 
     ret = self.c_proj(xq)
