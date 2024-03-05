@@ -48,7 +48,6 @@ def rory_scaled_dot_product_attention(x, key:Tensor, value:Tensor, attn_mask:Opt
         qk[a][b][c] = np.exp(qk[a][b][c] - np.max(qk[a][b][c]))
         qk[a][b][c] = qk[a][b][c] / qk[a][b][c].sum()
   qk = np.matmul(qk,value)
-  qk = Tensor(qk)
   return qk
 
 #rory can we match linear??
@@ -98,9 +97,6 @@ class Rory_LayerNorm:
       * w + b
     return x
 
-def rory_lm_head():
-  return None
-
 def rory_encode(x):
   ret = []
   token = None
@@ -132,8 +128,7 @@ class Rory_Attention:
     self.dim = dim
     self.head_dim = dim // n_heads
 
-  def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]) -> Tensor:
-    x = x.numpy()
+  def __call__(self, x, start_pos:Variable, mask:Optional[Tensor]) -> Tensor:
     if mask is not None or start_pos.val == 0:
       # no symbolic shape qkv when consuming prompts
       start_pos = start_pos.val
@@ -153,8 +148,6 @@ class Rory_Attention:
     for i in range(xv.shape[1]):
       xv[0][i] = xqkv[0][i][self.dim*2:3*self.dim]
     xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
-    xv = Tensor(xv) 
-    xq = Tensor(xq)
     xk = Tensor(xk)
     bsz, seqlen, _, _ = xq.shape
     
@@ -168,7 +161,6 @@ class Rory_Attention:
       values = self.cache_kv[1]
       keys_np = keys.numpy()
       values_np = values.numpy()
-      xv_np = xv.numpy()
       xk_np = xk.numpy()
       ret = [keys_np,values_np]
       #terrible loop
@@ -178,13 +170,12 @@ class Rory_Attention:
                   ret[a][b][c] = np.zeros_like(ret[a][b][c])
           if start_pos.unbind()[1] > -1 and start_pos.unbind()[1] < len(ret[0][0]):
               ret[0][b][start_pos.unbind()[1]] = xk_np[0][0]
-              ret[1][b][start_pos.unbind()[1]] = xv_np[0][0]
+              ret[1][b][start_pos.unbind()[1]] = xv[0][0]
       new_cache = Tensor(ret)
       self.cache_kv.assign(new_cache).realize()
+      new_cache = None #todo not needed?
       
-      xq = xq.numpy()
       xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
-      xq = Tensor(xq)
 
       #todo below 
       # start pos = start_pos[1-MAX_CONTENT=pos] so [1-128=13] ...[1-128=111]
@@ -210,17 +201,14 @@ class Rory_Attention:
       keys = Tensor(keys)
       xk = Tensor(xk)
       values = values.numpy()
-      xv = xv.numpy()
       values = np.concatenate([values,xv],1)
       values = Tensor(values)
       xv = Tensor(xv)
       keys, values = keys.numpy(), values.numpy()
       keys, values = keys.transpose(0,2,1,3), values.transpose(0,2,1,3)
       keys = keys.transpose(0,1,3,2)
-      keys = Tensor(keys)
-      xq, keys = xq.numpy(), keys.numpy()
       qk2 = np.matmul(xq,keys)
-      xq, keys = Tensor(xq), Tensor(keys)
+      keys = Tensor(keys)
       qk2 = qk2 / math.sqrt(xq.shape[-1])
       for a in range(len(qk2[0])):
         for b in range(len(qk2[0][a])):
@@ -233,13 +221,12 @@ class Rory_Attention:
       xq = xq.transpose((0,2,1,3))
       xq = xq.reshape((bsz,seqlen,self.dim))
       ret = self.c_proj(xq)
-      ret = Tensor(ret)
       return ret
 
     keys = xk
     values = xv
     keys_np = keys.numpy()
-    values_np = values.numpy()
+    values_np = values
     s = list(np.shape(keys))
     s[1] = MAX_CONTEXT
     new_cache = np.zeros(shape=s)
@@ -250,19 +237,18 @@ class Rory_Attention:
     new_cache = Tensor(new_cache)
     #new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
     self.cache_kv.assign(new_cache).realize()
-    xq = xq.numpy()
     xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
     xq = Tensor(xq)
     #can't numpy them outside this if!
-    keys, values = keys.numpy(),values.numpy()
+    keys = keys.numpy()
     keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
     keys, values = Tensor(keys),Tensor(values)
     xq = rory_scaled_dot_product_attention(xq,keys,values,mask)
+    xq = Tensor(xq)
     xq = xq.transpose(1, 2)
     xq = xq.reshape(bsz, seqlen, self.dim)
     xq = xq.numpy() #todo 
     ret = self.c_proj(xq)
-    ret = Tensor(ret)
     return ret
   
 
@@ -275,8 +261,7 @@ class Rory_FeedForward:
     self.c_fc = Rory_Linear(dim, hidden_dim, bias=True)
     self.c_proj = Rory_Linear(hidden_dim, dim, bias=True)
 
-  def __call__(self, x:Tensor) -> Tensor:
-    x = x.numpy()
+  def __call__(self, x) -> Tensor:
     x = self.c_fc(x)
     for i in range(np.shape(x)[1]):
       # gelu() activation
@@ -328,8 +313,10 @@ class TransformerBlock:
     self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps)
 
   def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]):
-    h = x + self.rory_attn(Tensor(self.rory_ln_1(x)), start_pos, mask).float()
-    return (h + self.rory_mlp(Tensor(self.rory_ln_2(h))))
+    h = x
+    ln1 = self.rory_ln_1(x)
+    h += Tensor(self.rory_attn(ln1,start_pos,mask))
+    return (h + self.rory_mlp(self.rory_ln_2(h)))
 
 class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
