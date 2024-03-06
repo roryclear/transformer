@@ -335,7 +335,7 @@ class Transformer:
 
   def forward(self, tokens:Union[Tensor,Variable], start_pos:Variable, temperature:float=0.0):
     if not hasattr(self, 'allpos'): 
-      self.allpos = Tensor.arange(0, MAX_CONTEXT).reshape(1, -1).realize()
+      self.allpos = np.arange(0, MAX_CONTEXT).reshape(1, -1)
     if isinstance(tokens, Variable):
       seqlen = 1
       tok_emb = self.rory_wte.weight
@@ -347,9 +347,6 @@ class Transformer:
 
     s = list(np.shape(self.allpos))
     s[1] = seqlen
-    if type(self.allpos) == Tensor: #only one the 1st called
-      print("tensor atm")
-      self.allpos = self.allpos.numpy()
     allpos_s = np.empty(s,dtype=np.int32)
     for i in range(seqlen):
       allpos_s[0][i] = self.allpos[0][start_pos.unbind()[1] + i]
