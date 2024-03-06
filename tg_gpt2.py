@@ -286,14 +286,20 @@ class Rory_Embedding:
 class Rory_Embedding_2: #todo crutch
   def __init__(self, vocab_size:int, embed_size:int):
     self.vocab_size, self.embed_size = vocab_size, embed_size
-    self.weight = Tensor.glorot_uniform(vocab_size, embed_size)
+    self.weight = Tensor.zeros(vocab_size, embed_size)
 
   def __call__(self, idx:Tensor) -> Tensor:
+    w = self.weight.numpy()
+    idx = idx.numpy()
     if not hasattr(self, 'vocab_counter'):
-      self.vocab_counter = Tensor.arange(self.vocab_size, requires_grad=False, device=self.weight.device).reshape(1, 1, self.vocab_size)
-    batch_size, seqlen = idx.shape
-    if seqlen == 0: return Tensor.empty(batch_size, 0, self.embed_size, device=self.weight.device)
-    return (self.vocab_counter == idx.unsqueeze(2)).expand(*idx.shape, self.vocab_size) @ self.weight
+      self.vocab_counter = np.arange(self.vocab_size)
+      self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
+    idx_np = []
+    for i in range(len(idx[0])):
+      idx_np.append([idx[0][i]])
+    idx_np = ([idx_np] == self.vocab_counter)
+    ret = np.matmul(idx_np,w)
+    return Tensor(ret)
 
 
 class TransformerBlock:
