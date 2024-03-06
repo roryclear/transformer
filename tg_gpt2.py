@@ -78,8 +78,8 @@ class Rory_LayerNorm:
     self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
     self.weight, self.bias = (Tensor.ones(*self.normalized_shape), Tensor.zeros(*self.normalized_shape)) if elementwise_affine else (None, None)
 
-  def __call__(self, x:Tensor):
-    w,b,x = self.weight.numpy(),self.bias.numpy(),x.numpy()
+  def __call__(self, x):
+    w,b = self.weight.numpy(),self.bias.numpy()
     if np.shape(x)[1] == 1:
       x = x[0][0]
       x = (x - x.mean()) / np.sqrt(np.mean((x - x.mean())**2) + self.eps)\
@@ -312,10 +312,10 @@ class TransformerBlock:
 
   def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]):
     h = x
-    ln1 = self.rory_ln_1(x)
+    ln1 = self.rory_ln_1(x.numpy())
     attn = self.rory_attn(ln1,start_pos,mask)
     h += Tensor(attn)
-    ln2 = self.rory_ln_2(h)
+    ln2 = self.rory_ln_2(h.numpy())
     mlp = Tensor(self.rory_mlp(ln2))
     return (h + mlp)
 
@@ -347,11 +347,12 @@ class Transformer:
 
     s = list(np.shape(self.allpos))
     s[1] = seqlen
-    self.allpos = self.allpos.numpy()
+    if type(self.allpos) == Tensor: #only one the 1st called
+      print("tensor atm")
+      self.allpos = self.allpos.numpy()
     allpos_s = np.empty(s,dtype=np.int32)
     for i in range(seqlen):
       allpos_s[0][i] = self.allpos[0][start_pos.unbind()[1] + i]
-    self.allpos = Tensor(self.allpos)
     pos_emb = Tensor(self.rory_wpe(allpos_s))
     h = Tensor(tok_emb) + pos_emb
 
@@ -361,7 +362,7 @@ class Transformer:
     for hi in self.h:
       h = hi(h, start_pos, mask)
 
-    h = self.rory_ln_f(h)
+    h = self.rory_ln_f(h.numpy())
     logits = self.rory_lm_head(h)
 
     #if logits.shape[1] == 0:
