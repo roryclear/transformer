@@ -194,16 +194,9 @@ class Rory_Attention:
         values_small[0][i] = values[0][i]
       keys = keys_small
       values = values_small
-      values = Tensor(values)
       xk = xk.numpy()
       keys = np.concatenate([keys,xk],axis=1)
-      keys = Tensor(keys)
-      xk = Tensor(xk)
-      values = values.numpy()
       values = np.concatenate([values,xv],1)
-      values = Tensor(values)
-      xv = Tensor(xv)
-      keys, values = keys.numpy(), values.numpy()
       keys, values = keys.transpose(0,2,1,3), values.transpose(0,2,1,3)
       keys = keys.transpose(0,1,3,2)
       qk2 = np.matmul(xq,keys)
@@ -238,11 +231,12 @@ class Rory_Attention:
     #can't numpy them outside this if!
     keys = keys.numpy()
     keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
+    
     xq = rory_scaled_dot_product_attention(xq,keys,values,mask)
     xq = xq.transpose((0,2,1,3))
     #xq = xq.transpose(1, 2)
     xq = Tensor(xq)
-    xq = xq.reshape(bsz, seqlen, self.dim)
+    xq = xq.reshape(bsz, seqlen, self.dim) #todo !
     xq = xq.numpy() #todo 
     ret = self.c_proj(xq)
     return ret
@@ -311,8 +305,11 @@ class TransformerBlock:
   def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]):
     h = x
     ln1 = self.rory_ln_1(x)
-    h += Tensor(self.rory_attn(ln1,start_pos,mask))
-    return (h + self.rory_mlp(self.rory_ln_2(h)))
+    attn = self.rory_attn(ln1,start_pos,mask)
+    h += Tensor(attn)
+    ln2 = self.rory_ln_2(h)
+    mlp = self.rory_mlp(ln2)
+    return (h + mlp)
 
 class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
