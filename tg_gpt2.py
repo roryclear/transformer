@@ -350,8 +350,8 @@ class Transformer:
     allpos_s = np.empty(s,dtype=np.int32)
     for i in range(seqlen):
       allpos_s[0][i] = self.allpos[0][start_pos.unbind()[1] + i]
-    pos_emb = Tensor(self.rory_wpe(allpos_s))
-    h = Tensor(tok_emb) + pos_emb
+    pos_emb = self.rory_wpe(allpos_s)
+    h = Tensor(tok_emb) + Tensor(pos_emb)
 
     mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf"), dtype=h.dtype).triu(start_pos.val+1) if seqlen > 1 else None
 
@@ -389,9 +389,8 @@ class Transformer:
           b[0][0][i] = False
 
       b = b.sum(2)[0]
-      b = Tensor(b)
       ret = b
-    return ret.realize() #why the realize? what calls this? the h hi loop?
+    return ret #why the realize? what calls this? the h hi loop?
 
   def __call__(self, tokens:Tensor, start_pos:Variable, temperature:float=0.0) -> Tensor:
     forward = (self.forward_jit if (isinstance(tokens, Variable) or tokens.shape[1] == 1) and getenv("JIT") else self.forward)
@@ -445,13 +444,13 @@ class GPT2:
         tokens = Variable("tokens", 0, VOCAB_SIZE).bind(toks[0][start_pos])
       else:
         tokens = Tensor([x[start_pos:] for x in toks])
-      tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature).numpy().tolist()
+      tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature).tolist()
       start_pos = len(toks[0])
       for i,t in enumerate(tok): toks[i].append(t)
     return [rory_decode(x) for x in toks]
 
 # **** main code ****
-
+  
 if __name__ == "__main__":
   Tensor.no_grad = True
   print(f"using {Device.DEFAULT} backend")
