@@ -147,7 +147,6 @@ class Rory_Attention:
     for i in range(xv.shape[1]):
       xv[0][i] = xqkv[0][i][self.dim*2:3*self.dim]
     xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
-    xk = Tensor(xk)
     bsz, seqlen, _, _ = xq.shape
     
     # create kv cache
@@ -160,7 +159,6 @@ class Rory_Attention:
       values = self.cache_kv[1]
       keys_np = keys.numpy()
       values_np = values.numpy()
-      xk_np = xk.numpy()
       ret = [keys_np,values_np]
       #terrible loop
       for a in range(len(ret)):
@@ -168,7 +166,7 @@ class Rory_Attention:
               for c in range(start_pos.unbind()[1]+1,len(ret[0][0])):
                   ret[a][b][c] = np.zeros_like(ret[a][b][c])
           if start_pos.unbind()[1] > -1 and start_pos.unbind()[1] < len(ret[0][0]):
-              ret[0][b][start_pos.unbind()[1]] = xk_np[0][0]
+              ret[0][b][start_pos.unbind()[1]] = xk[0][0]
               ret[1][b][start_pos.unbind()[1]] = xv[0][0]
       new_cache = Tensor(ret)
       self.cache_kv.assign(new_cache).realize()
@@ -194,7 +192,6 @@ class Rory_Attention:
         values_small[0][i] = values[0][i]
       keys = keys_small
       values = values_small
-      xk = xk.numpy()
       keys = np.concatenate([keys,xk],axis=1)
       values = np.concatenate([values,xv],1)
       keys, values = keys.transpose(0,2,1,3), values.transpose(0,2,1,3)
@@ -215,29 +212,24 @@ class Rory_Attention:
 
     keys = xk
     values = xv
-    keys_np = keys.numpy()
     values_np = values
     s = list(np.shape(keys))
     s[1] = MAX_CONTEXT
     new_cache = np.zeros(shape=s)
     new_cache = [np.copy(new_cache),np.copy(new_cache)]
-    for i in range(len(keys_np[0])):
-      new_cache[0][0][i] = keys_np[0][i]
+    for i in range(len(keys[0])):
+      new_cache[0][0][i] = keys[0][i]
       new_cache[1][0][i] = values_np[0][i]       
     new_cache = Tensor(new_cache)
-    #new_cache = Tensor.stack([keys, values]).pad((None, None,(0,MAX_CONTEXT-start_pos-seqlen),None,None)).contiguous()
     self.cache_kv.assign(new_cache).realize()
     xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
     #can't numpy them outside this if!
-    keys = keys.numpy()
     keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
     
     xq = rory_scaled_dot_product_attention(xq,keys,values,mask)
     xq = xq.transpose((0,2,1,3))
     #xq = xq.transpose(1, 2)
-    xq = Tensor(xq)
     xq = xq.reshape(bsz, seqlen, self.dim) #todo !
-    xq = xq.numpy() #todo 
     ret = self.c_proj(xq)
     return ret
   
@@ -290,6 +282,19 @@ class Rory_Embedding:
       b[0][i][i] = True
     ret = np.matmul(b,w)
     return Tensor(ret)
+  
+class Rory_Embedding_2: #todo crutch
+  def __init__(self, vocab_size:int, embed_size:int):
+    self.vocab_size, self.embed_size = vocab_size, embed_size
+    self.weight = Tensor.glorot_uniform(vocab_size, embed_size)
+
+  def __call__(self, idx:Tensor) -> Tensor:
+    if not hasattr(self, 'vocab_counter'):
+      self.vocab_counter = Tensor.arange(self.vocab_size, requires_grad=False, device=self.weight.device).reshape(1, 1, self.vocab_size)
+    batch_size, seqlen = idx.shape
+    if seqlen == 0: return Tensor.empty(batch_size, 0, self.embed_size, device=self.weight.device)
+    return (self.vocab_counter == idx.unsqueeze(2)).expand(*idx.shape, self.vocab_size) @ self.weight
+
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
@@ -315,7 +320,7 @@ class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
     self.vocab_size = vocab_size
     self.wte = Embedding(vocab_size, dim)
-    self.rory_wte = Rory_Embedding(vocab_size,dim)
+    self.rory_wte = Rory_Embedding_2(vocab_size,dim)
     self.wpe = Embedding(max_seq_len, dim)
     self.rory_wpe = Rory_Embedding(max_seq_len,dim)
     self.h = [TransformerBlock(dim, n_heads, norm_eps) for _ in range(n_layers)]
@@ -326,7 +331,8 @@ class Transformer:
     self.forward_jit = TinyJit(self.forward)
 
   def forward(self, tokens:Union[Tensor,Variable], start_pos:Variable, temperature:float=0.0):
-    if not hasattr(self, 'allpos'): self.allpos = Tensor.arange(0, MAX_CONTEXT).reshape(1, -1).realize()
+    if not hasattr(self, 'allpos'): 
+      self.allpos = Tensor.arange(0, MAX_CONTEXT).reshape(1, -1).realize()
     if isinstance(tokens, Variable):
       seqlen = 1
       tok_emb = self.rory_wte.weight
@@ -335,9 +341,9 @@ class Transformer:
       tok_emb = Tensor(tok_emb)
     else:
       seqlen = tokens.shape[1]
-      tok_emb = self.wte(tokens) #rorys todo
+      tok_emb = self.rory_wte(tokens) #rorys todo
 
-    s = list(self.allpos.shape)
+    s = list(np.shape(self.allpos))
     s[1] = seqlen
     self.allpos = self.allpos.numpy()
     allpos_s = np.empty(s,dtype=np.int32)
