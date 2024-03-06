@@ -249,7 +249,6 @@ class Rory_FeedForward:
       # gelu() activation
       x[0][i] = 0.5 * x[0][i] * (1 + np.tanh(x[0][i] * 0.7978845608 * (1 + 0.044715 * x[0][i] * x[0][i])))
     ret = self.c_proj(x)
-    ret = Tensor(ret)
     return ret
   
 class Rory_Embedding:
@@ -260,7 +259,6 @@ class Rory_Embedding:
   def __call__(self, idx:Tensor) -> Tensor:
     if not hasattr(self, 'vocab_counter'):
       self.vocab_counter = [[np.arange(start=0,stop=self.vocab_size)]]
-    idx = idx.numpy()
     batch_size, seqlen = idx.shape
     if seqlen == 0:
       print("rory seq len is 0")
@@ -272,7 +270,6 @@ class Rory_Embedding:
       b[idx] = True
       w = self.weight.numpy()
       ret = [[np.matmul(b,w)]]
-      ret = Tensor(ret)
       return ret
     
     b = np.empty((1,idx.shape[1],self.vocab_size),dtype=bool)
@@ -281,7 +278,7 @@ class Rory_Embedding:
     for i in range(len(b[0])):
       b[0][i][i] = True
     ret = np.matmul(b,w)
-    return Tensor(ret)
+    return ret
   
 class Rory_Embedding_2: #todo crutch
   def __init__(self, vocab_size:int, embed_size:int):
@@ -299,7 +296,7 @@ class Rory_Embedding_2: #todo crutch
       idx_np.append([idx[0][i]])
     idx_np = ([idx_np] == self.vocab_counter)
     ret = np.matmul(idx_np,w)
-    return Tensor(ret)
+    return ret
 
 
 class TransformerBlock:
@@ -319,7 +316,7 @@ class TransformerBlock:
     attn = self.rory_attn(ln1,start_pos,mask)
     h += Tensor(attn)
     ln2 = self.rory_ln_2(h)
-    mlp = self.rory_mlp(ln2)
+    mlp = Tensor(self.rory_mlp(ln2))
     return (h + mlp)
 
 class Transformer:
@@ -347,7 +344,7 @@ class Transformer:
       tok_emb = Tensor(tok_emb)
     else:
       seqlen = tokens.shape[1]
-      tok_emb = self.rory_wte(tokens) #rorys todo
+      tok_emb = Tensor(self.rory_wte(tokens)) #rorys todo
 
     s = list(np.shape(self.allpos))
     s[1] = seqlen
@@ -356,8 +353,7 @@ class Transformer:
     for i in range(seqlen):
       allpos_s[0][i] = self.allpos[0][start_pos.unbind()[1] + i]
     self.allpos = Tensor(self.allpos)
-    allpos_s = Tensor(allpos_s)
-    pos_emb = self.rory_wpe(allpos_s)
+    pos_emb = Tensor(self.rory_wpe(allpos_s))
     h = tok_emb + pos_emb
 
     mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf"), dtype=h.dtype).triu(start_pos.val+1) if seqlen > 1 else None
@@ -376,7 +372,6 @@ class Transformer:
 
     if temperature < 1e-6:
       ret = logits.argmax(-1)
-      logits = Tensor(logits)
     else:
       logits = np.array(logits) / temperature
       logits[0] = np.exp(logits[0] - np.max(logits[0]))
@@ -384,12 +379,10 @@ class Transformer:
       logits = logits.cumsum(1)
       logits = logits / logits[0][-1]
       logits = [logits]
-      logits = Tensor(logits)
       #can't get around not using tg here for e2e test?
       #maybe store the output in a file
-      unif_samples = Tensor.rand(1, logits.shape[0], 1, device=logits.device)
+      unif_samples = Tensor.rand(1, np.shape(logits)[0], 1)
       ##
-      logits = logits.numpy()
       unif_samples = unif_samples.numpy()
       b = np.empty_like(logits,dtype=bool)
       for i in range(len(logits[0][0])):
@@ -398,7 +391,6 @@ class Transformer:
         else:
           b[0][0][i] = False
 
-      unif_samples = Tensor(unif_samples)
       b = b.sum(2)[0]
       b = Tensor(b)
       ret = b
