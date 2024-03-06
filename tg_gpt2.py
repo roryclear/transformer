@@ -341,10 +341,9 @@ class Transformer:
       tok_emb = self.rory_wte.weight
       tok_emb = tok_emb.numpy()
       tok_emb = tok_emb[tokens.unbind()[1]] # same as tok_emb.shrink(((tokens, tokens+1), None))
-      tok_emb = Tensor(tok_emb)
     else:
       seqlen = tokens.shape[1]
-      tok_emb = Tensor(self.rory_wte(tokens)) #rorys todo
+      tok_emb = self.rory_wte(tokens) #rorys todo
 
     s = list(np.shape(self.allpos))
     s[1] = seqlen
@@ -354,7 +353,7 @@ class Transformer:
       allpos_s[0][i] = self.allpos[0][start_pos.unbind()[1] + i]
     self.allpos = Tensor(self.allpos)
     pos_emb = Tensor(self.rory_wpe(allpos_s))
-    h = tok_emb + pos_emb
+    h = Tensor(tok_emb) + pos_emb
 
     mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf"), dtype=h.dtype).triu(start_pos.val+1) if seqlen > 1 else None
 
