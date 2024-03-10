@@ -310,7 +310,20 @@ class TransformerBlock:
     self.ln_2 = LayerNorm(dim, norm_eps) #done
     self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps)
 
-  def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]):
+  def __call__(self, x, start_pos:Variable, mask:Optional[Tensor],np_in=False):
+    if np_in:
+      h = np.copy(x)
+      ln1 = self.rory_ln_1(x)
+      attn = self.rory_attn(ln1,start_pos,mask)
+      h += attn
+      h2 = np.copy(h)
+      ln2 = self.rory_ln_2(h2) 
+      mlp = self.rory_mlp(ln2)
+      #h = Tensor(h)
+      #mlp = Tensor(mlp)
+      ret = mlp + h
+      return ret
+    exit()
     h = x
     ln1 = self.rory_ln_1(x.numpy())
     attn = self.rory_attn(ln1,start_pos,mask)
@@ -357,9 +370,12 @@ class Transformer:
 
     #rory - h self.h is the 12 transformer blocks, so this is just forward through all
     for hi in self.h:
-      h = hi(h, start_pos, mask)
+      if type(h) == Tensor:
+        h = hi(h.numpy(), start_pos, mask,np_in=True)
+      else:
+        h = hi(h, start_pos, mask,np_in=True)
 
-    h = self.rory_ln_f(h.numpy())
+    h = self.rory_ln_f(h)
     logits = self.rory_lm_head(h)
 
     #if logits.shape[1] == 0:
