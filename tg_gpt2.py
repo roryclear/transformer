@@ -174,13 +174,6 @@ class Rory_Attention:
       
       xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
 
-      #todo below 
-      # start pos = start_pos[1-MAX_CONTENT=pos] so [1-128=13] ...[1-128=111]
-      # keys and values both shape (1,128,12,64)
-      # xq shape is (1,128,1,64)
-      # xk and xv shape is (1, 1, 12, 64)
-      # .... can numpy below not with start_pos.unbind()[1]
-
       keys = keys.numpy()
       values = values.numpy()
       s = list(np.shape(keys))
@@ -364,16 +357,13 @@ class Transformer:
     for i in range(seqlen):
       allpos_s[0][i] = self.allpos[0][start_pos.unbind()[1] + i]
     pos_emb = self.rory_wpe(allpos_s)
-    h = Tensor(tok_emb) + Tensor(pos_emb)
+    h = tok_emb + pos_emb
 
-    mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf"), dtype=h.dtype).triu(start_pos.val+1) if seqlen > 1 else None
+    mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf")).triu(start_pos.val+1) if seqlen > 1 else None
 
     #rory - h self.h is the 12 transformer blocks, so this is just forward through all
     for hi in self.h:
-      if type(h) == Tensor:
-        h = hi(h.numpy(), start_pos, mask,np_in=True)
-      else:
-        h = hi(h, start_pos, mask,np_in=True)
+      h = hi(h, start_pos, mask,np_in=True)
 
     h = self.rory_ln_f(h)
     logits = self.rory_lm_head(h)
