@@ -285,9 +285,8 @@ class Rory_Embedding_2: #todo crutch
     self.vocab_size, self.embed_size = vocab_size, embed_size
     self.weight = Tensor.zeros(vocab_size, embed_size)
 
-  def __call__(self, idx:Tensor) -> Tensor:
+  def __call__(self, idx) -> Tensor:
     w = self.weight.numpy()
-    idx = idx.numpy()
     if not hasattr(self, 'vocab_counter'):
       self.vocab_counter = np.arange(self.vocab_size)
       self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
@@ -444,7 +443,8 @@ class GPT2:
       if batch_size == 1 and len(toks[0][start_pos:]) == 1:
         tokens = Variable("tokens", 0, VOCAB_SIZE).bind(toks[0][start_pos])
       else:
-        tokens = Tensor([x[start_pos:] for x in toks])
+        #tokens = Tensor(toks)
+        tokens = np.array(toks)
       tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature).tolist()
       start_pos = len(toks[0])
       for i,t in enumerate(tok): toks[i].append(t)
