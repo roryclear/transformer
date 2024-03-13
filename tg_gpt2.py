@@ -92,7 +92,7 @@ class Rory_LayerNorm:
     #return x * self.weight + self.bias
     #it doesnt work still with actual copy?
     for i in range(len(x[0])):
-      x[0][i] = (x[0][i] - x[0][i].mean()) / np.sqrt(np.mean((x[0][i] - x[0][i].mean())**2) + self.eps)\
+      x[0][i] = (x[0][i] - np.mean(x[0][i])) / np.sqrt(np.mean((x[0][i] - np.mean(x[0][i]))**2) + self.eps)\
       * w + b
     return x
 
@@ -310,20 +310,17 @@ class TransformerBlock:
     self.ln_2 = LayerNorm(dim, norm_eps) #done
     self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps)
 
-  def __call__(self, x, start_pos:Variable, mask:Optional[Tensor],np_in=False):
-    if np_in:
-      h = np.copy(x)
-      ln1 = self.rory_ln_1(x)
-      attn = self.rory_attn(ln1,start_pos,mask)
-      h += attn
-      h2 = np.copy(h)
-      ln2 = self.rory_ln_2(h2) 
-      mlp = self.rory_mlp(ln2)
-      h = Tensor(h)
-      mlp = Tensor(mlp)
-      ret = mlp + h
-      return ret
-
+  def __call__(self, x, start_pos:Variable, mask:Optional[Tensor]):
+    h = np.copy(x)
+    ln1 = self.rory_ln_1(x)
+    attn = self.rory_attn(ln1,start_pos,mask)
+    h += attn
+    h2 = np.copy(h)
+    ln2 = self.rory_ln_2(h2) 
+    mlp = self.rory_mlp(ln2)
+    ret = mlp + h
+    return ret
+    
 class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
     self.vocab_size = vocab_size
@@ -356,15 +353,14 @@ class Transformer:
     for i in range(seqlen):
       allpos_s[0][i] = self.allpos[0][start_pos.unbind()[1] + i]
     pos_emb = self.rory_wpe(allpos_s)
-    h = Tensor(tok_emb) + Tensor(pos_emb)
+    h = tok_emb + pos_emb
 
-    mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf"), dtype=h.dtype).triu(start_pos.val+1) if seqlen > 1 else None
+    mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf")).triu(start_pos.val+1) if seqlen > 1 else None
 
     #rory - h self.h is the 12 transformer blocks, so this is just forward through all
     for hi in self.h:
-      h = hi(h.numpy(), start_pos, mask,np_in=True)
-
-    h = self.rory_ln_f(h.numpy())
+      h = hi(h, start_pos, mask)
+    h = self.rory_ln_f(h)
     logits = self.rory_lm_head(h)
 
     #if logits.shape[1] == 0:
