@@ -168,9 +168,9 @@ class Rory_Attention:
           if start_pos.unbind()[1] > -1 and start_pos.unbind()[1] < len(ret[0][0]):
               ret[0][b][start_pos.unbind()[1]] = xk[0][0]
               ret[1][b][start_pos.unbind()[1]] = xv[0][0]
-      new_cache = Tensor(ret)
+      new_cache = ret
       self.cache_kv.assign(new_cache).realize()
-      new_cache = None #todo not needed?
+      #new_cache = None #todo not needed?
       
       xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
 
@@ -443,7 +443,6 @@ class GPT2:
       if batch_size == 1 and len(toks[0][start_pos:]) == 1:
         tokens = Variable("tokens", 0, VOCAB_SIZE).bind(toks[0][start_pos])
       else:
-        #tokens = Tensor(toks)
         tokens = np.array(toks)
       tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature).tolist()
       start_pos = len(toks[0])
