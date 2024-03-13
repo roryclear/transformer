@@ -152,14 +152,11 @@ class Rory_Attention:
     # create kv cache
     if not hasattr(self, "cache_kv"):
       self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
-      self.cache_kv = Tensor(self.cache_kv)
 
     if start_pos > 0:
       keys = self.cache_kv[0]
       values = self.cache_kv[1]
-      keys_np = keys.numpy()
-      values_np = values.numpy()
-      ret = [keys_np,values_np]
+      ret = [keys,values]
       #terrible loop
       for a in range(len(ret)):
           for b in range(len(ret[0])):
@@ -169,7 +166,7 @@ class Rory_Attention:
               ret[0][b][start_pos.unbind()[1]] = xk[0][0]
               ret[1][b][start_pos.unbind()[1]] = xv[0][0]
       new_cache = ret
-      self.cache_kv.assign(new_cache).realize()
+      self.cache_kv = new_cache
       #new_cache = None #todo not needed?
       
       xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
@@ -181,8 +178,6 @@ class Rory_Attention:
       # xk and xv shape is (1, 1, 12, 64)
       # .... can numpy below not with start_pos.unbind()[1]
 
-      keys = keys.numpy()
-      values = values.numpy()
       s = list(np.shape(keys))
       s[1] = start_pos.unbind()[1]
       keys_small = np.empty(s)
@@ -212,16 +207,14 @@ class Rory_Attention:
 
     keys = xk
     values = xv
-    values_np = values
     s = list(np.shape(keys))
     s[1] = MAX_CONTEXT
     new_cache = np.zeros(shape=s)
     new_cache = [np.copy(new_cache),np.copy(new_cache)]
     for i in range(len(keys[0])):
       new_cache[0][0][i] = keys[0][i]
-      new_cache[1][0][i] = values_np[0][i]       
-    new_cache = Tensor(new_cache)
-    self.cache_kv.assign(new_cache).realize()
+      new_cache[1][0][i] = values[0][i]       
+    self.cache_kv = new_cache
     xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
     #can't numpy them outside this if!
     keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
