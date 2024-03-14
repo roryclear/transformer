@@ -378,8 +378,11 @@ class Transformer:
       ret = b
     return ret #why the realize? what calls this? the h hi loop?
 
-  def __call__(self, tokens:Tensor, start_pos:Variable, temperature:float=0.0) -> Tensor:
-    forward = (self.forward_jit if (isinstance(tokens, Variable) or tokens.shape[1] == 1) and getenv("JIT") else self.forward)
+  def __call__(self, tokens:Tensor, start_pos:Variable, temperature:float=0.0,v_in=False) -> Tensor:
+    if (isinstance(tokens, Variable) or tokens.shape[1] == 1) and getenv("JIT"):
+      forward = self.forward_jit
+    else:
+      forward = self.forward
     return forward(tokens, start_pos, temperature)
 
 VOCAB_SIZE = 50257
@@ -430,10 +433,14 @@ class GPT2:
         tokens = Variable("tokens", 0, VOCAB_SIZE).bind(toks[0][start_pos])
       else:
         tokens = np.array(toks)
-      tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature).tolist()
+      if type(tokens) is Variable:
+        tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature,True).tolist()
+      else:
+        tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature).tolist()
       start_pos = len(toks[0])
       for i,t in enumerate(tok): toks[i].append(t)
-    return [rory_decode(x) for x in toks]
+    ret = [rory_decode(x) for x in toks]
+    return ret
 
 # **** main code ****
   
