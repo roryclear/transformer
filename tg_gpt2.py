@@ -9,7 +9,6 @@ from tinygrad.helpers import getenv, fetch, colored, all_int
 from tinygrad.nn import Embedding, Linear, LayerNorm
 from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.shape.symbolic import Variable
-from tinygrad.dtype import dtypes
 import math
 rorys = True #todo args
 import inspect
@@ -116,7 +115,7 @@ class Attention:
   def __init__(self, dim, n_heads):
     self = self
 
-  def __call__(self, x:Tensor, start_pos:Variable, mask:Optional[Tensor]) -> Tensor:
+  def __call__(self, x:Tensor, mask:Optional[Tensor]) -> Tensor:
     return None
 
 class Rory_Attention:
@@ -131,7 +130,8 @@ class Rory_Attention:
     if mask is not None or start_pos.val == 0:
       # no symbolic shape qkv when consuming prompts
       start_pos = start_pos.val
-
+    else:
+      start_pos = start_pos.unbind()[1]
     xqkv = self.c_attn(x)
 
     # rory this is bad now obv
@@ -160,26 +160,19 @@ class Rory_Attention:
       #terrible loop
       for a in range(len(ret)):
           for b in range(len(ret[0])):
-              for c in range(start_pos.unbind()[1]+1,len(ret[0][0])):
+              for c in range(start_pos+1,len(ret[0][0])):
                   ret[a][b][c] = np.zeros_like(ret[a][b][c])
-          if start_pos.unbind()[1] > -1 and start_pos.unbind()[1] < len(ret[0][0]):
-              ret[0][b][start_pos.unbind()[1]] = xk[0][0]
-              ret[1][b][start_pos.unbind()[1]] = xv[0][0]
+          if start_pos > -1 and start_pos < len(ret[0][0]):
+              ret[0][b][start_pos] = xk[0][0]
+              ret[1][b][start_pos] = xv[0][0]
       new_cache = ret
       self.cache_kv = new_cache
       #new_cache = None #todo not needed?
       
       xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
 
-      #todo below 
-      # start pos = start_pos[1-MAX_CONTENT=pos] so [1-128=13] ...[1-128=111]
-      # keys and values both shape (1,128,12,64)
-      # xq shape is (1,128,1,64)
-      # xk and xv shape is (1, 1, 12, 64)
-      # .... can numpy below not with start_pos.unbind()[1]
-
       s = list(np.shape(keys))
-      s[1] = start_pos.unbind()[1]
+      s[1] = start_pos
       keys_small = np.empty(s)
       values_small = np.empty(s)
       for i in range(len(keys_small[0])):
