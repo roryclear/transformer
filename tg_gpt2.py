@@ -374,8 +374,6 @@ class Transformer:
     return ret #why the realize? what calls this? the h hi loop?
 
   def __call__(self, tokens:Tensor, start_pos:Variable, temperature:float=0.0,v_in=False) -> Tensor:
-    if type(tokens) is Variable:
-      tokens = np.array([[tokens.unbind()[1]]])
     return self.forward(tokens, start_pos, temperature)
 
 VOCAB_SIZE = 50257
@@ -423,13 +421,10 @@ class GPT2:
     start_pos = 0
     for _ in trange(max_length, disable=(timing==True)):
       if batch_size == 1 and len(toks[0][start_pos:]) == 1:
-        tokens = Variable("tokens", 0, VOCAB_SIZE).bind(toks[0][start_pos])
+        tokens = np.array([[toks[0][start_pos]]])
       else:
         tokens = np.array(toks)
-      if type(tokens) is Variable:
-        tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature,True).tolist()
-      else:
-        tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature).tolist()
+      tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature).tolist()
       start_pos = len(toks[0])
       for i,t in enumerate(tok): toks[i].append(t)
     ret = [rory_decode(x) for x in toks]
