@@ -320,7 +320,7 @@ class Transformer:
     self.rory_lm_head = Rory_Linear(dim, vocab_size, bias=False) #fix late
     self.forward_jit = TinyJit(self.forward)
 
-  def forward(self, tokens:Union[Tensor,Variable], start_pos:Variable, temperature:float=0.0):
+  def forward(self, tokens:Union[Tensor,Variable], start_pos:Variable, temperature:float=0.0,v_in=False):
     if not hasattr(self, 'allpos'): 
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1, -1)
     if isinstance(tokens, Variable):
@@ -379,11 +379,7 @@ class Transformer:
     return ret #why the realize? what calls this? the h hi loop?
 
   def __call__(self, tokens:Tensor, start_pos:Variable, temperature:float=0.0,v_in=False) -> Tensor:
-    if (isinstance(tokens, Variable) or tokens.shape[1] == 1) and getenv("JIT"):
-      forward = self.forward_jit
-    else:
-      forward = self.forward
-    return forward(tokens, start_pos, temperature)
+    return self.forward(tokens, start_pos, temperature,v_in)
 
 VOCAB_SIZE = 50257
 class GPT2:
