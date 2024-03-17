@@ -29,8 +29,8 @@ def rory_decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-def rory_scaled_dot_product_attention(x, key, value, attn_mask:Optional[Tensor]=None,
-                                  dropout_p:float=0.0, is_causal:bool=False) -> Tensor:
+def rory_scaled_dot_product_attention(x, key, value, attn_mask=None,
+                                  dropout_p:float=0.0, is_causal:bool=False):
   my_mask = np.triu(np.full([np.shape(x)[2],np.shape(x)[2]],1)) 
   my_mask = (my_mask - np.eye(np.shape(x)[2])) * -math.inf
   my_mask[np.isnan(my_mask)] = 0
@@ -115,7 +115,7 @@ class Attention:
   def __init__(self, dim, n_heads):
     self = self
 
-  def __call__(self, x:Tensor, mask:Optional[Tensor]) -> Tensor:
+  def __call__(self, x, mask):
     return None
 
 class Rory_Attention:
@@ -126,11 +126,8 @@ class Rory_Attention:
     self.dim = dim
     self.head_dim = dim // n_heads
 
-  def __call__(self, x, start_pos:Variable, mask:Optional[Tensor]) -> Tensor:
-    if mask is not None or start_pos.val == 0:
-      # no symbolic shape qkv when consuming prompts
-      start_pos = start_pos.val
-    else:
+  def __call__(self, x, start_pos:Variable, mask):
+    if type(start_pos) is Variable:
       start_pos = start_pos.unbind()[1]
     xqkv = self.c_attn(x)
 
@@ -229,7 +226,7 @@ class Rory_FeedForward:
     self.c_fc = Rory_Linear(dim, hidden_dim, bias=True)
     self.c_proj = Rory_Linear(hidden_dim, dim, bias=True)
 
-  def __call__(self, x) -> Tensor:
+  def __call__(self, x):
     x = self.c_fc(x)
     for i in range(np.shape(x)[1]):
       # gelu() activation
@@ -242,14 +239,13 @@ class Rory_Embedding:
     self.vocab_size, self.embed_size = vocab_size, embed_size
     self.weight = Tensor.zeros(vocab_size, embed_size)
 
-  def __call__(self, idx:Tensor) -> Tensor:
+  def __call__(self, idx):
     if not hasattr(self, 'vocab_counter'):
       self.vocab_counter = [[np.arange(start=0,stop=self.vocab_size)]]
     batch_size, seqlen = idx.shape
     if seqlen == 0:
       print("rory seq len is 0")
       exit() 
-      return Tensor.empty(batch_size, 0, self.embed_size, device=self.weight.device)
 
     if idx.shape[1] == 1:
       b = np.repeat(False,self.vocab_size)
@@ -271,7 +267,7 @@ class Rory_Embedding_2: #todo crutch
     self.vocab_size, self.embed_size = vocab_size, embed_size
     self.weight = Tensor.zeros(vocab_size, embed_size)
 
-  def __call__(self, idx) -> Tensor:
+  def __call__(self, idx):
     w = self.weight.numpy()
     if not hasattr(self, 'vocab_counter'):
       self.vocab_counter = np.arange(self.vocab_size)
@@ -295,7 +291,7 @@ class TransformerBlock:
     self.ln_2 = LayerNorm(dim, norm_eps) #done
     self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps)
 
-  def __call__(self, x, start_pos:Variable, mask:Optional[Tensor]):
+  def __call__(self, x, start_pos:Variable, mask):
     h = np.copy(x)
     ln1 = self.rory_ln_1(x)
     attn = self.rory_attn(ln1,start_pos,mask)
@@ -322,7 +318,7 @@ class Transformer:
 
   def forward(self, tokens, start_pos:Variable, temperature:float=0.0,v_in=False):
     if not hasattr(self, 'allpos'): 
-      self.allpos = np.arange(0, MAX_CONTEXT).reshape(1, -1)
+      self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
     seqlen = tokens.shape[1]
     tok_emb = self.rory_wte(tokens) #rorys todo
@@ -343,9 +339,6 @@ class Transformer:
     h = self.rory_ln_f(h)
     logits = self.rory_lm_head(h)
 
-    #if logits.shape[1] == 0:
-      # special case for empty prompt
-      #logits = Tensor.ones((logits.shape[0], self.vocab_size), dtype=logits.dtype, device=logits.device)
     logits = [logits[0][-1]]
 
     if temperature < 1e-6:
@@ -373,7 +366,7 @@ class Transformer:
       ret = b
     return ret #why the realize? what calls this? the h hi loop?
 
-  def __call__(self, tokens:Tensor, start_pos:Variable, temperature:float=0.0,v_in=False) -> Tensor:
+  def __call__(self, tokens, start_pos:Variable, temperature:float=0.0,v_in=False):
     return self.forward(tokens, start_pos, temperature)
 
 VOCAB_SIZE = 50257
