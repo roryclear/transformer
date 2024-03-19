@@ -235,8 +235,9 @@ class Rory_FeedForward:
   
 class Rory_Embedding:
   def __init__(self, vocab_size:int, embed_size:int):
+    print("rory emedding init")
     self.vocab_size, self.embed_size = vocab_size, embed_size
-    self.weight = Tensor.zeros(vocab_size, embed_size)
+    self.weight = None
 
   def __call__(self, idx):
     if not hasattr(self, 'vocab_counter'):
@@ -244,21 +245,31 @@ class Rory_Embedding:
     batch_size, seqlen = idx.shape
     if seqlen == 0:
       print("rory seq len is 0")
-      exit() 
+      exit()
+
+    if self.weight is None:
+      if os.path.exists("gpt2weights/embedding.txt") == False:
+        print("weights not found")
+        exit()
+      #rory todo, move to init?
+      self.weight = np.zeros([1024,768])
+      f = open("gpt2weights/embedding.txt", 'r')
+      lines = f.readlines()[1:]
+      for y in range(1024):
+        for x in range(768):
+          self.weight[y][x] = lines[y*768 + x].replace("\n","")
 
     if idx.shape[1] == 1:
       b = np.repeat(False,self.vocab_size)
       b[idx] = True
-      w = self.weight.numpy()
-      ret = [[np.matmul(b,w)]]
+      ret = [[np.matmul(b,self.weight)]]
       return ret
     
     b = np.empty((1,idx.shape[1],self.vocab_size),dtype=bool)
     b.fill(False)
-    w = self.weight.numpy()
     for i in range(len(b[0])):
       b[0][i][i] = True
-    ret = np.matmul(b,w)
+    ret = np.matmul(b,self.weight)
     return ret
   
 class Rory_Embedding_2: #todo crutch
