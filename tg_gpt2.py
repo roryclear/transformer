@@ -75,7 +75,7 @@ class Rory_LayerNorm:
   def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True):
     self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else tuple(normalized_shape)
     self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
-    self.weight, self.bias = (Tensor.ones(*self.normalized_shape), Tensor.zeros(*self.normalized_shape)) if elementwise_affine else (None, None)
+    self.weight, self.bias = (Tensor.zeros(*self.normalized_shape), Tensor.zeros(*self.normalized_shape)) if elementwise_affine else (None, None)
 
   def __call__(self, x):
     w,b = self.weight.numpy(),self.bias.numpy()
@@ -331,7 +331,14 @@ class Transformer:
     pos_emb = self.rory_wpe(allpos_s)
     h = tok_emb + pos_emb
 
-    mask = Tensor.full((1, 1, seqlen, start_pos.val+seqlen), float("-inf")).triu(start_pos.val+1) if seqlen > 1 else None
+    if seqlen > 1:
+      mask = np.triu(np.full([seqlen,seqlen],1)) 
+      mask = (mask - np.eye(seqlen)) * -math.inf
+      mask[np.isnan(mask)] = 0
+      np.where(np.isnan(mask), 0, mask) # inf * 0 = nan
+      mask = [[mask]]
+    else:
+      mask = None
 
     #rory - h self.h is the 12 transformer blocks, so this is just forward through all
     for hi in self.h:
@@ -426,7 +433,6 @@ class GPT2:
 # **** main code ****
   
 if __name__ == "__main__":
-  Tensor.no_grad = True
   print(f"using {Device.DEFAULT} backend")
   default_prompt = "What is the answer to life, the universe, and everything?"
   #default_prompt = "What happened in 1939?"
