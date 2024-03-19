@@ -11,7 +11,7 @@ from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.shape.symbolic import Variable
 import math
 rorys = True #todo args
-import inspect
+import os
 
 MAX_CONTEXT = getenv("MAX_CONTEXT", 128)
 
@@ -53,9 +53,8 @@ def rory_scaled_dot_product_attention(x, key, value, attn_mask=None,
 class Rory_Linear():
   def __init__(self, in_features, out_features, bias=True):
     # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
-    self.weight = Tensor.kaiming_uniform(out_features, in_features, a=math.sqrt(5))
-    bound = 1 / math.sqrt(in_features)
-    self.bias = Tensor.uniform(out_features, low=-bound, high=bound) if bias else None
+    self.weight = Tensor.zeros(out_features, in_features)
+    self.bias = Tensor.zeros(out_features) if bias else None
 
   def __call__(self,x):
     #rory this is terrible atm obv
@@ -265,10 +264,24 @@ class Rory_Embedding:
 class Rory_Embedding_2: #todo crutch
   def __init__(self, vocab_size:int, embed_size:int):
     self.vocab_size, self.embed_size = vocab_size, embed_size
-    self.weight = Tensor.zeros(vocab_size, embed_size)
+    self.weight = None
 
   def __call__(self, idx):
-    w = self.weight.numpy()
+    if self.weight is None:
+      #rory todo load in init!
+      if os.path.exists("gpt2weights/embedding2.txt"):
+        self.weight = np.empty([50257,768])
+        print("txt exists loading embedding2")
+        # load it
+        f = open("gpt2weights/embedding2.txt", 'r')
+        lines = f.readlines()[1:]
+        for y in range(50257):
+          for x in range(768):
+            self.weight[y][x] = lines[768*y + x].replace("\n","")
+      else:
+        print("weights missing")
+        exit()
+
     if not hasattr(self, 'vocab_counter'):
       self.vocab_counter = np.arange(self.vocab_size)
       self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
@@ -276,7 +289,7 @@ class Rory_Embedding_2: #todo crutch
     for i in range(len(idx[0])):
       idx_np.append([idx[0][i]])
     idx_np = ([idx_np] == self.vocab_counter)
-    ret = np.matmul(idx_np,w)
+    ret = np.matmul(idx_np,self.weight)
     return ret
 
 
@@ -431,8 +444,12 @@ class GPT2:
     return ret
 
 # **** main code ****
-  
+
 if __name__ == "__main__":
+
+  if os.path.exists("gpt2weights") == False:
+    os.mkdir("gpt2weights")
+
   print(f"using {Device.DEFAULT} backend")
   default_prompt = "What is the answer to life, the universe, and everything?"
   #default_prompt = "What happened in 1939?"
