@@ -58,11 +58,14 @@ class Rory_Linear():
     self.weight = Tensor.zeros(out_features, in_features)
     self.bias = Tensor.zeros(out_features) if bias else None
     self.w = None
+    self.b = None
     self.key = key
 
   def __call__(self,x):
     #rory this is terrible atm obv
     w = self.weight.numpy()
+    if self.bias:
+      b = self.bias.numpy()
     if self.key != "0":
       if os.path.exists("gpt2weights/"+self.key+".txt") == False:
         print("writing file",self.key)
@@ -74,6 +77,38 @@ class Rory_Linear():
         f.close()
     else:
       self.w = self.weight.numpy()
+    
+    if self.bias:
+      if self.key != "0":
+        if os.path.exists("gpt2weights/"+self.key+"_bias.txt") == False:
+          print("writing bias file",self.key,"bias shape =",self.bias.shape)
+          f = open("gpt2weights/"+self.key+"_bias.txt", "w")
+          f.write(str(self.bias.shape)[1:-1]+"\n")
+          if len(self.bias.shape) == 2:
+            for z in range(self.bias.shape[0]):
+              for y in range(self.bias.shape[1]):
+                f.write(str(b[z][y])+"\n")
+          if len(self.bias.shape) == 1:
+            for z in range(self.bias.shape[0]):
+              f.write(str(b[z])+"\n")
+            f.close()
+      else:
+        self.b = self.bias.numpy()
+
+    if self.b is None and self.key != "0" and os.path.exists("gpt2weights/"+self.key+"_bias.txt"):
+      self.b = np.zeros(self.bias.shape)
+      f = open("gpt2weights/"+self.key+"_bias.txt", 'r')
+      print("loading bias for linear",self.key)
+      lines = f.readlines()[1:]
+      if len(self.bias.shape) == 2:
+        for z in range(np.shape(b)[0]):
+          for y in range(np.shape(b)[1]):
+            self.b[z][y] = float(lines[z*np.shape(b)[1] + y].replace("\n",""))
+      if len(self.bias.shape) == 1:
+        for z in range(np.shape(b)[0]):
+          self.b[z] = float(lines[z].replace("\n",""))
+      f.close()
+      
 
     if self.key != "0" and self.w is None:
       self.w = np.zeros(self.weight.shape) 
@@ -86,14 +121,12 @@ class Rory_Linear():
           self.w[z][y] = float(lines[z*np.shape(w)[1] + y].replace("\n",""))
       f.close()
     w = np.copy(self.w)
-    if self.bias:
-      b = self.bias.numpy()
     w = w.transpose()
     x = x[0]
     ret = np.matmul(x,w)
     if self.bias:
       for x in range(ret.shape[0]):
-        ret[x] += b
+        ret[x] += self.b
     ret = [ret]
     return ret
   
@@ -272,7 +305,8 @@ class FeedForward:
     self = self
 
 class Rory_FeedForward:
-  def __init__(self, dim, hidden_dim):
+  def __init__(self, dim, hidden_dim,key="0"):
+    print("rory feedforward init key =",key)
     self.c_fc = Rory_Linear(dim, hidden_dim, bias=True)
     self.c_proj = Rory_Linear(hidden_dim, dim, bias=True)
 
