@@ -71,13 +71,40 @@ class Rory_Linear():
     return ret
   
 class Rory_LayerNorm:
-  def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True):
+  def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True,key="0"):
+    print("rory init layernorm",key)
     self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else tuple(normalized_shape)
     self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
-    self.weight, self.bias = (Tensor.zeros(*self.normalized_shape), Tensor.zeros(*self.normalized_shape)) if elementwise_affine else (None, None)
+    self.weight = Tensor.zeros(*self.normalized_shape)
+    self.bias = Tensor.zeros(*self.normalized_shape)
+    self.key = key
+    if self.key == "3":
+      self.weight = None
 
   def __call__(self, x):
-    w,b = self.weight.numpy(),self.bias.numpy()
+    b = self.bias.numpy()
+    if self.key == "3" and self.weight is None:
+      w = np.zeros(self.normalized_shape)
+      print("loading weights")
+      print(b.shape)
+      '''
+      if os.path.exists("gpt2weights/layernorm3.txt") == False:
+        f = open("gpt2weights/layernorm3.txt", "w")
+        f.write(str(self.normalized_shape)+"\n")
+        for i in range(len(w)):
+          f.write(str(w[i])+"\n")
+        f.close()
+      '''
+      f = open("gpt2weights/layernorm"+str(self.key)+".txt", 'r')
+      lines = f.readlines()[1:]
+      for i in range(len(lines)):
+        w[i] = lines[i]
+      self.weight = w
+    else:
+        if type(self.weight) == Tensor:
+          w = self.weight.numpy()
+        else:
+          w = self.weight
     if np.shape(x)[1] == 1:
       x = x[0][0]
       x = (x - x.mean()) / np.sqrt(np.mean((x - x.mean())**2) + self.eps)\
@@ -305,15 +332,15 @@ class Rory_Embedding_2: #todo crutch
 
 
 class TransformerBlock:
-  def __init__(self, dim, n_heads, norm_eps):
+  def __init__(self, dim, n_heads, norm_eps,key="0"):
     self.attn = Attention(dim, n_heads)
     self.rory_attn = Rory_Attention(dim,n_heads)
     self.mlp = FeedForward(dim, 4*dim)
     self.rory_mlp = Rory_FeedForward(dim, 4*dim)
     self.ln_1 = LayerNorm(dim, norm_eps) #partly done
-    self.rory_ln_1 = Rory_LayerNorm(dim,norm_eps)
+    self.rory_ln_1 = Rory_LayerNorm(dim,norm_eps,key="0_"+key)
     self.ln_2 = LayerNorm(dim, norm_eps) #done
-    self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps)
+    self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps,key="1_"+key)
 
   def __call__(self, x, start_pos:Variable, mask):
     h = np.copy(x)
@@ -333,9 +360,9 @@ class Transformer:
     self.rory_wte = Rory_Embedding_2(vocab_size,dim)
     self.wpe = Embedding(max_seq_len, dim)
     self.rory_wpe = Rory_Embedding(max_seq_len,dim)
-    self.h = [TransformerBlock(dim, n_heads, norm_eps) for _ in range(n_layers)]
+    self.h = [TransformerBlock(dim, n_heads, norm_eps,key=str(i)) for i in range(n_layers)]
     self.ln_f = LayerNorm(dim, norm_eps)
-    self.rory_ln_f = Rory_LayerNorm(dim,norm_eps)
+    self.rory_ln_f = Rory_LayerNorm(dim,norm_eps,key="3")
     self.lm_head = Linear(dim, vocab_size, bias=False)
     self.rory_lm_head = Rory_Linear(dim, vocab_size, bias=False) #fix late
     self.forward_jit = TinyJit(self.forward)
