@@ -75,40 +75,34 @@ class Rory_LayerNorm:
     print("rory init layernorm",key)
     self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else tuple(normalized_shape)
     self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
-    self.weight = Tensor.zeros(*self.normalized_shape)
     self.bias = Tensor.zeros(*self.normalized_shape)
     self.key = key
-    if self.key == "3":
-      self.weight = None
+    self.weight = None
 
   def __call__(self, x):
-    b = self.bias.numpy()
-    if self.key == "3" and self.weight is None:
-      w = np.zeros(self.normalized_shape)
-      print("loading weights")
-      print(b.shape)
-      '''
-      if os.path.exists("gpt2weights/layernorm3.txt") == False:
-        f = open("gpt2weights/layernorm3.txt", "w")
-        f.write(str(self.normalized_shape)+"\n")
+    b = self.bias.numpy() #shape = (768),same
+    if self.weight is None:
+      self.weight = np.zeros(self.normalized_shape)
+      ''''''
+      if os.path.exists("gpt2weights/layernorm"+str(self.key)+".txt") == False:
+        '''
+        f = open("gpt2weights/layernorm"+str(self.key)+".txt", "w")
+        f.write(str(self.normalized_shape[0])+"\n")
+        print("rory writing weights to a file for",self.key)
         for i in range(len(w)):
           f.write(str(w[i])+"\n")
         f.close()
-      '''
+        '''
+        print("weights missing")
+        exit()
       f = open("gpt2weights/layernorm"+str(self.key)+".txt", 'r')
       lines = f.readlines()[1:]
       for i in range(len(lines)):
-        w[i] = lines[i]
-      self.weight = w
-    else:
-        if type(self.weight) == Tensor:
-          w = self.weight.numpy()
-        else:
-          w = self.weight
+        self.weight[i] = lines[i]
     if np.shape(x)[1] == 1:
       x = x[0][0]
       x = (x - x.mean()) / np.sqrt(np.mean((x - x.mean())**2) + self.eps)\
-      * w + b
+      * self.weight + b
       x = [[x]]
       return x
     assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
@@ -118,7 +112,7 @@ class Rory_LayerNorm:
     #it doesnt work still with actual copy?
     for i in range(len(x[0])):
       x[0][i] = (x[0][i] - np.mean(x[0][i])) / np.sqrt(np.mean((x[0][i] - np.mean(x[0][i]))**2) + self.eps)\
-      * w + b
+      * self.weight + b
     return x
 
 def rory_encode(x):
