@@ -67,46 +67,18 @@ class Rory_Linear():
     if self.bias:
       b = self.bias.numpy()
     if self.key != "0":
-      if os.path.exists("gpt2weights/"+self.key+".txt") == False:
-        print("writing file",self.key)
-        f = open("gpt2weights/"+self.key+".txt", "w")
-        f.write(str(self.weight.shape[0])+","+str(self.weight.shape[1])+"\n")
-        for z in range(self.weight.shape[0]):
-          for y in range(self.weight.shape[1]):
-            f.write(str(w[z][y])+"\n")
-        f.close()
-    else:
       self.w = self.weight.numpy()
     
-    if self.bias:
-      if self.key != "0":
-        if os.path.exists("gpt2weights/"+self.key+"_bias.txt") == False:
-          print("writing bias file",self.key,"bias shape =",self.bias.shape)
-          f = open("gpt2weights/"+self.key+"_bias.txt", "w")
-          f.write(str(self.bias.shape)[1:-1]+"\n")
-          if len(self.bias.shape) == 2:
-            for z in range(self.bias.shape[0]):
-              for y in range(self.bias.shape[1]):
-                f.write(str(b[z][y])+"\n")
-          if len(self.bias.shape) == 1:
-            for z in range(self.bias.shape[0]):
-              f.write(str(b[z])+"\n")
-            f.close()
-      else:
-        self.b = self.bias.numpy()
+    if self.bias and self.key != "0":
+      self.b = self.bias.numpy()
 
     if self.b is None and self.key != "0" and os.path.exists("gpt2weights/"+self.key+"_bias.txt"):
       self.b = np.zeros(self.bias.shape)
       f = open("gpt2weights/"+self.key+"_bias.txt", 'r')
       print("loading bias for linear",self.key)
       lines = f.readlines()[1:]
-      if len(self.bias.shape) == 2:
-        for z in range(np.shape(b)[0]):
-          for y in range(np.shape(b)[1]):
-            self.b[z][y] = float(lines[z*np.shape(b)[1] + y].replace("\n",""))
-      if len(self.bias.shape) == 1:
-        for z in range(np.shape(b)[0]):
-          self.b[z] = float(lines[z].replace("\n",""))
+      for z in range(np.shape(b)[0]):
+        self.b[z] = float(lines[z].replace("\n",""))
       f.close()
       
 
@@ -423,7 +395,7 @@ class Transformer:
     self.ln_f = LayerNorm(dim, norm_eps)
     self.rory_ln_f = Rory_LayerNorm(dim,norm_eps,key="3")
     self.lm_head = Linear(dim, vocab_size, bias=False)
-    self.rory_lm_head = Rory_Linear(dim, vocab_size, bias=False) #fix late
+    self.rory_lm_head = Rory_Linear(dim, vocab_size, bias=False,key="transformer_linear")
     self.forward_jit = TinyJit(self.forward)
 
   def forward(self, tokens, start_pos:Variable, temperature:float=0.0,v_in=False):
