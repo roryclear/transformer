@@ -51,14 +51,41 @@ def rory_scaled_dot_product_attention(x, key, value, attn_mask=None,
 #rory can we match linear??
 #start using numpy?
 class Rory_Linear():
-  def __init__(self, in_features, out_features, bias=True):
+  def __init__(self, in_features, out_features, bias=True,key="0"):
+    if key != "0":
+      print("rory linear init",key)
     # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
     self.weight = Tensor.zeros(out_features, in_features)
     self.bias = Tensor.zeros(out_features) if bias else None
+    self.w = None
+    self.key = key
 
   def __call__(self,x):
     #rory this is terrible atm obv
     w = self.weight.numpy()
+    if self.key != "0":
+      if os.path.exists("gpt2weights/"+self.key+".txt") == False:
+        print("writing file",self.key)
+        f = open("gpt2weights/"+self.key+".txt", "w")
+        f.write(str(self.weight.shape[0])+","+str(self.weight.shape[1])+"\n")
+        for z in range(self.weight.shape[0]):
+          for y in range(self.weight.shape[1]):
+            f.write(str(w[z][y])+"\n")
+        f.close()
+    else:
+      self.w = self.weight.numpy()
+
+    if self.key != "0" and self.w is None:
+      self.w = np.zeros(self.weight.shape) 
+      f = open("gpt2weights/"+self.key+".txt", 'r')
+      print("loading weights for linear",self.key)
+      lines = f.readlines()[1:]
+      print("rory shape is",np.shape(w))
+      for z in range(np.shape(w)[0]):
+        for y in range(np.shape(w)[1]):
+          self.w[z][y] = float(lines[z*np.shape(w)[1] + y].replace("\n",""))
+      f.close()
+    w = np.copy(self.w)
     if self.bias:
       b = self.bias.numpy()
     w = w.transpose()
@@ -72,7 +99,6 @@ class Rory_Linear():
   
 class Rory_LayerNorm:
   def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True,key="0"):
-    print("rory init layernorm",key)
     self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else tuple(normalized_shape)
     self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
     self.bias = None
@@ -142,9 +168,10 @@ class Attention:
     return None
 
 class Rory_Attention:
-  def __init__(self, dim, n_heads):
-    self.c_attn = Rory_Linear(dim, 3*dim, bias=True)
-    self.c_proj = Rory_Linear(dim, dim, bias=True)
+  def __init__(self, dim, n_heads,key="0"):
+    self.key = key
+    self.c_attn = Rory_Linear(dim, 3*dim, bias=True,key="at_0_"+self.key)
+    self.c_proj = Rory_Linear(dim, dim, bias=True,key="at_1_"+self.key)
     self.n_heads = n_heads
     self.dim = dim
     self.head_dim = dim // n_heads
@@ -331,7 +358,7 @@ class Rory_Embedding_2: #todo crutch
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps,key="0"):
     self.attn = Attention(dim, n_heads)
-    self.rory_attn = Rory_Attention(dim,n_heads)
+    self.rory_attn = Rory_Attention(dim,n_heads,key=key)
     self.mlp = FeedForward(dim, 4*dim)
     self.rory_mlp = Rory_FeedForward(dim, 4*dim)
     self.ln_1 = LayerNorm(dim, norm_eps) #partly done
