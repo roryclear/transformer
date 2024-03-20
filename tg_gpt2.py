@@ -56,32 +56,25 @@ class Rory_Linear():
       print("rory linear init",key)
     # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
     self.weight = Tensor.zeros(out_features, in_features)
-    self.bias = Tensor.zeros(out_features) if bias else None
-    self.w = None
-    self.b = None
+    print("rory weight shape =",self.weight.shape,in_features,out_features)
     self.key = key
+    self.bias = None
+    if os.path.exists("gpt2weights/"+self.key+"_bias.txt"):
+      self.bias = np.zeros(out_features)
+      f = open("gpt2weights/"+self.key+"_bias.txt", 'r')
+      print("loading bias for linear",self.key)
+      lines = f.readlines()[1:]
+      for z in range(np.shape(self.bias)[0]):
+        self.bias[z] = float(lines[z].replace("\n",""))
+      f.close()
+    self.w = None
 
   def __call__(self,x):
     #rory this is terrible atm obv
     w = self.weight.numpy()
-    if self.bias:
-      b = self.bias.numpy()
     if self.key != "0":
       self.w = self.weight.numpy()
     
-    if self.bias and self.key != "0":
-      self.b = self.bias.numpy()
-
-    if self.b is None and self.key != "0" and os.path.exists("gpt2weights/"+self.key+"_bias.txt"):
-      self.b = np.zeros(self.bias.shape)
-      f = open("gpt2weights/"+self.key+"_bias.txt", 'r')
-      print("loading bias for linear",self.key)
-      lines = f.readlines()[1:]
-      for z in range(np.shape(b)[0]):
-        self.b[z] = float(lines[z].replace("\n",""))
-      f.close()
-      
-
     if self.key != "0" and self.w is None:
       self.w = np.zeros(self.weight.shape) 
       f = open("gpt2weights/"+self.key+".txt", 'r')
@@ -96,9 +89,9 @@ class Rory_Linear():
     w = w.transpose()
     x = x[0]
     ret = np.matmul(x,w)
-    if self.bias:
+    if self.bias is not None:
       for x in range(ret.shape[0]):
-        ret[x] += self.b
+        ret[x] += self.bias
     ret = [ret]
     return ret
   
