@@ -307,8 +307,9 @@ class FeedForward:
 class Rory_FeedForward:
   def __init__(self, dim, hidden_dim,key="0"):
     print("rory feedforward init key =",key)
-    self.c_fc = Rory_Linear(dim, hidden_dim, bias=True)
-    self.c_proj = Rory_Linear(hidden_dim, dim, bias=True)
+    self.key = key
+    self.c_fc = Rory_Linear(dim, hidden_dim, bias=True,key="ff_0_"+self.key)
+    self.c_proj = Rory_Linear(hidden_dim, dim, bias=True,key="ff_1_"+self.key)
 
   def __call__(self, x):
     x = self.c_fc(x)
@@ -394,7 +395,7 @@ class TransformerBlock:
     self.attn = Attention(dim, n_heads)
     self.rory_attn = Rory_Attention(dim,n_heads,key=key)
     self.mlp = FeedForward(dim, 4*dim)
-    self.rory_mlp = Rory_FeedForward(dim, 4*dim)
+    self.rory_mlp = Rory_FeedForward(dim, 4*dim,key=key)
     self.ln_1 = LayerNorm(dim, norm_eps) #partly done
     self.rory_ln_1 = Rory_LayerNorm(dim,norm_eps,key="0_"+key)
     self.ln_2 = LayerNorm(dim, norm_eps) #done
