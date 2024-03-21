@@ -273,10 +273,6 @@ class Embedding:
   def __call__(self, idx):
     if not hasattr(self, 'vocab_counter'):
       self.vocab_counter = [[np.arange(start=0,stop=self.vocab_size)]]
-    batch_size, seqlen = idx.shape
-    if seqlen == 0:
-      print("rory seq len is 0")
-      exit()
 
     if idx.shape[1] == 1:
       b = np.repeat(False,self.vocab_size)
