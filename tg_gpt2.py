@@ -9,7 +9,7 @@ import os
 
 MAX_CONTEXT = 128
 
-tokens = open('tokens.txt', 'r').readlines()
+tokens = open('tokens.txt','r',encoding="utf-8").readlines()
 token_dict = dict()
 max_token_length = -1
 for i in range(len(tokens)): 
