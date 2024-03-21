@@ -5,9 +5,8 @@ from typing import Union, Tuple
 from tqdm import trange
 import numpy as np
 from tinygrad import TinyJit, Device
-from tinygrad.helpers import getenv, fetch, colored, all_int
+from tinygrad.helpers import getenv, fetch, colored
 from tinygrad.nn.state import torch_load, load_state_dict
-from tinygrad.shape.symbolic import Variable
 import math
 import os
 
@@ -164,9 +163,7 @@ class Rory_Attention:
     self.dim = dim
     self.head_dim = dim // n_heads
 
-  def __call__(self, x, start_pos:Variable, mask):
-    if type(start_pos) is Variable:
-      start_pos = start_pos.unbind()[1]
+  def __call__(self, x, start_pos, mask):
     xqkv = self.c_attn(x)
 
     # rory this is bad now obv
@@ -348,7 +345,7 @@ class TransformerBlock:
     self.rory_ln_1 = Rory_LayerNorm(dim,norm_eps,key="0_"+key)
     self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps,key="1_"+key)
 
-  def __call__(self, x, start_pos:Variable, mask):
+  def __call__(self, x, start_pos, mask):
     h = np.copy(x)
     ln1 = self.rory_ln_1(x)
     attn = self.rory_attn(ln1,start_pos,mask)
@@ -369,7 +366,7 @@ class Transformer:
     self.rory_lm_head = Rory_Linear(dim, vocab_size, bias=False,key="transformer_linear")
     self.forward_jit = TinyJit(self.forward)
 
-  def forward(self, tokens, start_pos:Variable, temperature:float=0.0,v_in=False):
+  def forward(self, tokens, start_pos, temperature:float=0.0,v_in=False):
     if not hasattr(self, 'allpos'): 
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
@@ -380,7 +377,7 @@ class Transformer:
     s[1] = seqlen
     allpos_s = np.empty(s,dtype=np.int32)
     for i in range(seqlen):
-      allpos_s[0][i] = self.allpos[0][start_pos.unbind()[1] + i]
+      allpos_s[0][i] = self.allpos[0][start_pos + i]
     pos_emb = self.rory_wpe(allpos_s)
     h = tok_emb + pos_emb
 
@@ -426,7 +423,7 @@ class Transformer:
       ret = b
     return ret #why the realize? what calls this? the h hi loop?
 
-  def __call__(self, tokens, start_pos:Variable, temperature:float=0.0,v_in=False):
+  def __call__(self, tokens, start_pos, temperature:float=0.0,v_in=False):
     return self.forward(tokens, start_pos, temperature)
 
 VOCAB_SIZE = 50257
@@ -475,7 +472,7 @@ class GPT2:
         tokens = np.array([[toks[0][start_pos]]])
       else:
         tokens = np.array(toks)
-      tok = self.model(tokens, Variable("start_pos", 1 if start_pos else 0, MAX_CONTEXT).bind(start_pos), temperature).tolist()
+      tok = self.model(tokens, start_pos, temperature).tolist()
       start_pos = len(toks[0])
       for i,t in enumerate(tok): toks[i].append(t)
     ret = [rory_decode(x) for x in toks]
