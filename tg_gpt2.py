@@ -17,13 +17,13 @@ for i in range(len(tokens)):
   token_dict[s] = i
   if len(s) > max_token_length:
     max_token_length = len(s)
-def rory_decode(index):
+def decode(index):
   ret = ""
   for i in index:
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-def rory_scaled_dot_product_attention(x, key, value, attn_mask=None,
+def scaled_dot_product_attention(x, key, value, attn_mask=None,
                                   dropout_p:float=0.0, is_causal:bool=False):
   my_mask = np.triu(np.full([np.shape(x)[2],np.shape(x)[2]],1)) 
   my_mask = (my_mask - np.eye(np.shape(x)[2])) * -math.inf
@@ -42,7 +42,7 @@ def rory_scaled_dot_product_attention(x, key, value, attn_mask=None,
   qk = np.matmul(qk,value)
   return qk
 
-class Rory_Linear():
+class Linear():
   def __init__(self, in_features, out_features, bias=True,key="0"):
     # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
     self.key = key
@@ -61,7 +61,6 @@ class Rory_Linear():
       f = open("gpt2weights/"+self.key+".txt", 'r')
       print("loading weights for linear",self.key)
       lines = f.readlines()[1:]
-      print("rory shape is",np.shape(self.w))
       for z in range(np.shape(self.w)[0]):
         for y in range(np.shape(self.w)[1]):
           self.w[z][y] = float(lines[z*np.shape(self.w)[1] + y].replace("\n",""))
@@ -79,7 +78,7 @@ class Rory_Linear():
     ret = [ret]
     return ret
   
-class Rory_LayerNorm:
+class LayerNorm:
   def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True,key="0"):
     self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else tuple(normalized_shape)
     self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
@@ -126,7 +125,7 @@ class Rory_LayerNorm:
       * self.weight + self.bias
     return x
 
-def rory_encode(x):
+def encode(x):
   ret = []
   token = None
   i = -1
@@ -149,11 +148,11 @@ class Attention:
   def __call__(self, x, mask):
     return None
 
-class Rory_Attention:
+class Attention:
   def __init__(self, dim, n_heads,key="0"):
     self.key = key
-    self.c_attn = Rory_Linear(dim, 3*dim, bias=True,key="at_0_"+self.key)
-    self.c_proj = Rory_Linear(dim, dim, bias=True,key="at_1_"+self.key)
+    self.c_attn = Linear(dim, 3*dim, bias=True,key="at_0_"+self.key)
+    self.c_proj = Linear(dim, dim, bias=True,key="at_1_"+self.key)
     self.n_heads = n_heads
     self.dim = dim
     self.head_dim = dim // n_heads
@@ -239,19 +238,19 @@ class Rory_Attention:
     #can't numpy them outside this if!
     keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
     
-    xq = rory_scaled_dot_product_attention(xq,keys,values,mask)
+    xq = scaled_dot_product_attention(xq,keys,values,mask)
     xq = xq.transpose((0,2,1,3))
     #xq = xq.transpose(1, 2)
     xq = xq.reshape(bsz, seqlen, self.dim) #todo !
     ret = self.c_proj(xq)
     return ret
   
-class Rory_FeedForward:
+class FeedForward:
   def __init__(self, dim, hidden_dim,key="0"):
     print("rory feedforward init key =",key)
     self.key = key
-    self.c_fc = Rory_Linear(dim, hidden_dim, bias=True,key="ff_0_"+self.key)
-    self.c_proj = Rory_Linear(hidden_dim, dim, bias=True,key="ff_1_"+self.key)
+    self.c_fc = Linear(dim, hidden_dim, bias=True,key="ff_0_"+self.key)
+    self.c_proj = Linear(hidden_dim, dim, bias=True,key="ff_1_"+self.key)
 
   def __call__(self, x):
     x = self.c_fc(x)
@@ -261,9 +260,8 @@ class Rory_FeedForward:
     ret = self.c_proj(x)
     return ret
   
-class Rory_Embedding:
+class Embedding:
   def __init__(self, vocab_size:int, embed_size:int):
-    print("rory emedding init")
     self.vocab_size, self.embed_size = vocab_size, embed_size
     self.weight = None
 
@@ -300,7 +298,7 @@ class Rory_Embedding:
     ret = np.matmul(b,self.weight)
     return ret
   
-class Rory_Embedding_2: #todo crutch
+class Embedding_2: #todo crutch
   def __init__(self, vocab_size:int, embed_size:int):
     self.vocab_size, self.embed_size = vocab_size, embed_size
     self.weight = None
@@ -335,44 +333,44 @@ class Rory_Embedding_2: #todo crutch
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps,key="0"):
     self.attn = Attention(dim, n_heads)
-    self.rory_attn = Rory_Attention(dim,n_heads,key=key)
-    self.rory_mlp = Rory_FeedForward(dim, 4*dim,key=key)
-    self.rory_ln_1 = Rory_LayerNorm(dim,norm_eps,key="0_"+key)
-    self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps,key="1_"+key)
+    self.attn = Attention(dim,n_heads,key=key)
+    self.mlp = FeedForward(dim, 4*dim,key=key)
+    self.ln_1 = LayerNorm(dim,norm_eps,key="0_"+key)
+    self.ln_2 = LayerNorm(dim,norm_eps,key="1_"+key)
 
   def __call__(self, x, start_pos, mask):
     h = np.copy(x)
-    ln1 = self.rory_ln_1(x)
-    attn = self.rory_attn(ln1,start_pos,mask)
+    ln1 = self.ln_1(x)
+    attn = self.attn(ln1,start_pos,mask)
     h += attn
     h2 = np.copy(h)
-    ln2 = self.rory_ln_2(h2) 
-    mlp = self.rory_mlp(ln2)
+    ln2 = self.ln_2(h2) 
+    mlp = self.mlp(ln2)
     ret = mlp + h
     return ret
     
 class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
     self.vocab_size = vocab_size
-    self.rory_wte = Rory_Embedding_2(vocab_size,dim)
-    self.rory_wpe = Rory_Embedding(max_seq_len,dim)
+    self.wte = Embedding_2(vocab_size,dim)
+    self.wpe = Embedding(max_seq_len,dim)
     self.h = [TransformerBlock(dim, n_heads, norm_eps,key=str(i)) for i in range(n_layers)]
-    self.rory_ln_f = Rory_LayerNorm(dim,norm_eps,key="3")
-    self.rory_lm_head = Rory_Linear(dim, vocab_size, bias=False,key="transformer_linear")
+    self.ln_f = LayerNorm(dim,norm_eps,key="3")
+    self.lm_head = Linear(dim, vocab_size, bias=False,key="transformer_linear")
 
   def forward(self, tokens, start_pos, temperature:float=0.0,v_in=False):
     if not hasattr(self, 'allpos'): 
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
     seqlen = tokens.shape[1]
-    tok_emb = self.rory_wte(tokens) #rorys todo
+    tok_emb = self.wte(tokens) #rorys todo
 
     s = list(np.shape(self.allpos))
     s[1] = seqlen
     allpos_s = np.empty(s,dtype=np.int32)
     for i in range(seqlen):
       allpos_s[0][i] = self.allpos[0][start_pos + i]
-    pos_emb = self.rory_wpe(allpos_s)
+    pos_emb = self.wpe(allpos_s)
     h = tok_emb + pos_emb
 
     if seqlen > 1:
@@ -387,8 +385,8 @@ class Transformer:
     #rory - h self.h is the 12 transformer blocks, so this is just forward through all
     for hi in self.h:
       h = hi(h, start_pos, mask)
-    h = self.rory_ln_f(h)
-    logits = self.rory_lm_head(h)
+    h = self.ln_f(h)
+    logits = self.lm_head(h)
 
     logits = [logits[0][-1]]
 
@@ -431,7 +429,7 @@ class GPT2:
     self.model = model
 
   def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):
-    prompt_tokens = rory_encode(prompt)
+    prompt_tokens = encode(prompt)
     toks = [prompt_tokens[:] for _ in range(batch_size)]
     start_pos = 0
     for _ in trange(max_length, disable=(timing==True)):
@@ -442,7 +440,7 @@ class GPT2:
       tok = self.model(tokens, start_pos, temperature).tolist()
       start_pos = len(toks[0])
       for i,t in enumerate(tok): toks[i].append(t)
-    ret = [rory_decode(x) for x in toks]
+    ret = [decode(x) for x in toks]
     return ret
 
 # **** main code ****
