@@ -4,13 +4,10 @@
 from typing import Union, Tuple
 from tqdm import trange
 import numpy as np
-from tinygrad import TinyJit, Device
-from tinygrad.helpers import getenv, fetch, colored
-from tinygrad.nn.state import torch_load, load_state_dict
 import math
 import os
 
-MAX_CONTEXT = getenv("MAX_CONTEXT", 128)
+MAX_CONTEXT = 128
 
 tokens = open('tokens.txt', 'r').readlines()
 token_dict = dict()
@@ -45,8 +42,6 @@ def rory_scaled_dot_product_attention(x, key, value, attn_mask=None,
   qk = np.matmul(qk,value)
   return qk
 
-#rory can we match linear??
-#start using numpy?
 class Rory_Linear():
   def __init__(self, in_features, out_features, bias=True,key="0"):
     # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
@@ -364,7 +359,6 @@ class Transformer:
     self.h = [TransformerBlock(dim, n_heads, norm_eps,key=str(i)) for i in range(n_layers)]
     self.rory_ln_f = Rory_LayerNorm(dim,norm_eps,key="3")
     self.rory_lm_head = Rory_Linear(dim, vocab_size, bias=False,key="transformer_linear")
-    self.forward_jit = TinyJit(self.forward)
 
   def forward(self, tokens, start_pos, temperature:float=0.0,v_in=False):
     if not hasattr(self, 'allpos'): 
@@ -429,35 +423,8 @@ class Transformer:
 VOCAB_SIZE = 50257
 class GPT2:
   @staticmethod
-  def build(model_size="gpt2"):
+  def build():
     model = Transformer(n_layers=12,n_heads=12,dim=768,norm_eps=1e-5,vocab_size=VOCAB_SIZE) #small
-    weights = torch_load(fetch(f'https://huggingface.co/{model_size}/resolve/main/pytorch_model.bin'))
-    # special treatment for the Conv1D weights we need to transpose
-    transposed = ('attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight')
-    for k in weights:
-      if k.endswith(transposed):
-        weights[k] = weights[k].T
-    # lm head and wte are tied
-    weights['rory_lm_head.weight'] = weights['wte.weight']
-    weights['rory_ln_f.weight'] = weights['ln_f.weight']
-    weights['rory_ln_f.bias'] = weights['ln_f.bias']
-    weights['rory_wte.weight'] = weights['wte.weight']
-    weights['rory_wpe.weight'] = weights['wpe.weight']
-    for i in range(12):
-      weights['h.'+str(i)+'.rory_ln_1.weight'] = weights['h.'+str(i)+'.ln_1.weight']
-      weights['h.'+str(i)+'.rory_ln_1.bias'] = weights['h.'+str(i)+'.ln_1.bias']
-      weights['h.'+str(i)+'.rory_ln_2.weight'] = weights['h.'+str(i)+'.ln_2.weight']
-      weights['h.'+str(i)+'.rory_ln_2.bias'] = weights['h.'+str(i)+'.ln_2.bias']
-      weights['h.'+str(i)+'.rory_mlp.c_fc.weight'] = weights['h.'+str(i)+'.mlp.c_fc.weight']
-      weights['h.'+str(i)+'.rory_mlp.c_fc.bias'] = weights['h.'+str(i)+'.mlp.c_fc.bias']
-      weights['h.'+str(i)+'.rory_mlp.c_proj.weight'] = weights['h.'+str(i)+'.mlp.c_proj.weight']
-      weights['h.'+str(i)+'.rory_mlp.c_proj.bias'] = weights['h.'+str(i)+'.mlp.c_proj.bias']
-      weights['h.'+str(i)+'.rory_attn.c_attn.weight'] = weights['h.'+str(i)+'.attn.c_attn.weight']
-      weights['h.'+str(i)+'.rory_attn.c_attn.bias'] = weights['h.'+str(i)+'.attn.c_attn.bias']
-      weights['h.'+str(i)+'.rory_attn.c_proj.weight'] = weights['h.'+str(i)+'.attn.c_proj.weight']
-      weights['h.'+str(i)+'.rory_attn.c_proj.bias'] = weights['h.'+str(i)+'.attn.c_proj.bias']
-    load_state_dict(model, weights)
-
     return GPT2(model)
 
   def __init__(self, model):
@@ -485,7 +452,6 @@ if __name__ == "__main__":
   if os.path.exists("gpt2weights") == False:
     os.mkdir("gpt2weights")
 
-  print(f"using {Device.DEFAULT} backend")
   default_prompt = "What is the answer to life, the universe, and everything?"
   #default_prompt = "What happened in 1939?"
   # should output:
@@ -502,7 +468,7 @@ if __name__ == "__main__":
 
   texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
   print('Generating text...')
-  for i,text in enumerate(texts): print(colored(f"Response {i}:", "green"), text)
+  for i,text in enumerate(texts): print((f"Response {i}:", "green"), text)
   assert texts == [("What is the answer to life, the universe, and everything? "
   "But what is the answer to the mystery of Enlightenment? Does the only "
   "solution lie in a series of calls to agency? Do virtues and proper duties "
