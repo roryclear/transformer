@@ -52,11 +52,7 @@ def rory_scaled_dot_product_attention(x, key, value, attn_mask=None,
 #start using numpy?
 class Rory_Linear():
   def __init__(self, in_features, out_features, bias=True,key="0"):
-    if key != "0":
-      print("rory linear init",key)
     # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
-    self.weight = Tensor.zeros(out_features, in_features)
-    print("rory weight shape =",self.weight.shape,in_features,out_features)
     self.key = key
     self.bias = None
     if os.path.exists("gpt2weights/"+self.key+"_bias.txt"):
@@ -67,26 +63,22 @@ class Rory_Linear():
       for z in range(np.shape(self.bias)[0]):
         self.bias[z] = float(lines[z].replace("\n",""))
       f.close()
-    self.w = None
 
-  def __call__(self,x):
-    #rory this is terrible atm obv
-    w = self.weight.numpy()
-    if self.key != "0":
-      self.w = self.weight.numpy()
-    
-    if self.key != "0" and self.w is None:
-      self.w = np.zeros(self.weight.shape) 
+    if os.path.exists("gpt2weights/"+self.key+".txt"):
+      self.w = np.zeros([out_features,in_features]) 
       f = open("gpt2weights/"+self.key+".txt", 'r')
       print("loading weights for linear",self.key)
       lines = f.readlines()[1:]
-      print("rory shape is",np.shape(w))
-      for z in range(np.shape(w)[0]):
-        for y in range(np.shape(w)[1]):
-          self.w[z][y] = float(lines[z*np.shape(w)[1] + y].replace("\n",""))
+      print("rory shape is",np.shape(self.w))
+      for z in range(np.shape(self.w)[0]):
+        for y in range(np.shape(self.w)[1]):
+          self.w[z][y] = float(lines[z*np.shape(self.w)[1] + y].replace("\n",""))
       f.close()
+      self.w = self.w.transpose()
+
+  def __call__(self,x):
+    #rory this is terrible atm obv    
     w = np.copy(self.w)
-    w = w.transpose()
     x = x[0]
     ret = np.matmul(x,w)
     if self.bias is not None:
