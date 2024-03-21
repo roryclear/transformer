@@ -270,10 +270,11 @@ class Embedding:
       for x in range(self.embed_size):
         self.weight[y][x] = lines[y*self.embed_size + x].replace("\n","")
 
-  def __call__(self, idx):
     if not hasattr(self, 'vocab_counter'):
-      self.vocab_counter = [[np.arange(start=0,stop=self.vocab_size)]]
+      self.vocab_counter = np.arange(start=0,stop=self.vocab_size)
+      self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
 
+  def __call__(self, idx):
     if idx.shape[1] == 1:
       b = np.repeat(False,self.vocab_size)
       b[idx] = True
@@ -298,10 +299,11 @@ class Embedding_2: #todo crutch
       for x in range(self.embed_size):
         self.weight[y][x] = lines[self.embed_size*y + x].replace("\n","")
 
-  def __call__(self, idx):
     if not hasattr(self, 'vocab_counter'):
-      self.vocab_counter = np.arange(self.vocab_size)
+      self.vocab_counter = np.arange(start=0,stop=self.vocab_size)
       self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
+
+  def __call__(self, idx):
     idx_np = []
     for i in range(len(idx[0])):
       idx_np.append([idx[0][i]])
