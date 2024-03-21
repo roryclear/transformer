@@ -1,16 +1,14 @@
 #!/usr/bin/env python3 #for tinygrad repo, get rid of libs etc
 # can I beat https://github.com/jaymody/xpicoGPT.git?
 # beating https://github.com/WAUthethird/stupidGPT should be easy
-from typing import Optional, Union, Tuple
+from typing import Union, Tuple
 from tqdm import trange
 import numpy as np
 from tinygrad import TinyJit, Device
 from tinygrad.helpers import getenv, fetch, colored, all_int
-from tinygrad.nn import Tensor, Embedding, Linear, LayerNorm
 from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.shape.symbolic import Variable
 import math
-rorys = True #todo args
 import os
 
 MAX_CONTEXT = getenv("MAX_CONTEXT", 128)
@@ -256,11 +254,6 @@ class Rory_Attention:
     ret = self.c_proj(xq)
     return ret
   
-
-class FeedForward:
-  def __init__(self, dim, hidden_dim):
-    self = self
-
 class Rory_FeedForward:
   def __init__(self, dim, hidden_dim,key="0"):
     print("rory feedforward init key =",key)
@@ -351,11 +344,8 @@ class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps,key="0"):
     self.attn = Attention(dim, n_heads)
     self.rory_attn = Rory_Attention(dim,n_heads,key=key)
-    self.mlp = FeedForward(dim, 4*dim)
     self.rory_mlp = Rory_FeedForward(dim, 4*dim,key=key)
-    self.ln_1 = LayerNorm(dim, norm_eps) #partly done
     self.rory_ln_1 = Rory_LayerNorm(dim,norm_eps,key="0_"+key)
-    self.ln_2 = LayerNorm(dim, norm_eps) #done
     self.rory_ln_2 = Rory_LayerNorm(dim,norm_eps,key="1_"+key)
 
   def __call__(self, x, start_pos:Variable, mask):
@@ -372,14 +362,10 @@ class TransformerBlock:
 class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
     self.vocab_size = vocab_size
-    self.wte = Embedding(vocab_size, dim)
     self.rory_wte = Rory_Embedding_2(vocab_size,dim)
-    self.wpe = Embedding(max_seq_len, dim)
     self.rory_wpe = Rory_Embedding(max_seq_len,dim)
     self.h = [TransformerBlock(dim, n_heads, norm_eps,key=str(i)) for i in range(n_layers)]
-    self.ln_f = LayerNorm(dim, norm_eps)
     self.rory_ln_f = Rory_LayerNorm(dim,norm_eps,key="3")
-    self.lm_head = Linear(dim, vocab_size, bias=False)
     self.rory_lm_head = Rory_Linear(dim, vocab_size, bias=False,key="transformer_linear")
     self.forward_jit = TinyJit(self.forward)
 
@@ -455,7 +441,6 @@ class GPT2:
       if k.endswith(transposed):
         weights[k] = weights[k].T
     # lm head and wte are tied
-    weights['lm_head.weight'] = weights['wte.weight']
     weights['rory_lm_head.weight'] = weights['wte.weight']
     weights['rory_ln_f.weight'] = weights['ln_f.weight']
     weights['rory_ln_f.bias'] = weights['ln_f.bias']
@@ -474,7 +459,6 @@ class GPT2:
       weights['h.'+str(i)+'.rory_attn.c_attn.bias'] = weights['h.'+str(i)+'.attn.c_attn.bias']
       weights['h.'+str(i)+'.rory_attn.c_proj.weight'] = weights['h.'+str(i)+'.attn.c_proj.weight']
       weights['h.'+str(i)+'.rory_attn.c_proj.bias'] = weights['h.'+str(i)+'.attn.c_proj.bias']
-    model.rory_lm_head.weight = model.lm_head.weight #todo properly later
     load_state_dict(model, weights)
 
     return GPT2(model)
