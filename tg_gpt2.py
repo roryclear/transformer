@@ -57,21 +57,20 @@ class Linear():
       f.close()
 
     if os.path.exists("gpt2weights/"+self.key+".txt"):
-      self.w = np.zeros([out_features,in_features]) 
+      self.weight = np.zeros([out_features,in_features]) 
       f = open("gpt2weights/"+self.key+".txt", 'r')
       print("loading weights for linear",self.key)
       lines = f.readlines()[1:]
-      for z in range(np.shape(self.w)[0]):
-        for y in range(np.shape(self.w)[1]):
-          self.w[z][y] = float(lines[z*np.shape(self.w)[1] + y].replace("\n",""))
+      for z in range(np.shape(self.weight)[0]):
+        for y in range(np.shape(self.weight)[1]):
+          self.weight[z][y] = float(lines[z*np.shape(self.weight)[1] + y].replace("\n",""))
       f.close()
-      self.w = self.w.transpose()
+      self.weight = self.weight.transpose()
 
   def __call__(self,x):
     #rory this is terrible atm obv    
-    w = np.copy(self.w)
     x = x[0]
-    ret = np.matmul(x,w)
+    ret = np.matmul(x,self.weight)
     if self.bias is not None:
       for x in range(ret.shape[0]):
         ret[x] += self.bias
@@ -264,6 +263,12 @@ class Embedding:
   def __init__(self, vocab_size:int, embed_size:int):
     self.vocab_size, self.embed_size = vocab_size, embed_size
     self.weight = None
+    self.weight = np.zeros([self.vocab_size,self.embed_size])
+    f = open("gpt2weights/embedding.txt", 'r')
+    lines = f.readlines()[1:]
+    for y in range(self.vocab_size):
+      for x in range(self.embed_size):
+        self.weight[y][x] = lines[y*self.embed_size + x].replace("\n","")
 
   def __call__(self, idx):
     if not hasattr(self, 'vocab_counter'):
@@ -272,18 +277,6 @@ class Embedding:
     if seqlen == 0:
       print("rory seq len is 0")
       exit()
-
-    if self.weight is None:
-      if os.path.exists("gpt2weights/embedding.txt") == False:
-        print("weights not found")
-        exit()
-      #rory todo, move to init?
-      self.weight = np.zeros([1024,768])
-      f = open("gpt2weights/embedding.txt", 'r')
-      lines = f.readlines()[1:]
-      for y in range(1024):
-        for x in range(768):
-          self.weight[y][x] = lines[y*768 + x].replace("\n","")
 
     if idx.shape[1] == 1:
       b = np.repeat(False,self.vocab_size)
@@ -302,23 +295,14 @@ class Embedding_2: #todo crutch
   def __init__(self, vocab_size:int, embed_size:int):
     self.vocab_size, self.embed_size = vocab_size, embed_size
     self.weight = None
+    self.weight = np.empty([self.vocab_size,self.embed_size])
+    f = open("gpt2weights/embedding2.txt", 'r')
+    lines = f.readlines()[1:]
+    for y in range(self.vocab_size):
+      for x in range(self.embed_size):
+        self.weight[y][x] = lines[self.embed_size*y + x].replace("\n","")
 
   def __call__(self, idx):
-    if self.weight is None:
-      #rory todo load in init!
-      if os.path.exists("gpt2weights/embedding2.txt"):
-        self.weight = np.empty([50257,768])
-        print("txt exists loading embedding2")
-        # load it
-        f = open("gpt2weights/embedding2.txt", 'r')
-        lines = f.readlines()[1:]
-        for y in range(50257):
-          for x in range(768):
-            self.weight[y][x] = lines[768*y + x].replace("\n","")
-      else:
-        print("weights missing")
-        exit()
-
     if not hasattr(self, 'vocab_counter'):
       self.vocab_counter = np.arange(self.vocab_size)
       self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
