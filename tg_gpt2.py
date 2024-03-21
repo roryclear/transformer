@@ -4,9 +4,9 @@
 from typing import Optional, Union, Tuple
 from tqdm import trange
 import numpy as np
-from tinygrad import Tensor, TinyJit, Device
+from tinygrad import TinyJit, Device
 from tinygrad.helpers import getenv, fetch, colored, all_int
-from tinygrad.nn import Embedding, Linear, LayerNorm
+from tinygrad.nn import Tensor, Embedding, Linear, LayerNorm
 from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.shape.symbolic import Variable
 import math
@@ -426,12 +426,12 @@ class Transformer:
       logits = [logits]
       #can't get around not using tg here for e2e test?
       #maybe store the output in a file
-      unif_samples = Tensor.rand(1, np.shape(logits)[0], 1)
-      ##
-      unif_samples = unif_samples.numpy()
+      #unif_samples = Tensor.rand(1, np.shape(logits)[0], 1)
+      unif_samples = np.random.rand(1, np.shape(logits)[0], 1)
+      #unif_samples = unif_samples.numpy()
       b = np.empty_like(logits,dtype=bool)
       for i in range(len(logits[0][0])):
-        if unif_samples[0][0][0] >= logits[0][0][i]:
+        if unif_samples[0][0][0] >= logits[0][0][i]: #Tensor random gets [[[0.14280224]]] with 420 seed,
           b[0][0][i] = True
         else:
           b[0][0][i] = False
@@ -507,19 +507,31 @@ if __name__ == "__main__":
   print(f"using {Device.DEFAULT} backend")
   default_prompt = "What is the answer to life, the universe, and everything?"
   #default_prompt = "What happened in 1939?"
-  #should output:
+  # should output:
+  # .... The Jewish people rejected
+
+  #(tg random) should output:
   #It was a very fateful day.
   #When the Nazis occupied Poland in 1939....
 
-  Tensor.manual_seed(420)
-  np.random.seed(420)
+  #Tensor.manual_seed(420) #don't need
+  np.random.seed(28)
 
   gpt2 = GPT2.build()
 
   texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
   print('Generating text...')
   for i,text in enumerate(texts): print(colored(f"Response {i}:", "green"), text)
+  assert texts == [("What is the answer to life, the universe, and everything? "
+  "But what is the answer to the mystery of Enlightenment? Does the only "
+  "solution lie in a series of calls to agency? Do virtues and proper duties "
+  "need to separate? How does a patient become his or her own individual conscience?\n\n"
+  "What does the Universal Law mean? Why do some people do good and others contemptible? " 
+  "How does the Universal Law maximize the efficiency of the health system? How does the "
+  "Universal Law facilitate all of human virtue? What does it mean to be a man or a woman")]
 
+  #assert for tg seed 420 unif samples
+  '''
   assert texts == [("What is the answer to life, the universe, and everything?"
   "\n\nIf you were an astrophysicist, or just a physicist, your answer might "
   "be a bit different. For one, you might take a longer view of the universe. "
@@ -527,4 +539,5 @@ if __name__ == "__main__":
   "people — your answer might be far more like: Life doesn't exist at all.\n\n"
   "Imagine you are a young person who just graduated from middle school and has "
   "never really pursued a career in astrophysics. You're on an eight")]
+  '''
   exit()
