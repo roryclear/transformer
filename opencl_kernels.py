@@ -14,7 +14,7 @@ def add(a,b):
   a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
   b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
 
-  res_np = np.empty(dim).astype(np.float32).flatten()
+  res_np = np.empty(np.shape(a)).astype(np.float32).flatten()
   res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
 
   prg = cl.Program(ctx, f"""
@@ -28,8 +28,8 @@ def add(a,b):
   cl.enqueue_copy(queue, res_np, res_g)
   return res_np
 
-a = np.zeros(1024)
-b = np.zeros(1024)
+a = np.zeros([1,1,784])
+b = np.zeros([1,1,784])
 a.fill(4)
 b.fill(6)
 c = add(a,b)
