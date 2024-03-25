@@ -6,6 +6,7 @@ from tqdm import trange
 import numpy as np
 import math
 import os
+import pickle
 
 MAX_CONTEXT = 128
 
@@ -433,7 +434,9 @@ if __name__ == "__main__":
   #Tensor.manual_seed(420) #don't need
   np.random.seed(28)
 
-  gpt2 = GPT2.build()
+  filehandler = open("weights.obj", 'rb') 
+  gpt2 = pickle.load(filehandler)
+
 
   texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
   print('Generating text...')

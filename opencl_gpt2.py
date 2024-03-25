@@ -6,7 +6,7 @@ from tqdm import trange
 import numpy as np
 import math
 import os
-opencl = True
+import pickle
 
 MAX_CONTEXT = 128
 
@@ -343,8 +343,7 @@ class Transformer:
     for i in range(seqlen):
       allpos_s[0][i] = self.allpos[0][start_pos + i]
     pos_emb = self.wpe(allpos_s)
-    print("rory tok_emb + pos_emb sizes =",np.shape(tok_emb),np.shape(pos_emb))
-    h = tok_emb + pos_emb # rory do
+    h = tok_emb + pos_emb
 
     if seqlen > 1:
       mask = np.triu(np.full([seqlen,seqlen],1)) 
@@ -383,6 +382,7 @@ class Transformer:
           b[0][0][i] = True
         else:
           b[0][0][i] = False
+
       b = b.sum(2)[0]
       ret = b
     return ret #why the realize? what calls this? the h hi loop?
@@ -434,7 +434,9 @@ if __name__ == "__main__":
   #Tensor.manual_seed(420) #don't need
   np.random.seed(28)
 
-  gpt2 = GPT2.build()
+  filehandler = open("weights.obj", 'rb') 
+  gpt2 = pickle.load(filehandler)
+
 
   texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
   print('Generating text...')
