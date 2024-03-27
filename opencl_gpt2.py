@@ -337,16 +337,25 @@ class Transformer:
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
     seqlen = tokens.shape[1]
-    tok_emb = self.wte(tokens) #rorys todo
 
     if start_pos > 0 and opencl:
       #pos_emb = self.wpe(allpos_s)
       # rory todo merge all this into 1 kernel? or why is it not possible?
+      if not hasattr(self, 'vocab_counter'):
+        self.vocab_counter = np.arange(start=0,stop=self.vocab_size)
+        self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
+      idx_np = []
+      for i in range(len(tokens[0])):
+        idx_np.append([tokens[0][i]])
+      idx_np = ([idx_np] == self.vocab_counter)
+      tok_emb = np.matmul(idx_np,self.wte.weight)
+      #tok_emb = self.wte(tokens)
       self.wpe.weight = np.float32(self.wpe.weight)
       pos_emb = self.wpe.weight[start_pos]
       tok_emb = np.float32(tok_emb)
       h = openclk.add(tok_emb,self.wpe.weight,start_pos).reshape(1,1,768)
     else:
+      tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))
       s[1] = seqlen
       allpos_s = np.empty(s,dtype=np.int32)
