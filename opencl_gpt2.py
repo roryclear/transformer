@@ -350,10 +350,12 @@ class Transformer:
       # rory todo merge all this into 1 kernel? or why is it not possible?
       b = np.repeat(False,self.wpe.vocab_size)
       b[allpos_s] = True
-      pos_emb = [[np.matmul(b,self.wpe.weight)]]
+      self.wpe.weight = np.float32(self.wpe.weight)
+      pos_emb = self.wpe.weight[allpos_s[0][0]]
 
       tok_emb = np.float32(tok_emb)
       pos_emb = np.float32(pos_emb)
+      #h = tok_emb + pos_emb
       h = openclk.add(tok_emb,pos_emb).reshape(1,1,768)
     else:
       pos_emb = self.wpe(allpos_s)
