@@ -339,23 +339,20 @@ class Transformer:
     seqlen = tokens.shape[1]
     tok_emb = self.wte(tokens) #rorys todo
 
-    s = list(np.shape(self.allpos))
-    s[1] = seqlen
-    allpos_s = np.empty(s,dtype=np.int32)
-    for i in range(seqlen):
-      allpos_s[0][i] = self.allpos[0][start_pos + i]
-
     if start_pos > 0 and opencl:
       #pos_emb = self.wpe(allpos_s)
       # rory todo merge all this into 1 kernel? or why is it not possible?
       self.wpe.weight = np.float32(self.wpe.weight)
-      pos_emb = self.wpe.weight[allpos_s[0][0]]
-
+      pos_emb = self.wpe.weight[start_pos]
       tok_emb = np.float32(tok_emb)
-      pos_emb = np.float32(pos_emb)
       #h = tok_emb + pos_emb
       h = openclk.add(tok_emb,pos_emb).reshape(1,1,768)
     else:
+      s = list(np.shape(self.allpos))
+      s[1] = seqlen
+      allpos_s = np.empty(s,dtype=np.int32)
+      for i in range(seqlen):
+        allpos_s[0][i] = self.allpos[0][start_pos + i]
       pos_emb = self.wpe(allpos_s)
       h = tok_emb + pos_emb
 
