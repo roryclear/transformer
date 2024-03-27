@@ -348,8 +348,6 @@ class Transformer:
     if start_pos > 0 and opencl:
       #pos_emb = self.wpe(allpos_s)
       # rory todo merge all this into 1 kernel? or why is it not possible?
-      b = np.repeat(False,self.wpe.vocab_size)
-      b[allpos_s] = True
       self.wpe.weight = np.float32(self.wpe.weight)
       pos_emb = self.wpe.weight[allpos_s[0][0]]
 
