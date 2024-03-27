@@ -332,7 +332,7 @@ class Transformer:
     self.ln_f = LayerNorm(dim,norm_eps,key="3")
     self.lm_head = Linear(dim, vocab_size, bias=False,key="transformer_linear")
 
-  def forward(self, tokens, start_pos, temperature:float=0.0,v_in=False):
+  def forward(self, tokens, start_pos, temperature:float=0.0):
     if not hasattr(self, 'allpos'): 
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
@@ -341,7 +341,6 @@ class Transformer:
     if start_pos > 0 and opencl:
       self.wpe.weight = np.float32(self.wpe.weight)
       self.wte.weight = np.float32(self.wte.weight)
-      tok_emb = self.wte.weight[tokens[0][0]]
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0]).reshape(1,1,768)
     else:
       tok_emb = self.wte(tokens) #rorys todo
