@@ -8,7 +8,7 @@ ctx = cl.Context(devices=my_gpu_devices)
 queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
 
-def add(a,b,s=0):
+def add(a,b,b_s=0,a_s=0):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
 
@@ -21,7 +21,7 @@ def add(a,b,s=0):
         __global const float *a, __global const float *b, __global float *res)
     {{
     int gidx0 = get_global_id(0);
-        res[gidx0] = a[gidx0] + b[gidx0 + {s}*768];   
+        res[gidx0] = a[{a_s*768} + gidx0] + b[gidx0 + {b_s}*768];   
     }}
     """).build()
     knl = prg.add
