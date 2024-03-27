@@ -341,13 +341,8 @@ class Transformer:
     if start_pos > 0 and opencl:
       #pos_emb = self.wpe(allpos_s)
       # rory todo merge all this into 1 kernel? or why is it not possible?
-      if not hasattr(self, 'vocab_counter'):
-        self.vocab_counter = np.arange(start=0,stop=self.vocab_size)
-        self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
-      idx_np = []
-      for i in range(len(tokens[0])):
-        idx_np.append([tokens[0][i]])
-      idx_np = ([idx_np] == self.vocab_counter)
+      idx_np = np.full((1,1,self.vocab_size),False)
+      idx_np[0][0][tokens[0][0]] = True
       tok_emb = np.matmul(idx_np,self.wte.weight)
       #tok_emb = self.wte(tokens)
       self.wpe.weight = np.float32(self.wpe.weight)
