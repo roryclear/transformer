@@ -7,6 +7,8 @@ import numpy as np
 import math
 import os
 import pickle
+import opencl_kernels as openclk
+opencl = True
 
 MAX_CONTEXT = 128
 
@@ -343,7 +345,13 @@ class Transformer:
     for i in range(seqlen):
       allpos_s[0][i] = self.allpos[0][start_pos + i]
     pos_emb = self.wpe(allpos_s)
-    h = tok_emb + pos_emb
+    tok_emb = np.float32(tok_emb)
+    pos_emb = np.float32(pos_emb)
+
+    if np.shape(pos_emb) == (1,1,768) and opencl:
+      h = openclk.add(tok_emb,pos_emb).reshape(1,1,768)
+    else:
+      h = tok_emb + pos_emb
 
     if seqlen > 1:
       mask = np.triu(np.full([seqlen,seqlen],1)) 

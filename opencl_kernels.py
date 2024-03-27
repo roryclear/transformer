@@ -19,26 +19,29 @@ def add(a,b):
     __kernel void add(
         __global const float *a, __global float *res)
     {{
-    int lidx0 = get_local_id(0);
     int gidx0 = get_global_id(0);
         res[gidx0] += a[gidx0];   
     }}
     """).build()
     knl = prg.add
-    knl(queue, (784,1), (1,1), a_g, res_g) #todo check shape
+    knl(queue, (768,1), (256,1), a_g, res_g) #todo check shape
     cl.enqueue_copy(queue, res_np, res_g)
     return res_np
 
-a = np.random.rand(1,1,784).astype(np.float32)
-b = np.random.rand(1,1,784).astype(np.float32)
+'''
+a = np.random.rand(1,1,768).astype(np.float32)
+b = np.random.rand(1,1,768).astype(np.float32)
 
 st = time.perf_counter()
-for i in range(1):
+for i in range(1000):
     c = add(a,b)
 clt = time.perf_counter() - st
+c = c.reshape(1,1,768)
 st = time.perf_counter()
-for i in range(100):
+for i in range(100000):
     c_np = a+b
 npt = time.perf_counter() - st
-np.testing.assert_allclose(c,(a+b).flatten(),rtol=0.001)
+print("rory shapes =",np.shape(c),np.shape(a+b))
+np.testing.assert_allclose(c,(a+b),rtol=0.001)
 print("passed",clt,npt)
+'''
