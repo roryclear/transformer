@@ -345,8 +345,7 @@ class Transformer:
       self.wpe.weight = np.float32(self.wpe.weight)
       pos_emb = self.wpe.weight[start_pos]
       tok_emb = np.float32(tok_emb)
-      #h = tok_emb + pos_emb
-      h = openclk.add(tok_emb,pos_emb).reshape(1,1,768)
+      h = openclk.add(tok_emb,self.wpe.weight,start_pos).reshape(1,1,768)
     else:
       s = list(np.shape(self.allpos))
       s[1] = seqlen
