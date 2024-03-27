@@ -344,13 +344,19 @@ class Transformer:
     allpos_s = np.empty(s,dtype=np.int32)
     for i in range(seqlen):
       allpos_s[0][i] = self.allpos[0][start_pos + i]
-    pos_emb = self.wpe(allpos_s)
-    tok_emb = np.float32(tok_emb)
-    pos_emb = np.float32(pos_emb)
 
-    if np.shape(pos_emb) == (1,1,768) and opencl:
+    if start_pos > 0 and opencl:
+      #pos_emb = self.wpe(allpos_s)
+      # rory todo merge all this into 1 kernel? or why is it not possible?
+      b = np.repeat(False,self.wpe.vocab_size)
+      b[allpos_s] = True
+      pos_emb = [[np.matmul(b,self.wpe.weight)]]
+
+      tok_emb = np.float32(tok_emb)
+      pos_emb = np.float32(pos_emb)
       h = openclk.add(tok_emb,pos_emb).reshape(1,1,768)
     else:
+      pos_emb = self.wpe(allpos_s)
       h = tok_emb + pos_emb
 
     if seqlen > 1:
