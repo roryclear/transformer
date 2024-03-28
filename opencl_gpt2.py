@@ -353,12 +353,11 @@ class Transformer:
 
       #h = self.h[0](h,start_pos,mask)
       #ln1 = self.h[0].ln_1(h)
-      x = h[0][0]
-      x = (x - x.mean()) / np.sqrt(np.mean((x - x.mean())**2) + self.h[0].ln_1.eps)\
+      x = (h[0][0] - np.mean(h[0][0])) / np.sqrt(np.mean((h[0][0] - np.mean(h[0][0]))**2) + self.h[0].ln_1.eps)\
       * self.h[0].ln_1.weight + self.h[0].ln_1.bias
-      ln1 = [[x]]
+      x = [[x]]
 
-      attn = self.h[0].attn(ln1,start_pos,mask)
+      attn = self.h[0].attn(x,start_pos,mask)
       h += attn
       h2 = np.copy(h)
       ln2 = self.h[0].ln_2(h2) 
