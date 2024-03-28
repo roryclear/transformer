@@ -337,11 +337,33 @@ class Transformer:
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
     seqlen = tokens.shape[1]
+    if seqlen > 1:
+      mask = np.triu(np.full([seqlen,seqlen],1)) 
+      mask = (mask - np.eye(seqlen)) * -math.inf
+      mask[np.isnan(mask)] = 0
+      np.where(np.isnan(mask), 0, mask) # inf * 0 = nan
+      mask = [[mask]]
+    else:
+      mask = None
 
     if start_pos > 0 and opencl:
       self.wpe.weight = np.float32(self.wpe.weight)
       self.wte.weight = np.float32(self.wte.weight)
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0]).reshape(1,1,768)
+
+      #h = self.h[0](h,start_pos,mask)
+      ln1 = self.h[0].ln_1(h)
+      attn = self.h[0].attn(ln1,start_pos,mask)
+      h += attn
+      h2 = np.copy(h)
+      ln2 = self.h[0].ln_2(h2) 
+      mlp = self.h[0].mlp(ln2)
+      h = mlp + h  
+
+      for i in range(1,len(self.h)):
+        h = self.h[i](h, start_pos, mask)
+      h = self.ln_f(h)
+      logits = self.lm_head(h)
     else:
       tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))
@@ -352,20 +374,11 @@ class Transformer:
       pos_emb = self.wpe(allpos_s)
       h = tok_emb + pos_emb
 
-    if seqlen > 1:
-      mask = np.triu(np.full([seqlen,seqlen],1)) 
-      mask = (mask - np.eye(seqlen)) * -math.inf
-      mask[np.isnan(mask)] = 0
-      np.where(np.isnan(mask), 0, mask) # inf * 0 = nan
-      mask = [[mask]]
-    else:
-      mask = None
-
     #rory - h self.h is the 12 transformer blocks, so this is just forward through all
-    for hi in self.h:
-      h = hi(h, start_pos, mask)
-    h = self.ln_f(h)
-    logits = self.lm_head(h)
+      for hi in self.h:
+        h = hi(h, start_pos, mask)
+      h = self.ln_f(h)
+      logits = self.lm_head(h)
 
     logits = [logits[0][-1]]
 
