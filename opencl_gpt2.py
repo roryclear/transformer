@@ -349,15 +349,16 @@ class Transformer:
     if start_pos > 0 and opencl:
       self.wpe.weight = np.float32(self.wpe.weight)
       self.wte.weight = np.float32(self.wte.weight)
-      h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0]).reshape(1,1,768)
-
+      h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0])
       #h = self.h[0](h,start_pos,mask)
       #ln1 = self.h[0].ln_1(h)
-      x = (h[0][0] - np.mean(h[0][0])) / np.sqrt(np.mean((h[0][0] - np.mean(h[0][0]))**2) + self.h[0].ln_1.eps)\
+      mm = openclk.minus_mean(h,h)
+      x = (mm) / np.sqrt(np.mean(mm**2) + self.h[0].ln_1.eps)\
       * self.h[0].ln_1.weight + self.h[0].ln_1.bias
       x = [[x]]
 
       attn = self.h[0].attn(x,start_pos,mask)
+      h = h.reshape(1,1,768)
       h += attn
       h2 = np.copy(h)
       ln2 = self.h[0].ln_2(h2) 
