@@ -352,8 +352,9 @@ class Transformer:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0])
       #h = self.h[0](h,start_pos,mask)
       #ln1 = self.h[0].ln_1(h)
-      mm = openclk.minus_mean(h)
-      x = (mm) / np.sqrt(np.mean(mm**2) + self.h[0].ln_1.eps)\
+      mm = openclk.minus_mean_multi(h)
+      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+      x = (mm) / (mm2)\
       * self.h[0].ln_1.weight + self.h[0].ln_1.bias
       x = [[x]]
 
