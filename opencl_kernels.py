@@ -32,7 +32,7 @@ def add(a,b,b_s=0,a_s=0):
 len = 768000
 loop_size = int(len / 256)
 len_short = 768
-def sum(a,b):
+def minus_mean_large(a,b):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     prg = cl.Program(ctx, f"""
     __kernel void sum(
@@ -68,11 +68,11 @@ def sum(a,b):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def minus_mean(a,b):
+def minus_mean(a):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     prg = cl.Program(ctx, f"""
-    __kernel void sum(
-        __global float *a, __global float *res)
+    __kernel void minus_mean(
+        __global float *a)
     {{
     float avg = 0;
     for(int i = 0; i < {len_short}; i++) {{
@@ -80,22 +80,20 @@ def minus_mean(a,b):
     }}
     avg = avg / {len_short};
     int gidx0 = get_global_id(0);
-    res[gidx0] = a[gidx0] - avg;
+    a[gidx0] = a[gidx0] - avg;
     }}
     """).build()
-    knl = prg.sum
+    knl = prg.minus_mean
 
-    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    knl(queue, (len,1), (256,1), a_g, res_g) #has to be multiple of 256
-    cl.enqueue_copy(queue, b, res_g)
-    return b
+    knl(queue, (768,1), (256,1), a_g) #has to be multiple of 256
+    cl.enqueue_copy(queue, a, a_g)
+    return a
 '''
 a = np.random.rand(len).astype(np.float32)
 b = np.copy(a)
-c = sum(a,a)
+c = minus_mean_large(a,a)
 cnp = b - np.mean(b)
 np.testing.assert_allclose(c,cnp,atol=1e-6)
-
 a = np.random.rand(len).astype(np.float32)
 b = np.random.rand(len).astype(np.float32)
 
