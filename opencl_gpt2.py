@@ -357,7 +357,7 @@ class Transformer:
       #todo, why do things need to be np.copied???
       mm = openclk.minus_mean_multi(h)
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-      x = openclk.divide(np.copy(mm),np.copy(mm2),np.copy(self.h[0].ln_1.weight),np.copy(self.h[0].ln_1.bias))
+      x = openclk.divide(np.copy(mm),mm2,self.h[0].ln_1.weight,self.h[0].ln_1.bias)
       x = [[x]]
       attn = self.h[0].attn(x,start_pos,mask)
       h = h.reshape(1,1,768)
