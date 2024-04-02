@@ -133,13 +133,6 @@ def encode(x):
   return ret
 
 class Attention:
-  def __init__(self, dim, n_heads):
-    self = self
-
-  def __call__(self, x, mask):
-    return None
-
-class Attention:
   def __init__(self, dim, n_heads,key="0"):
     self.key = key
     self.c_attn = Linear(dim, 3*dim, bias=True,key="at_0_"+self.key)
@@ -150,8 +143,6 @@ class Attention:
 
   def __call__(self, x, start_pos, mask):
     xqkv = self.c_attn(x)
-
-    # rory this is bad now obv
     xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
     for i in range(xq.shape[1]):
       xq[0][i] = xqkv[0][i][0:self.dim]
