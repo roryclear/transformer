@@ -349,15 +349,16 @@ class Transformer:
     if start_pos > 0 and opencl:
       self.wpe.weight = np.float32(self.wpe.weight)
       self.wte.weight = np.float32(self.wte.weight)
+      self.h[0].ln_1.weight = np.float32(self.h[0].ln_1.weight)
+      self.h[0].ln_1.bias = np.float32(self.h[0].ln_1.bias)
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0])
       #h = self.h[0](h,start_pos,mask)
       #ln1 = self.h[0].ln_1(h)
+      #todo, why do things need to be np.copied???
       mm = openclk.minus_mean_multi(h)
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-      x = (mm) / (mm2)\
-      * self.h[0].ln_1.weight + self.h[0].ln_1.bias
+      x = openclk.divide(np.copy(mm),np.copy(mm2),np.copy(self.h[0].ln_1.weight),np.copy(self.h[0].ln_1.bias))
       x = [[x]]
-
       attn = self.h[0].attn(x,start_pos,mask)
       h = h.reshape(1,1,768)
       h += attn

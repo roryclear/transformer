@@ -118,6 +118,26 @@ def minus_mean(a):
     knl(queue, (768,1), (256,1), a_g) #has to be multiple of 256
     cl.enqueue_copy(queue, a, a_g)
     return a
+
+def divide(a,b,c,d):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
+    prg = cl.Program(ctx, f"""
+    __kernel void divide(
+        __global float *a, __global const float *b, __global const float *c, __global const float *d)
+    {{
+    int gidx0 = get_global_id(0);
+    a[gidx0] = (a[gidx0] * c[gidx0]) / b[0] + d[gidx0];
+    }}
+    """).build()
+    knl = prg.divide
+
+    knl(queue, (768,1), (256,1), a_g, b_g, c_g, d_g) #has to be multiple of 256
+    cl.enqueue_copy(queue, a, a_g)
+    return a
+###these kernel names make no sense atm
 '''
 a = np.random.rand(len).astype(np.float32)
 b = np.copy(a)
