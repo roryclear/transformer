@@ -112,7 +112,11 @@ class Attention:
     self.head_dim = dim // n_heads
 
   def __call__(self, x, start_pos, mask):
-    xqkv = self.c_attn(x)
+    #rory c_attn
+    xqkv = np.matmul(x,self.c_attn.weight)
+    print("rory shapes =",np.shape(x),np.shape(self.c_attn.weight))
+    if self.c_attn.bias is not None:
+      xqkv += self.c_attn.bias
     xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
     for i in range(xq.shape[1]):
       xq[0][i] = xqkv[0][i][0:self.dim]
@@ -405,10 +409,6 @@ class GPT2:
 # **** main code ****
 
 if __name__ == "__main__":
-
-  if os.path.exists("gpt2weights") == False:
-    os.mkdir("gpt2weights")
-
   default_prompt = "What is the answer to life, the universe, and everything?"
   #default_prompt = "What happened in 1939?"
   # should output:
