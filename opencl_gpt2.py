@@ -50,25 +50,6 @@ class Linear():
     # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
     self.key = key
     self.bias = None
-    if os.path.exists("gpt2weights/"+self.key+"_bias.txt"):
-      self.bias = np.zeros(out_features)
-      f = open("gpt2weights/"+self.key+"_bias.txt", 'r')
-      print("loading bias for linear",self.key)
-      lines = f.readlines()[1:]
-      for z in range(np.shape(self.bias)[0]):
-        self.bias[z] = float(lines[z].replace("\n",""))
-      f.close()
-
-    if os.path.exists("gpt2weights/"+self.key+".txt"):
-      self.weight = np.zeros([out_features,in_features]) 
-      f = open("gpt2weights/"+self.key+".txt", 'r')
-      print("loading weights for linear",self.key)
-      lines = f.readlines()[1:]
-      for z in range(np.shape(self.weight)[0]):
-        for y in range(np.shape(self.weight)[1]):
-          self.weight[z][y] = float(lines[z*np.shape(self.weight)[1] + y].replace("\n",""))
-      f.close()
-      self.weight = self.weight.transpose()
 
   def __call__(self,x):
     #rory this is terrible atm obv    
@@ -87,17 +68,6 @@ class LayerNorm:
     self.bias = None
     self.key = key
     self.weight = None
-    if os.path.exists("gpt2weights/layernorm"+str(self.key)+"_bias.txt"):       
-      self.bias = np.zeros(self.normalized_shape)
-      f = open("gpt2weights/layernorm"+str(self.key)+"_bias.txt", 'r')
-      lines = f.readlines()[1:]
-      for i in range(len(lines)):
-        self.bias[i] = lines[i]
-    self.weight = np.zeros(self.normalized_shape)
-    f = open("gpt2weights/layernorm"+str(self.key)+".txt", 'r')
-    lines = f.readlines()[1:]
-    for i in range(len(lines)):
-      self.weight[i] = lines[i]
 
   def __call__(self, x):  
     if np.shape(x)[1] == 1:
