@@ -306,7 +306,6 @@ class Embedding_2: #todo crutch
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps,key="0"):
-    self.attn = Attention(dim, n_heads)
     self.attn = Attention(dim,n_heads,key=key)
     self.mlp = FeedForward(dim, 4*dim,key=key)
     self.ln_1 = LayerNorm(dim,norm_eps,key="0_"+key)
