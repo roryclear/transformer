@@ -116,26 +116,35 @@ class Attention:
     self.c_attn.bias = np.float32(self.c_attn.bias)
 
     if start_pos > 0:
-      w = np.copy(self.c_attn.weight)
-      w = w.reshape(2304,768) #have to do this for opencl...took way too long to realize
-      xqkv = openclk.madd(x[0],w).reshape(1,1,2304)
-      xqkv += self.c_attn.bias
+      if np.shape(self.c_attn.weight) == (768,2304):
+        self.c_attn.weight = self.c_attn.weight.reshape(2304,768) #have to do this for opencl...took way too long to realize
+      xqkv = openclk.madd(x[0],self.c_attn.weight,self.c_attn.bias).reshape(1,1,2304) #todo make own kernel...
+      xq = np.zeros(shape=(1,1,self.dim))
+      xq[0][0] = xqkv[0][0][0:self.dim]
+      xq = xq.reshape(1,1,self.n_heads,self.head_dim)
+      xk = np.zeros(shape=(1,1,self.dim))
+      xk[0][0] = xqkv[0][0][self.dim:2*self.dim]
+      xk = xk.reshape(1,1,self.n_heads,self.head_dim)
+      xv = np.zeros(shape=(1,1,self.dim))
+      xv[0][0] = xqkv[0][0][self.dim*2:]
+      xv = xv.reshape(1,1,self.n_heads,self.head_dim)
+      bsz, seqlen, _, _ = xq.shape
     else:
       xqkv = np.matmul(x,self.c_attn.weight)
       xqkv += self.c_attn.bias
-    xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
-    for i in range(xq.shape[1]):
-      xq[0][i] = xqkv[0][i][0:self.dim]
-    xq = xq.reshape(1,xq.shape[1],self.n_heads,self.head_dim)
-    xk = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
-    for i in range(xk.shape[1]):
-      xk[0][i] = xqkv[0][i][self.dim:2*self.dim]
-    xk = xk.reshape(1,xk.shape[1],self.n_heads,self.head_dim)
-    xv = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
-    for i in range(xv.shape[1]):
-      xv[0][i] = xqkv[0][i][self.dim*2:3*self.dim]
-    xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
-    bsz, seqlen, _, _ = xq.shape
+      xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
+      for i in range(xq.shape[1]):
+        xq[0][i] = xqkv[0][i][0:self.dim]
+      xq = xq.reshape(1,xq.shape[1],self.n_heads,self.head_dim)
+      xk = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
+      for i in range(xk.shape[1]):
+        xk[0][i] = xqkv[0][i][self.dim:2*self.dim]
+      xk = xk.reshape(1,xk.shape[1],self.n_heads,self.head_dim)
+      xv = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
+      for i in range(xv.shape[1]):
+        xv[0][i] = xqkv[0][i][self.dim*2:3*self.dim]
+      xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
+      bsz, seqlen, _, _ = xq.shape
     
     # create kv cache
     if not hasattr(self, "cache_kv"):
