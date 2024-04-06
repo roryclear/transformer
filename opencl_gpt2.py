@@ -50,6 +50,7 @@ class Linear():
     # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
     self.key = key
     self.bias = None
+    self.weight = None
 
   def __call__(self,x):
     #rory this is terrible atm obv    
@@ -113,9 +114,17 @@ class Attention:
 
   def __call__(self, x, start_pos, mask):
     #rory c_attn
-    xqkv = np.matmul(x,self.c_attn.weight)
-    print("rory shapes =",np.shape(x),np.shape(self.c_attn.weight))
-    if self.c_attn.bias is not None:
+    x = np.float32(x)
+    self.c_attn.weight = np.float32(self.c_attn.weight)
+    self.c_attn.bias = np.float32(self.c_attn.bias)
+
+    if start_pos > 0:
+      w = np.copy(self.c_attn.weight)
+      w = w.reshape(2304,768) #have to do this for opencl...took way too long to realize
+      xqkv = openclk.madd(x[0],w).reshape(1,1,2304)
+      xqkv += self.c_attn.bias
+    else:
+      xqkv = np.matmul(x,self.c_attn.weight)
       xqkv += self.c_attn.bias
     xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
     for i in range(xq.shape[1]):
