@@ -118,17 +118,14 @@ class Attention:
     if start_pos > 0:
       if np.shape(self.c_attn.weight) == (768,2304):
         self.c_attn.weight = self.c_attn.weight.reshape(2304,768) #have to do this for opencl...took way too long to realize
-      xqkv = openclk.madd(x[0],self.c_attn.weight,self.c_attn.bias).reshape(1,1,2304) #todo make own kernel...
-      xq = np.zeros(shape=(1,1,self.dim))
-      xq[0][0] = xqkv[0][0][0:self.dim]
+      xqkv = openclk.madd(x[0],self.c_attn.weight,self.c_attn.bias).reshape(2304) #todo make own kernel...
+      xq = xqkv[0:self.dim]
       xq = xq.reshape(1,1,self.n_heads,self.head_dim)
-      xk = np.zeros(shape=(1,1,self.dim))
-      xk[0][0] = xqkv[0][0][self.dim:2*self.dim]
+      xk = xqkv[self.dim:2*self.dim]
       xk = xk.reshape(1,1,self.n_heads,self.head_dim)
-      xv = np.zeros(shape=(1,1,self.dim))
-      xv[0][0] = xqkv[0][0][self.dim*2:]
+      xv = xqkv[self.dim*2:]
       xv = xv.reshape(1,1,self.n_heads,self.head_dim)
-      bsz, seqlen, _, _ = xq.shape
+      bsz, seqlen = 1,1
     else:
       xqkv = np.matmul(x,self.c_attn.weight)
       xqkv += self.c_attn.bias
