@@ -46,9 +46,8 @@ def scaled_dot_product_attention(x, key, value, attn_mask=None,
   return qk
 
 class Linear():
-  def __init__(self, in_features, out_features, bias=True,key="0"):
+  def __init__(self, in_features, out_features, bias=True):
     # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
-    self.key = key
     self.bias = None
     self.weight = None
 
@@ -63,11 +62,10 @@ class Linear():
     return ret
   
 class LayerNorm:
-  def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True,key="0"):
+  def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True):
     self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else tuple(normalized_shape)
     self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
     self.bias = None
-    self.key = key
     self.weight = None
 
   def __call__(self, x):  
@@ -104,10 +102,9 @@ def encode(x):
   return ret
 
 class Attention:
-  def __init__(self, dim, n_heads,key="0"):
-    self.key = key
-    self.c_attn = Linear(dim, 3*dim, bias=True,key="at_0_"+self.key)
-    self.c_proj = Linear(dim, dim, bias=True,key="at_1_"+self.key)
+  def __init__(self, dim, n_heads):
+    self.c_attn = Linear(dim, 3*dim, bias=True)
+    self.c_proj = Linear(dim, dim, bias=True)
     self.n_heads = n_heads
     self.dim = dim
     self.head_dim = dim // n_heads
@@ -211,11 +208,9 @@ class Attention:
     return ret
   
 class FeedForward:
-  def __init__(self, dim, hidden_dim,key="0"):
-    print("rory feedforward init key =",key)
-    self.key = key
-    self.c_fc = Linear(dim, hidden_dim, bias=True,key="ff_0_"+self.key)
-    self.c_proj = Linear(hidden_dim, dim, bias=True,key="ff_1_"+self.key)
+  def __init__(self, dim, hidden_dim):
+    self.c_fc = Linear(dim, hidden_dim, bias=True)
+    self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
     x = self.c_fc(x)
@@ -279,11 +274,11 @@ class Embedding_2: #todo crutch
 
 
 class TransformerBlock:
-  def __init__(self, dim, n_heads, norm_eps,key="0"):
-    self.attn = Attention(dim,n_heads,key=key)
-    self.mlp = FeedForward(dim, 4*dim,key=key)
-    self.ln_1 = LayerNorm(dim,norm_eps,key="0_"+key)
-    self.ln_2 = LayerNorm(dim,norm_eps,key="1_"+key)
+  def __init__(self, dim, n_heads, norm_eps):
+    self.attn = Attention(dim,n_heads)
+    self.mlp = FeedForward(dim, 4*dim)
+    self.ln_1 = LayerNorm(dim,norm_eps)
+    self.ln_2 = LayerNorm(dim,norm_eps)
 
   def __call__(self, x, start_pos, mask):
     h = np.copy(x)
@@ -301,9 +296,9 @@ class Transformer:
     self.vocab_size = vocab_size
     self.wte = Embedding_2(vocab_size,dim)
     self.wpe = Embedding(max_seq_len,dim)
-    self.h = [TransformerBlock(dim, n_heads, norm_eps,key=str(i)) for i in range(n_layers)]
-    self.ln_f = LayerNorm(dim,norm_eps,key="3")
-    self.lm_head = Linear(dim, vocab_size, bias=False,key="transformer_linear")
+    self.h = [TransformerBlock(dim, n_heads, norm_eps) for i in range(n_layers)]
+    self.ln_f = LayerNorm(dim,norm_eps)
+    self.lm_head = Linear(dim, vocab_size, bias=False)
 
   def forward(self, tokens, start_pos, temperature:float=0.0):
     if not hasattr(self, 'allpos'): 
