@@ -120,12 +120,60 @@ class Attention:
         self.c_attn.weight = self.c_attn.weight.reshape(2304,768) #have to do this for opencl...took way too long to realize
       xqkv = openclk.madd(x[0],self.c_attn.weight,self.c_attn.bias).reshape(2304) #todo make own kernel...
       xq = xqkv[0:self.dim]
-      xq = xq.reshape(1,1,self.n_heads,self.head_dim)
       xk = xqkv[self.dim:2*self.dim]
-      xk = xk.reshape(1,1,self.n_heads,self.head_dim)
+      xk = xk.reshape(self.n_heads,self.head_dim)
       xv = xqkv[self.dim*2:]
-      xv = xv.reshape(1,1,self.n_heads,self.head_dim)
+      xv = xv.reshape(self.n_heads,self.head_dim)
       bsz, seqlen = 1,1
+      # create kv cache
+      if not hasattr(self, "cache_kv"):
+        self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
+        
+      keys = self.cache_kv[0]
+      values = self.cache_kv[1]
+      ret = [keys,values]
+      #terrible loop...why is it needed atm?
+      for a in range(len(ret)):
+          for b in range(len(ret[0])):
+              for c in range(start_pos+1,len(ret[0][0])):
+                  ret[a][b][c] = np.zeros_like(ret[a][b][c])
+          if start_pos > -1 and start_pos < len(ret[0][0]):
+              ret[0][b][start_pos] = xk
+              ret[1][b][start_pos] = xv
+      ret = None
+      
+      xq = xq.reshape(1,1,self.n_heads,self.head_dim)
+      xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
+      xk = xk.reshape(1,1,self.n_heads,self.head_dim)
+      xv = xv.reshape(1,1,self.n_heads,self.head_dim)
+
+      s = list(np.shape(keys))
+      s[1] = start_pos
+      keys_small = np.empty(s)
+      values_small = np.empty(s)
+      for i in range(len(keys_small[0])):
+        keys_small[0][i] = keys[0][i]
+        values_small[0][i] = values[0][i]
+      keys = keys_small
+      values = values_small
+      keys = np.concatenate([keys,xk],axis=1)
+      values = np.concatenate([values,xv],1)
+      keys, values = keys.transpose(0,2,1,3), values.transpose(0,2,1,3)
+      keys = keys.transpose(0,1,3,2)
+      qk2 = np.matmul(xq,keys)
+
+      qk2 = qk2 / math.sqrt(self.head_dim)
+      for a in range(len(qk2[0])):
+        for b in range(len(qk2[0][a])):
+          qk2[0][a][b] = np.exp(qk2[0][a][b]  - np.max(qk2[0][a][b] ))
+          qk2[0][a][b]  = qk2[0][a][b]  / qk2[0][a][b] .sum()
+      qk2 = np.matmul(qk2,values)
+      xq = qk2 
+      xq = xq.transpose((0,2,1,3))
+      xq = xq.reshape((bsz,seqlen,self.dim))
+      ret = self.c_proj(xq)
+      return ret
+
     else:
       xqkv = np.matmul(x,self.c_attn.weight)
       xqkv += self.c_attn.bias
@@ -143,54 +191,9 @@ class Attention:
       xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
       bsz, seqlen, _, _ = xq.shape
     
-    # create kv cache
-    if not hasattr(self, "cache_kv"):
-      self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
-
-    if start_pos > 0:
-      keys = self.cache_kv[0]
-      values = self.cache_kv[1]
-      ret = [keys,values]
-      #terrible loop
-      for a in range(len(ret)):
-          for b in range(len(ret[0])):
-              for c in range(start_pos+1,len(ret[0][0])):
-                  ret[a][b][c] = np.zeros_like(ret[a][b][c])
-          if start_pos > -1 and start_pos < len(ret[0][0]):
-              ret[0][b][start_pos] = xk[0][0]
-              ret[1][b][start_pos] = xv[0][0]
-      new_cache = ret
-      self.cache_kv = new_cache
-      #new_cache = None #todo not needed?
-      
-      xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
-
-      s = list(np.shape(keys))
-      s[1] = start_pos
-      keys_small = np.empty(s)
-      values_small = np.empty(s)
-      for i in range(len(keys_small[0])):
-        keys_small[0][i] = keys[0][i]
-        values_small[0][i] = values[0][i]
-      keys = keys_small
-      values = values_small
-      keys = np.concatenate([keys,xk],axis=1)
-      values = np.concatenate([values,xv],1)
-      keys, values = keys.transpose(0,2,1,3), values.transpose(0,2,1,3)
-      keys = keys.transpose(0,1,3,2)
-      qk2 = np.matmul(xq,keys)
-
-      qk2 = qk2 / math.sqrt(xq.shape[-1])
-      for a in range(len(qk2[0])):
-        for b in range(len(qk2[0][a])):
-          qk2[0][a][b] = np.exp(qk2[0][a][b]  - np.max(qk2[0][a][b] ))
-          qk2[0][a][b]  = qk2[0][a][b]  / qk2[0][a][b] .sum()
-      qk2 = np.matmul(qk2,values)
-      xq = qk2 
-      xq = xq.transpose((0,2,1,3))
-      xq = xq.reshape((bsz,seqlen,self.dim))
-      ret = self.c_proj(xq)
-      return ret
+      # create kv cache
+      if not hasattr(self, "cache_kv"):
+        self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
 
     keys = xk
     values = xv
