@@ -145,15 +145,13 @@ class Attention:
       values = np.concatenate([values,xv])
       keys = keys.transpose(1,2,0)
       values = values.transpose(1,0,2)
-      qk2 = np.matmul(xq,[keys]) #todo extra dim
-
-      qk2 = qk2 / math.sqrt(self.head_dim)
-      for a in range(len(qk2[0])):
-        for b in range(len(qk2[0][a])):
-          qk2[0][a][b] = np.exp(qk2[0][a][b]  - np.max(qk2[0][a][b] ))
-          qk2[0][a][b]  = qk2[0][a][b]  / qk2[0][a][b] .sum()
-      qk2 = np.matmul(qk2,values)
-      xq = qk2 
+      xq = np.matmul(xq,keys)
+      xq = xq / math.sqrt(self.head_dim)
+      for a in range(len(xq)):
+        for b in range(len(xq[a])):
+          xq[a][b] = np.exp(xq[a][b]  - np.max(xq[a][b]))
+          xq[a][b]  = xq[a][b]  / xq[a][b] .sum()
+      xq = np.matmul(xq,values)
       xq = xq.reshape(1,self.n_heads,1,self.head_dim)
       xq = xq.transpose((0,2,1,3))
       xq = xq.reshape((bsz,seqlen,self.dim))
