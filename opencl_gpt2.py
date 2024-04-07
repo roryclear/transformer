@@ -131,16 +131,8 @@ class Attention:
         
       keys = self.cache_kv[0]
       values = self.cache_kv[1]
-      ret = [keys,values]
-      #terrible loop...why is it needed atm?
-      for a in range(len(ret)):
-          for b in range(len(ret[0])):
-              for c in range(start_pos+1,len(ret[0][0])):
-                  ret[a][b][c] = np.zeros_like(ret[a][b][c])
-          if start_pos > -1 and start_pos < len(ret[0][0]):
-              ret[0][b][start_pos] = xk
-              ret[1][b][start_pos] = xv
-      ret = None
+      keys[-1][start_pos] = xk
+      values[-1][start_pos] = xv
       
       xq = xq.reshape(1,1,self.n_heads,self.head_dim)
       xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
