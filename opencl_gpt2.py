@@ -152,9 +152,7 @@ class Attention:
           xq[a][b] = np.exp(xq[a][b]  - np.max(xq[a][b]))
           xq[a][b]  = xq[a][b]  / xq[a][b] .sum()
       xq = np.matmul(xq,values)
-      xq = xq.reshape(1,self.n_heads,1,self.head_dim)
-      xq = xq.transpose((0,2,1,3))
-      xq = xq.reshape((bsz,seqlen,self.dim))
+      xq = xq.reshape((1,1,self.dim))
       ret = self.c_proj(xq)
       return ret
 
