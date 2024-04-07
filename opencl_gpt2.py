@@ -148,9 +148,8 @@ class Attention:
       xq = np.matmul(xq,keys)
       xq = xq / math.sqrt(self.head_dim)
       for a in range(len(xq)):
-        for b in range(len(xq[a])):
-          xq[a][b] = np.exp(xq[a][b]  - np.max(xq[a][b]))
-          xq[a][b]  = xq[a][b]  / xq[a][b] .sum()
+        xq[a] = np.exp(xq[a] - np.max(xq[a]))
+        xq[a]  = xq[a] / xq[a].sum()
       xq = np.matmul(xq,values)
       xq = xq.reshape((1,1,self.dim))
       ret = self.c_proj(xq)
