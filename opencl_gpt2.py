@@ -134,24 +134,17 @@ class Attention:
       keys[-1][start_pos] = xk
       values[-1][start_pos] = xv
       
-      xq = xq.reshape(1,1,self.n_heads,self.head_dim)
-      xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
+      xq = xq.reshape(self.n_heads,1,self.head_dim)
       xk = xk.reshape(1,1,self.n_heads,self.head_dim)
       xv = xv.reshape(1,1,self.n_heads,self.head_dim)
 
-      s = list(np.shape(keys))
-      s[1] = start_pos
-      keys_small = np.empty(s)
-      values_small = np.empty(s)
-      for i in range(len(keys_small[0])):
-        keys_small[0][i] = keys[0][i]
-        values_small[0][i] = values[0][i]
-      keys = keys_small
-      values = values_small
+      keys = np.resize(keys,(1,start_pos,self.n_heads,self.head_dim))
+      values = np.resize(values,(1,start_pos,self.n_heads,self.head_dim))
+
       keys = np.concatenate([keys,xk],axis=1)
       values = np.concatenate([values,xv],1)
-      keys, values = keys.transpose(0,2,1,3), values.transpose(0,2,1,3)
-      keys = keys.transpose(0,1,3,2)
+      keys = keys.transpose(0,2,3,1)
+      values = values.transpose(0,2,1,3)
       qk2 = np.matmul(xq,keys)
 
       qk2 = qk2 / math.sqrt(self.head_dim)
@@ -161,6 +154,7 @@ class Attention:
           qk2[0][a][b]  = qk2[0][a][b]  / qk2[0][a][b] .sum()
       qk2 = np.matmul(qk2,values)
       xq = qk2 
+      xq = xq.reshape(1,self.n_heads,1,self.head_dim)
       xq = xq.transpose((0,2,1,3))
       xq = xq.reshape((bsz,seqlen,self.dim))
       ret = self.c_proj(xq)
