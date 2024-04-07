@@ -118,16 +118,16 @@ class Attention:
     if start_pos > 0:
       if np.shape(self.c_attn.weight) == (768,2304):
         self.c_attn.weight = self.c_attn.weight.reshape(2304,768) #have to do this for opencl...took way too long to realize
+      # madd is np.matmul(x[0],self.c_attn.weight) + self.c_attn.bias)
       xqkv = openclk.madd(x[0],self.c_attn.weight,self.c_attn.bias).reshape(2304) #todo make own kernel...
       xq = xqkv[0:self.dim]
       xk = xqkv[self.dim:2*self.dim]
       xk = xk.reshape(self.n_heads,self.head_dim)
       xv = xqkv[self.dim*2:]
       xv = xv.reshape(self.n_heads,self.head_dim)
-      bsz, seqlen = 1,1
       # create kv cache
       if not hasattr(self, "cache_kv"):
-        self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
+        self.cache_kv = np.zeros(shape=[2, 1, MAX_CONTEXT, self.n_heads, self.head_dim])
         
       keys = self.cache_kv[0]
       values = self.cache_kv[1]
@@ -314,7 +314,9 @@ class Transformer:
       #h = self.h[0](h,start_pos,mask)
       #ln1 = self.h[0].ln_1(h)
       #todo, why do things need to be np.copied???
+      #mm = h - np.mean(h)
       mm = openclk.minus_mean_multi(h)
+      #todo np version of both in note  
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
       x = openclk.divide(np.copy(mm),mm2,self.h[0].ln_1.weight,self.h[0].ln_1.bias)
       x = [[x]]
