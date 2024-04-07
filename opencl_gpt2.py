@@ -136,15 +136,15 @@ class Attention:
       
       xq = xq.reshape(self.n_heads,1,self.head_dim)
       xk = xk.reshape(1,self.n_heads,self.head_dim)
-      xv = xv.reshape(1,1,self.n_heads,self.head_dim)
+      xv = xv.reshape(1,self.n_heads,self.head_dim)
 
       keys = np.resize(keys,(start_pos,self.n_heads,self.head_dim))
-      values = np.resize(values,(1,start_pos,self.n_heads,self.head_dim))
+      values = np.resize(values,(start_pos,self.n_heads,self.head_dim))
 
       keys = np.concatenate([keys,xk])
-      values = np.concatenate([values,xv],1)
+      values = np.concatenate([values,xv])
       keys = keys.transpose(1,2,0)
-      values = values.transpose(0,2,1,3)
+      values = values.transpose(1,0,2)
       qk2 = np.matmul(xq,[keys]) #todo extra dim
 
       qk2 = qk2 / math.sqrt(self.head_dim)
