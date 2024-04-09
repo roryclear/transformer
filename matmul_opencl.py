@@ -51,25 +51,20 @@ def matmul2(a,b):
         __global const float *a, __global const float *b, __global float *res)
     {{
     for(int y = 0; y < 10000; y++) {{
-        int x = get_local_id(0);
+        int x = get_local_id(0) + get_group_id(0) * 16;
         float acc0 = 0.0f;
         
-        float4 vals_a[4];
-        for(int i = 0; i < 4; i++) {{
+        float4 vals_a[16];
+        for(int i = 0; i < 16; i++) {{
             vals_a[i] = (float4)(*((__global float4*)(a+i*4)));
         }}
-        
-        float4 vala = (float4)(*((__global float4*)(a+0)));
-        float4 valb = (float4)(*((__global float4*)(a+4)));
-        float4 valc = (float4)(*((__global float4*)(a+8)));
-        float4 vald = (float4)(*((__global float4*)(a+12)));
                      
-        float vals_b[16];
-        for(int i = 0; i < 16; i++) {{
+        float vals_b[64];
+        for(int i = 0; i < 64; i++) {{
             vals_b[i] = b[x+i*4];
         }}
         
-        for(int i = 0; i < 4; i++) {{
+        for(int i = 0; i < 16; i++) {{
             acc0 = mad((vals_a[i]).x,vals_b[i*4],acc0);
             acc0 = mad((vals_a[i]).y,vals_b[i*4 + 1],acc0);
             acc0 = mad((vals_a[i]).z,vals_b[i*4 + 2],acc0);
@@ -80,7 +75,7 @@ def matmul2(a,b):
     }}
     """).build()
     knl = prg.matmul
-    knl(queue, (16,1), (16,1), a_g, b_g,c_g) #todo check shape
+    knl(queue, (64,1), (64,1), a_g, b_g,c_g) #todo check shape
     cl.enqueue_copy(queue, c, c_g)
     return c
 
@@ -98,22 +93,23 @@ def matmul2_tg(a,b):
         __global const float *data1, __global const float *data2, __global float *data0)
     {{
     __attribute__ ((aligned (16))) __local float temp[16];
-    for(int y = 0; y < 10000; y++) {{
     int gidx0 = get_group_id(0); /* 4 */
     int lidx1 = get_local_id(0); /* 16 */
     float acc0 = 0.0f;
-    float val0 = data1[lidx1];
-    float val1 = data2[gidx0+(lidx1*4)];
-    temp[lidx1] = mad(val0,val1,acc0);
+    for (int ridx0 = 0; ridx0 < 4; ridx0++) {{
+        float val0 = data1[(lidx1*4)+ridx0];
+        float val1 = data2[gidx0+(lidx1*16)+(ridx0*4)];
+        acc0 = mad(val0,val1,acc0);
+    }}
+    temp[lidx1] = acc0;
     barrier(CLK_LOCAL_MEM_FENCE);
     if ((lidx1<1)) {{
         float acc1 = 0.0f;
-        for (int ridx0 = 0; ridx0 < 16; ridx0++) {{
-        float val2 = temp[ridx0];
+        for (int ridx1 = 0; ridx1 < 16; ridx1++) {{
+        float val2 = temp[ridx1];
         acc1 = (val2+acc1);
         }}
         data0[gidx0] = acc1;
-    }}
     }}
     }}
     """).build()
@@ -136,11 +132,11 @@ def time_it(func,a,b,s,i=1):
     return ret
 
 ####SMALL MATMUL...MAKE BIGGER###
-a = np.random.rand(1,16).astype(np.float32)
-b = np.random.rand(16,4).astype(np.float32)
+a = np.random.rand(1,64).astype(np.float32)
+b = np.random.rand(64,4).astype(np.float32)
 c_np = np.matmul(a,b)
-c = time_it(matmul2,a,b,"mine",100)
 c2 = time_it(matmul2_tg,a,b,"tg",100)
+c = time_it(matmul2,a,b,"mine",100)
 print(c,c_np)
 np.testing.assert_allclose(c,c_np,rtol=1e-5)
 np.testing.assert_allclose(c2,c_np,rtol=1e-5)
@@ -159,6 +155,5 @@ t = time.perf_counter() - st
 print("time taken:",t)
 
 c_np = np.matmul(a,b)
-print(c)
 np.testing.assert_allclose(c,c_np,rtol=1e-6)
 
