@@ -145,7 +145,12 @@ class Attention:
       values = np.concatenate([values,xv])
       keys = keys.transpose(1,2,0)
       values = values.transpose(1,0,2)
-      xq = np.matmul(xq,keys)
+      
+      keys = np.float32(keys)
+
+      #xq = np.matmul(xq,keys) kernel below is same as
+      xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
+
       xq = xq / math.sqrt(self.head_dim)
       for a in range(len(xq)):
         xq[a] = np.exp(xq[a] - np.max(xq[a]))

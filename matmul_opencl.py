@@ -1,6 +1,7 @@
 import numpy as np
 import pyopencl as cl
 import time
+import math
 np.random.seed(420)
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
@@ -37,10 +38,10 @@ def matmul(a,b):
     return c
 
 
-def matmul2(a,b):
+def matmul2(a,b,s=112):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([12,1,112])
+    c = np.zeros([12,1,s])
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
 
@@ -50,8 +51,8 @@ def matmul2(a,b):
     __kernel void matmul(
         __global const float *a, __global const float *b, __global float *res)
     {{
-    int x = get_global_id(0) % 112;
-    int k = get_global_id(0) / 112;
+    int x = get_global_id(0) % {s};
+    int k = get_global_id(0) / {s};
     float acc0 = 0.0f;
     float4 vals_a[16];
     for(int i = 0; i < 16; i++) {{
@@ -60,7 +61,7 @@ def matmul2(a,b):
                     
     float vals_b[64];
     for(int i = 0; i < 64; i++) {{
-        vals_b[i] = b[x+i*112 + 112*64*k]; // rory i*x
+        vals_b[i] = b[x+i*{s} + {s}*64*k]; // rory i*x
     }}
     
     for(int i = 0; i < 16; i++) {{
@@ -69,11 +70,13 @@ def matmul2(a,b):
         acc0 = mad((vals_a[i]).z,vals_b[i*4 + 2],acc0);
         acc0 = mad((vals_a[i]).w,vals_b[i*4 + 3],acc0);
     }}
-    res[x + k*112] = acc0;
+    res[x + k*{s}] = acc0;
     }}
     """).build()
     knl = prg.matmul
-    knl(queue, (256*6,1), (256,1), a_g, b_g,c_g) #shape of output !!!!!
+    local0 = min(256,s*64*12)
+    group0 = math.ceil(12*112 / local0) * local0
+    knl(queue, (group0,1), (local0,1), a_g, b_g,c_g) #shape of output !!!!!
     cl.enqueue_copy(queue, c, c_g)
     return c
 
@@ -150,15 +153,24 @@ def time_it(func,a,b,s,i=1):
     print("time taken\t",s,"\t",f,"\t",total_time)
     return ret
 
-####SMALL MATMUL...MAKE BIGGER###
-a = np.random.rand(12,1,64).astype(np.float32)
-b = np.random.rand(12,64,112).astype(np.float32)
-c_np = np.matmul(a,b)
-c = time_it(matmul2,a,b,"mine",100)
-c2 = time_it(matmul2_tg,a,b,"tg",100)
-np.testing.assert_allclose(c,c_np,rtol=1e-5)
-print("mine passed??")
-np.testing.assert_allclose(c2,c_np,rtol=1e-5)
+for i in range(2):
+    a = np.random.rand(12,1,64).astype(np.float32)
+    b = np.random.rand(12,64,112).astype(np.float32)
+    c_np = np.matmul(a,b)
+    c = time_it(matmul2,a,b,"mine",100)
+    c2 = time_it(matmul2_tg,a,b,"tg",100)
+    np.testing.assert_allclose(c,c_np,rtol=1e-5)
+    print("mine passed??")
+    np.testing.assert_allclose(c2,c_np,rtol=1e-5)
+
+for i in range(105):
+    s = 112-i
+    a = np.random.rand(12,1,64).astype(np.float32)
+    b = np.random.rand(12,64,s).astype(np.float32)
+    c_np = np.matmul(a,b)
+    c = matmul2(a,b,s)
+    np.testing.assert_allclose(c,c_np,rtol=1e-5)
+
 
 '''
 a = np.random.rand(1,64).astype(np.float32)
