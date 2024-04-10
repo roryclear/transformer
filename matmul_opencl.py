@@ -140,6 +140,49 @@ def matmul2_tg(a,b):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
+def double_reduce(a):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    c = np.zeros(1024)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+
+    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
+
+    prg = cl.Program(ctx, f"""
+    __kernel void red(
+        __global const float *data1, __global float *data0)
+    {{
+    __attribute__ ((aligned (16))) __local float temp[256];
+    __attribute__ ((aligned (16))) __local float m;
+    int lidx0 = get_local_id(0); /* 256 */
+    int gidx0 = get_group_id(0);
+    float acc0 = -INFINITY;
+    for (int ridx0 = 0; ridx0 < 4; ridx0++) {{
+        float val0 = data1[(lidx0*4)+ridx0];
+        float alu0 = max(val0,acc0);
+        acc0 = alu0;
+    }}
+    temp[lidx0] = acc0;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    if ((lidx0<1)) {{
+        float acc1 = -INFINITY;
+        for (int ridx1 = 0; ridx1 < 256; ridx1++) {{
+        float val1 = temp[ridx1];
+        float alu1 = max(val1,acc1);
+        acc1 = alu1;
+        }}
+        m = acc1;
+    }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+    float4 val0 = (float4)(*((__global float4*)(data1+lidx0*4)));
+    *((__global float4*)(data0+lidx0*4)) = (float4)(float4)(((val0).x-m),((val0).y-m),((val0).z-m),((val0).w-m));
+    }}
+    """).build()
+    knl = prg.red
+    knl(queue, (256,1), (256,1), a_g,c_g) #shape of output !!!!!
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
 def time_it(func,a,b,s,i=1):
     f = None
     total_time = 0
@@ -153,6 +196,17 @@ def time_it(func,a,b,s,i=1):
     print("time taken\t",s,"\t",f,"\t",total_time)
     return ret
 
+print("rory hello")
+a = np.arange(start=0,stop=1024).astype(np.float32)
+c_np = a - a.max()
+c = double_reduce(a)
+print(c_np)
+print(c)
+for i in range(len(c)):
+    print(c[i],c_np[i])
+np.testing.assert_allclose(c,c_np,rtol=1e-5)
+
+'''
 for i in range(2):
     a = np.random.rand(12,1,64).astype(np.float32)
     b = np.random.rand(12,64,112).astype(np.float32)
@@ -170,22 +224,5 @@ for i in range(105):
     c_np = np.matmul(a,b)
     c = matmul2(a,b,s)
     np.testing.assert_allclose(c,c_np,rtol=1e-5)
-
-
-'''
-a = np.random.rand(1,64).astype(np.float32)
-b = np.random.rand(64,112).astype(np.float32)
-#a.fill(1)
-#b.fill(1)
-c = np.zeros([1,112])
-c = np.float32(c)
-
-st = time.perf_counter()
-c = matmul(a,b)
-t = time.perf_counter() - st
-print("time taken:",t)
-
-c_np = np.matmul(a,b)
-np.testing.assert_allclose(c,c_np,rtol=1e-6)
 '''
 
