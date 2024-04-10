@@ -243,3 +243,31 @@ def matmul2(a,b,s=112):
     knl(queue, (group0,1), (local0,1), a_g, b_g,c_g) #shape of output !!!!!
     cl.enqueue_copy(queue, c, c_g)
     return c
+
+def minus_max(a,s=112):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    c = np.zeros((12,1,s))
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+
+    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
+
+    prg = cl.Program(ctx, f"""
+    __kernel void k(
+        __global const float *data1, __global float *data0)
+    {{
+        int lid = get_local_id(0);
+        float m = -INFINITY;
+        for(int i = 0; i < {s}; i++) {{
+            float val = data1[i + lid*{s}];
+            m = max(m,val);
+        }}
+        for(int i = 0; i < {s}; i++) {{
+            data0[i + lid*{s}] = data1[i + lid*{s}] - m;
+        }}
+    }}
+    """).build()
+    knl = prg.k
+    knl(queue, (12,1), (12,1), a_g,c_g) #todo hardcoded
+    cl.enqueue_copy(queue, c, c_g)
+    return c

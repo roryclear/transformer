@@ -140,6 +140,7 @@ def matmul2_tg(a,b):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
+#for x = x - x.max() or something similar
 def double_reduce(a):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     c = np.zeros(1024)
@@ -183,6 +184,34 @@ def double_reduce(a):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
+def minus_max(a,s=112):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    c = np.zeros((12,s))
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+
+    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
+
+    prg = cl.Program(ctx, f"""
+    __kernel void k(
+        __global const float *data1, __global float *data0)
+    {{
+        int lid = get_local_id(0);
+        float m = -INFINITY;
+        for(int i = 0; i < {s}; i++) {{
+            float val = data1[i + lid*{s}];
+            m = max(m,val);
+        }}
+        for(int i = 0; i < {s}; i++) {{
+            data0[i + lid*{s}] = data1[i + lid*{s}] - m;
+        }}
+    }}
+    """).build()
+    knl = prg.k
+    knl(queue, (12,1), (12,1), a_g,c_g) #todo hardcoded
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
 def time_it(func,a,b,s,i=1):
     f = None
     total_time = 0
@@ -196,16 +225,14 @@ def time_it(func,a,b,s,i=1):
     print("time taken\t",s,"\t",f,"\t",total_time)
     return ret
 
-print("rory hello")
-a = np.arange(start=0,stop=1024).astype(np.float32)
-c_np = a - a.max()
-c = double_reduce(a)
-print(c_np)
-print(c)
-for i in range(len(c)):
-    print(c[i],c_np[i])
-np.testing.assert_allclose(c,c_np,rtol=1e-5)
-
+for i in range(105):
+    s = 112 - i
+    a = np.random.rand(12*s).astype(np.float32).reshape(12,s)
+    c_np = np.zeros((12,s))
+    for i in range(len(a)):
+        c_np[i] = a[i] - np.max(a[i])
+    c = minus_max(a,s)
+    np.testing.assert_allclose(c,c_np,rtol=1e-5)
 '''
 for i in range(2):
     a = np.random.rand(12,1,64).astype(np.float32)
