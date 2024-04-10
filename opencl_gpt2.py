@@ -152,11 +152,10 @@ class Attention:
       xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
 
       #for a in range(len(xq)):
-      #  xq[a] = (xq[a] - np.max(xq[a]))
+      #  xq[a] = exp(xq[a] - np.max(xq[a]))
       #kernel below
       xq = openclk.minus_max(xq,(start_pos+1))
       for a in range(len(xq)):
-        xq[a] = np.exp(xq[a])
         xq[a] = xq[a] / xq[a].sum()
       xq = np.matmul(xq,values)
       xq = xq.reshape((1,1,self.dim))

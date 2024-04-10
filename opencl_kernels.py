@@ -263,7 +263,7 @@ def minus_max(a,s=112):
             m = max(m,val);
         }}
         for(int i = 0; i < {s}; i++) {{
-            data0[i + lid*{s}] = data1[i + lid*{s}] - m;
+            data0[i + lid*{s}] = exp(data1[i + lid*{s}] - m);
         }}
     }}
     """).build()
