@@ -265,6 +265,15 @@ def minus_max(a,s=112):
         for(int i = 0; i < {s}; i++) {{
             data0[i + lid*{s}] = exp(data1[i + lid*{s}] - m);
         }}
+        barrier(CLK_LOCAL_MEM_FENCE); //not needed in practice?
+        float t = 0;
+        for(int i = 0; i < {s}; i++) {{
+            float val = data0[i + lid*{s}];
+            t = t+val;
+        }}
+        for(int i = 0; i < {s}; i++) {{
+            data0[i + lid*{s}] = data0[i + lid*{s}] / t;
+        }}
     }}
     """).build()
     knl = prg.k

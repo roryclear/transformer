@@ -153,10 +153,10 @@ class Attention:
 
       #for a in range(len(xq)):
       #  xq[a] = exp(xq[a] - np.max(xq[a]))
+      #  xq[a] = xq[a] / xq[a].sum()
       #kernel below
       xq = openclk.minus_max(xq,(start_pos+1))
-      for a in range(len(xq)):
-        xq[a] = xq[a] / xq[a].sum()
+        
       xq = np.matmul(xq,values)
       xq = xq.reshape((1,1,self.dim))
       ret = self.c_proj(xq)
