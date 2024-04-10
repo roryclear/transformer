@@ -148,10 +148,8 @@ class Attention:
       
       keys = np.float32(keys)
 
-      #xq = np.matmul(xq,keys) kernel below is same as
+      #xq = np.matmul(xq,keys) / math.sqrt(self.head_dim) kernel below is same as
       xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
-
-      xq = xq / math.sqrt(self.head_dim)
       for a in range(len(xq)):
         xq[a] = np.exp(xq[a] - np.max(xq[a]))
         xq[a]  = xq[a] / xq[a].sum()

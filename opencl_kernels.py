@@ -234,7 +234,7 @@ def matmul2(a,b,s=112):
         acc0 = mad((vals_a[i]).z,vals_b[i*4 + 2],acc0);
         acc0 = mad((vals_a[i]).w,vals_b[i*4 + 3],acc0);
     }}
-    res[x + k*{s}] = acc0;
+    res[x + k*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
     }}
     """).build()
     knl = prg.matmul
