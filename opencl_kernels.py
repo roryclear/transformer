@@ -239,8 +239,8 @@ def matmul2(a,b,s=112):
     """).build()
     knl = prg.matmul
     local0 = min(256,s*64*12)
-    group0 = math.ceil(12*112 / local0) * local0
-    knl(queue, (group0,1), (local0,1), a_g, b_g,c_g) #shape of output !!!!!
+    group0 = math.ceil(12*s / local0) * local0
+    knl(queue, (group0,1), (local0,1), a_g, b_g,c_g)
     cl.enqueue_copy(queue, c, c_g)
     return c
 
