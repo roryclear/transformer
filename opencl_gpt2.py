@@ -169,7 +169,7 @@ class Attention:
 
       #ret = np.matmul(xq,self.c_proj.weight) + self.c_proj.bias kernel below
       ret = openclk.matvec(xq,self.c_proj.weight,self.c_proj.bias)
-      
+
       return ret
 
     else:
@@ -335,10 +335,9 @@ class Transformer:
 
       #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.h[0].ln_1.eps)) #kernel below
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-      #print(mm2,mm3)
 
-      x = ((mm * mm2) / self.h[0].ln_1.weight) + self.h[0].ln_1.bias
-      x = openclk.divide(np.copy(mm),mm2,self.h[0].ln_1.weight,self.h[0].ln_1.bias)
+      #x = ((mm * self.h[0].ln_1.weight) / mm2) + self.h[0].ln_1.bias #kernel below
+      x = openclk.divide(np.copy(mm), mm2, self.h[0].ln_1.weight, self.h[0].ln_1.bias)
       x = [[x]]
       attn = self.h[0].attn(x,start_pos,mask)
       h = h.reshape(1,1,768)
