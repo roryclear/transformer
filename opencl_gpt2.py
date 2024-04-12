@@ -149,6 +149,7 @@ class Attention:
       keys = np.float32(keys)
 
       #xq = np.matmul(xq,keys) / math.sqrt(self.head_dim) kernel below is same as
+      #print("rory shape in =",np.shape(xq),np.shape(keys))
       xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
 
       #for a in range(len(xq)):
@@ -156,8 +157,11 @@ class Attention:
       #  xq[a] = xq[a] / xq[a].sum()
       #kernel below
       xq = openclk.minus_max(xq,(start_pos+1))
-        
-      xq = np.matmul(xq,values)
+      
+      values = values.astype(np.float32)
+      #xq = np.matmul(xq,values) #kernel below
+      xq = openclk.matmul3(xq,values,(start_pos+1))
+
       xq = xq.reshape((1,1,self.dim))
       ret = self.c_proj(xq)
       return ret

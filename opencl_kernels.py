@@ -285,48 +285,65 @@ def matmul3(a,b,s):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b = b.flatten() #todo, shouldnt be needed
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([1,1,64])
+    c = np.zeros([12,1,64])
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
 
     #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
-    if s % 4 != 0:
-        s = math.ceil(s / 4) * 4
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
         __global const float *a, __global const float *b, __global float *res)
     {{
         int lidx0 = get_local_id(0);
+        int gidx0 = get_group_id(0);
         float acc0 = 0;
-        float4 vals_a[{s}/4];
-        for(int i = 0; i < ({s}/4); i++) {{
-            vals_a[i] = (float4)(*((__global float4*)(a+i*4)));
+        float4 vals_a[{s}];
+        for(int i = 0; i < {s}; i++) {{
+            vals_a[i] = a[i + {s}*gidx0];
         }}
         float vals_b[{s}];
         for(int i = 0; i < {s}; i++) {{
-            vals_b[i] = b[i*64 + lidx0];
+            vals_b[i] = b[i*64 + lidx0 + gidx0*{s}*64];
         }}
-        for(int i = 0; i < ({s}/4); i++) {{
-            acc0 = mad((vals_a[i]).x,vals_b[i*4 + 0],acc0);
-            acc0 = mad((vals_a[i]).y,vals_b[i*4 + 1],acc0);
-            acc0 = mad((vals_a[i]).z,vals_b[i*4 + 2],acc0);
-            acc0 = mad((vals_a[i]).w,vals_b[i*4 + 3],acc0);
+        for(int i = 0; i < {s}; i++) {{
+            acc0 = mad(vals_a[i].x,vals_b[i],acc0);
         }}
-        res[lidx0] = acc0;
+        res[lidx0 + gidx0*64] = acc0;
     }}
     """).build()
     knl = prg.matmul
-    knl(queue, (64,1), (64,1), a_g, b_g,c_g)
+    knl(queue, (64*12,1), (64,1), a_g, b_g,c_g)
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-#64 = 8
-# start_pos = 4
-for s in range(8,128):
-    a = np.random.rand(1,1,s).astype(np.float32)
-    b = np.random.rand(1,s,64).astype(np.float32)
-    c_np = np.matmul(a,b)
-    c = matmul3(a,b,s)
-    np.testing.assert_allclose(c,c_np,rtol=1e-5)
-print(c)
-print(c_np,np.shape(c_np))
+def time_it(func,a,b,s,i=1):
+    f = None
+    total_time = 0
+    for _ in range(i):
+        st = time.perf_counter()
+        ret = func(a,b,s)
+        t = time.perf_counter() - st
+        total_time += t
+        if f is None or t < f:
+            f = t
+    #print("time taken\t",s,"\t",f,"\t",total_time)
+    return ret,f
+'''
+# for 3d arrays like (2,1,s)x(2,s,64) this doesnt work
+# when s % 4 != 0, float4 overflows to next row
+# is using float4 actually faster? or get rid of it?
+ft = 0
+ftb = 0
+for i in range(10):
+    for s in range(8,128):
+        a = np.random.rand(12,1,s).astype(np.float32)
+        b = np.random.rand(12,s,64).astype(np.float32)
+        c_np = np.matmul(a,b)
+        cb,fb = time_it(matmul3_no_float4_b,a,b,s,10)
+        c,f = time_it(matmul3_no_float4,a,b,s,10)
+        ft += f
+        ftb += fb
+        np.testing.assert_allclose(c,c_np,rtol=1e-5)
+        np.testing.assert_allclose(cb,c_np,rtol=1e-5)
+        print(s,"\t",ft,"\t",ftb,"\t",(ft/ftb))
+'''
