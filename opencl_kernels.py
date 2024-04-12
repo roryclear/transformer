@@ -340,29 +340,30 @@ def matmul4(a,b,s):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matvec(a,b):
+def matvec(a,b,c):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b = b.flatten() #todo, shouldnt be needed
+    b = b.flatten()
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([1,1,768])
-    c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d = np.zeros([1,1,768])
+    d = np.float32(d)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
     prg = cl.Program(ctx, f"""
-    __kernel void matmul(
-        __global const float *a, __global const float *b, __global float *res)
+    __kernel void matvec(
+        __global const float *a, __global const float *b, __global const float *c, __global float *res)
     {{
         int lidx0 = get_global_id(0);
         float acc = 0;
         for(int x = 0; x < 768; x++) {{
             acc += a[x] * b[x*768 + lidx0];
         }}
-        res[lidx0] = acc;
+        res[lidx0] = acc + c[lidx0];
     }}
     """).build()
-    knl = prg.matmul
-    knl(queue, (768,1), (256,1), a_g, b_g,c_g)
-    cl.enqueue_copy(queue, c, c_g)
-    return c
+    knl = prg.matvec
+    knl(queue, (768,1), (256,1), a_g, b_g,c_g,d_g)
+    cl.enqueue_copy(queue, d, d_g)
+    return d
 
 def time_it(func,a,b,s,i=1):
     f = None

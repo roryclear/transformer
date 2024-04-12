@@ -167,9 +167,9 @@ class Attention:
       self.c_proj.weight = np.float32(self.c_proj.weight)
       self.c_proj.bias = np.float32(self.c_proj.bias)
 
-      #ret = np.matmul(xq,self.c_proj.weight) kernel below
-      ret = openclk.matvec(xq,self.c_proj.weight)
-      ret += self.c_proj.bias
+      #ret = np.matmul(xq,self.c_proj.weight) + self.c_proj.bias kernel below
+      ret = openclk.matvec(xq,self.c_proj.weight,self.c_proj.bias)
+      
       return ret
 
     else:
