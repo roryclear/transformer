@@ -280,3 +280,53 @@ def minus_max(a,s=112):
     knl(queue, (12,1), (12,1), a_g,c_g) #todo hardcoded
     cl.enqueue_copy(queue, c, c_g)
     return c
+
+def matmul3(a,b,s):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten() #todo, shouldnt be needed
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([1,1,64])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+
+    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
+    if s % 4 != 0:
+        s = math.ceil(s / 4) * 4
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int lidx0 = get_local_id(0);
+        float acc0 = 0;
+        float4 vals_a[{s}/4];
+        for(int i = 0; i < ({s}/4); i++) {{
+            vals_a[i] = (float4)(*((__global float4*)(a+i*4)));
+        }}
+        float vals_b[{s}];
+        for(int i = 0; i < {s}; i++) {{
+            vals_b[i] = b[i*64 + lidx0];
+        }}
+        for(int i = 0; i < ({s}/4); i++) {{
+            acc0 = mad((vals_a[i]).x,vals_b[i*4 + 0],acc0);
+            acc0 = mad((vals_a[i]).y,vals_b[i*4 + 1],acc0);
+            acc0 = mad((vals_a[i]).z,vals_b[i*4 + 2],acc0);
+            acc0 = mad((vals_a[i]).w,vals_b[i*4 + 3],acc0);
+        }}
+        res[lidx0] = acc0;
+    }}
+    """).build()
+    knl = prg.matmul
+    knl(queue, (64,1), (64,1), a_g, b_g,c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+#64 = 8
+# start_pos = 4
+for s in range(8,128):
+    a = np.random.rand(1,1,s).astype(np.float32)
+    b = np.random.rand(1,s,64).astype(np.float32)
+    c_np = np.matmul(a,b)
+    c = matmul3(a,b,s)
+    np.testing.assert_allclose(c,c_np,rtol=1e-5)
+print(c)
+print(c_np,np.shape(c_np))
