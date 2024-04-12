@@ -163,7 +163,13 @@ class Attention:
       xq = openclk.matmul3(xq,values,(start_pos+1))
 
       xq = xq.reshape((1,1,self.dim))
-      ret = self.c_proj(xq)
+
+      self.c_proj.weight = np.float32(self.c_proj.weight)
+      self.c_proj.bias = np.float32(self.c_proj.bias)
+
+      #ret = np.matmul(xq,self.c_proj.weight) kernel below
+      ret = openclk.matvec(xq,self.c_proj.weight)
+      ret += self.c_proj.bias
       return ret
 
     else:

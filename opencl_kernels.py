@@ -312,7 +312,55 @@ def matmul3(a,b,s):
     }}
     """).build()
     knl = prg.matmul
-    knl(queue, (64*12,1), (64,1), a_g, b_g,c_g)
+    knl(queue, (64*12,1), (64,1), a_g, b_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def matmul4(a,b,s):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten() #todo, shouldnt be needed
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([1,1,s])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int lidx0 = get_global_id(0);
+        float acc = 0;
+        for(int x = 0; x < {s}; x++) {{
+            acc += a[x] * b[x*{s} + lidx0];
+        }}
+        res[lidx0] = acc;
+    }}
+    """).build()
+    knl = prg.matmul
+    knl(queue, (768,1), (256,1), a_g, b_g,c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def matvec(a,b):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten() #todo, shouldnt be needed
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([1,1,768])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int lidx0 = get_global_id(0);
+        float acc = 0;
+        for(int x = 0; x < 768; x++) {{
+            acc += a[x] * b[x*768 + lidx0];
+        }}
+        res[lidx0] = acc;
+    }}
+    """).build()
+    knl = prg.matmul
+    knl(queue, (768,1), (256,1), a_g, b_g,c_g)
     cl.enqueue_copy(queue, c, c_g)
     return c
 
@@ -328,22 +376,3 @@ def time_it(func,a,b,s,i=1):
             f = t
     #print("time taken\t",s,"\t",f,"\t",total_time)
     return ret,f
-'''
-# for 3d arrays like (2,1,s)x(2,s,64) this doesnt work
-# when s % 4 != 0, float4 overflows to next row
-# is using float4 actually faster? or get rid of it?
-ft = 0
-ftb = 0
-for i in range(10):
-    for s in range(8,128):
-        a = np.random.rand(12,1,s).astype(np.float32)
-        b = np.random.rand(12,s,64).astype(np.float32)
-        c_np = np.matmul(a,b)
-        cb,fb = time_it(matmul3_no_float4_b,a,b,s,10)
-        c,f = time_it(matmul3_no_float4,a,b,s,10)
-        ft += f
-        ftb += fb
-        np.testing.assert_allclose(c,c_np,rtol=1e-5)
-        np.testing.assert_allclose(cb,c_np,rtol=1e-5)
-        print(s,"\t",ft,"\t",ftb,"\t",(ft/ftb))
-'''
