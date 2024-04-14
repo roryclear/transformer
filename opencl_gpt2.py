@@ -59,7 +59,10 @@ class Linear():
     x = x[0]
     if np.shape(self.weight) == (768,3072) and np.shape(x) == (1,768):
       #ret = np.matmul(x,self.weight) + self.bias #kernel below
-      ret = openclk.matvec2(x,self.weight,self.bias)
+      ret = openclk.matvec2_b(x,self.weight,self.bias)
+    elif np.shape(x) == (3072,):
+      #ret = np.matmul(x,self.weight) + self.bias #kernel below
+      ret = openclk.matvec2_b(x,self.weight,self.bias)
     else:
       ret = np.matmul(x,self.weight)
       if self.bias is not None:
