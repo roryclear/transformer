@@ -365,11 +365,11 @@ def matvec(a,b,c):
     cl.enqueue_copy(queue, d, d_g)
     return d
 
-def matvec2(a,b):
+def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kernels
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b = b.flatten()
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([1,3072])
+    c = c.flatten()
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     prg = cl.Program(ctx, f"""
@@ -384,28 +384,6 @@ def matvec2(a,b):
     """).build()
     knl = prg.matvec
     knl(queue, (3072,1), (16,1), a_g, b_g,c_g)
-    cl.enqueue_copy(queue, c, c_g)
-    return c
-
-def matvec2_b(a,b):
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b = b.flatten()
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([1,3072])
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    prg = cl.Program(ctx, f"""
-    __kernel void matvec(
-        __global const float *a, __global const float *b , __global float *res)
-    {{
-        int gidx0 = get_global_id(0);
-        for(int j = 0; j < 768; j++) {{
-            res[gidx0] += a[j] * b[gidx0 + j*3072];
-        }}
-    }}
-    """).build()
-    knl = prg.matvec
-    knl(queue, (3072,1), (256,1), a_g, b_g,c_g) #todo, 16 is slightly faster than 256, idk why
     cl.enqueue_copy(queue, c, c_g)
     return c
 
