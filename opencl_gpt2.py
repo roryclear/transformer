@@ -51,12 +51,10 @@ class Linear():
     self.bias = None
     self.weight = None
 
-  def __call__(self,x,f32=False):
-    #print("rory input weight shape",np.shape(x),"\weight shape",np.shape(self.weight),"\tbias shape\t",np.shape(self.bias))
-    #rory this is terrible atm obv
-    if f32:
-      x = np.float32(x)
-      self.weight = np.float32(self.weight)
+  def __call__(self,x):
+    x = np.float32(x)
+    self.weight = np.float32(self.weight)
+    if self.bias is not None:
       self.bias = np.float32(self.bias)
     if np.shape(self.weight) != (3072, 768) and np.shape(self.weight) != (768, 3072) and np.shape(self.weight) != (768,50257)\
     and np.shape(self.weight) != (768,768):
@@ -64,9 +62,8 @@ class Linear():
       exit()
     x = x[0]
     if np.shape(self.weight) == (768,3072) and np.shape(x) == (1,768):
-      ret = np.matmul(x,self.weight)
-      if f32:
-        ret = openclk.matvec2(x,self.weight)
+      #ret = np.matmul(x,self.weight) #kernel below
+      ret = openclk.matvec2(x,self.weight)
     else:
       ret = np.matmul(x,self.weight)
     if self.bias is not None:
@@ -238,8 +235,8 @@ class FeedForward:
     for i in range(np.shape(x)[1]):
       # gelu() activation
       x[0][i] = 0.5 * x[0][i] * (1 + np.tanh(x[0][i] * 0.7978845608 * (1 + 0.044715 * x[0][i] * x[0][i])))
-    ret = self.c_proj(x,f32=True)
-    ret = np.float64(ret)
+    ret = self.c_proj(x)
+    ret = np.float64(ret) #todo, shouldnt need f64
     return ret
   
 class Embedding:
@@ -366,6 +363,7 @@ class Transformer:
         h = self.h[i](h, start_pos, mask)
       h = self.ln_f(h)
       logits = self.lm_head(h)
+      logits = np.float64(logits) #todo shouldnt need f64
     else:
       tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))
