@@ -51,10 +51,24 @@ class Linear():
     self.bias = None
     self.weight = None
 
-  def __call__(self,x):
-    #rory this is terrible atm obv    
+  def __call__(self,x,f32=False):
+    #print("rory input weight shape",np.shape(x),"\weight shape",np.shape(self.weight),"\tbias shape\t",np.shape(self.bias))
+    #rory this is terrible atm obv
+    if f32:
+      x = np.float32(x)
+      self.weight = np.float32(self.weight)
+      self.bias = np.float32(self.bias)
+    if np.shape(self.weight) != (3072, 768) and np.shape(self.weight) != (768, 3072) and np.shape(self.weight) != (768,50257)\
+    and np.shape(self.weight) != (768,768):
+      print(np.shape(self.weight))
+      exit()
     x = x[0]
-    ret = np.matmul(x,self.weight)
+    if np.shape(self.weight) == (768,3072) and np.shape(x) == (1,768):
+      ret = np.matmul(x,self.weight)
+      if f32:
+        ret = openclk.matvec2(x,self.weight)
+    else:
+      ret = np.matmul(x,self.weight)
     if self.bias is not None:
       for x in range(ret.shape[0]):
         ret[x] += self.bias
@@ -103,7 +117,7 @@ def encode(x):
 
 class Attention:
   def __init__(self, dim, n_heads):
-    self.c_attn = Linear(dim, 3*dim, bias=True)
+    self.c_attn = Linear(dim, 3*dim, bias=True) #float32
     self.c_proj = Linear(dim, dim, bias=True)
     self.n_heads = n_heads
     self.dim = dim
@@ -224,7 +238,8 @@ class FeedForward:
     for i in range(np.shape(x)[1]):
       # gelu() activation
       x[0][i] = 0.5 * x[0][i] * (1 + np.tanh(x[0][i] * 0.7978845608 * (1 + 0.044715 * x[0][i] * x[0][i])))
-    ret = self.c_proj(x)
+    ret = self.c_proj(x,f32=True)
+    ret = np.float64(ret)
     return ret
   
 class Embedding:
@@ -282,8 +297,8 @@ class Embedding_2: #todo crutch
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
-    self.attn = Attention(dim,n_heads)
-    self.mlp = FeedForward(dim, 4*dim)
+    self.attn = Attention(dim,n_heads) # done
+    self.mlp = FeedForward(dim, 4*dim) #
     self.ln_1 = LayerNorm(dim,norm_eps)
     self.ln_2 = LayerNorm(dim,norm_eps)
 

@@ -365,15 +365,82 @@ def matvec(a,b,c):
     cl.enqueue_copy(queue, d, d_g)
     return d
 
-def time_it(func,a,b,s,i=1):
+def matvec2(a,b):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten()
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([1,3072])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matvec(
+        __global const float *a, __global const float *b , __global float *res)
+    {{
+        int gidx0 = get_global_id(0);
+        for(int j = 0; j < 768; j++) {{
+            res[gidx0] += a[j] * b[gidx0 + j*3072];
+        }}
+    }}
+    """).build()
+    knl = prg.matvec
+    knl(queue, (3072,1), (16,1), a_g, b_g,c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def matvec2_b(a,b):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten()
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([1,3072])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matvec(
+        __global const float *a, __global const float *b , __global float *res)
+    {{
+        int gidx0 = get_global_id(0);
+        for(int j = 0; j < 768; j++) {{
+            res[gidx0] += a[j] * b[gidx0 + j*3072];
+        }}
+    }}
+    """).build()
+    knl = prg.matvec
+    knl(queue, (3072,1), (256,1), a_g, b_g,c_g) #todo, 16 is slightly faster than 256, idk why
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def time_it(func,a,b,i=100):
     f = None
     total_time = 0
     for _ in range(i):
         st = time.perf_counter()
-        ret = func(a,b,s)
+        ret = func(a,b)
         t = time.perf_counter() - st
         total_time += t
         if f is None or t < f:
             f = t
+        print(f)
     #print("time taken\t",s,"\t",f,"\t",total_time)
     return ret,f
+'''
+a = np.random.rand(1,768).astype(np.float32)
+b = np.random.rand(768,3072).astype(np.float32)
+c_np = np.matmul(a,b)
+t = 0
+t_b = 0
+for i in range(10):
+    print("here\n")
+    c,tx=time_it(matvec2,a,b)
+    t+=tx
+    c2,tx=time_it(matvec2_b,a,b)
+    np.testing.assert_allclose(c2,c_np,rtol=1e-5)
+    t_b+=tx
+    print(t,t_b)
+c = matvec2(a,b)
+c2 = matvec2_b(a,b)
+print("A time B time:\t",t,t_b,"B/A",(t_b/t))
+np.testing.assert_allclose(c,c_np,rtol=1e-5)
+np.testing.assert_allclose(c2,c_np,rtol=1e-5)
+print(c)
+print(c_np)
+'''
