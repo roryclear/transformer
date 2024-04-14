@@ -56,17 +56,15 @@ class Linear():
     self.weight = np.float32(self.weight)
     if self.bias is not None:
       self.bias = np.float32(self.bias)
-    x = x[0]
-    if np.shape(self.weight) == (768,3072) and np.shape(x) == (1,768):
-      #ret = np.matmul(x,self.weight) + self.bias #kernel below
-      ret = openclk.matvec2_b(x,self.weight,self.bias)
-    elif np.shape(x) == (3072,):
-      #ret = np.matmul(x,self.weight) + self.bias #kernel below
-      ret = openclk.matvec2_b(x,self.weight,self.bias)
     else:
-      ret = np.matmul(x,self.weight)
-      if self.bias is not None:
-        ret += self.bias
+      self.bias = np.zeros(np.shape(self.weight[1])).astype(np.float32)
+    x = x[0]
+    if np.shape(x)[0] == 1:
+      ret = openclk.matvec2(x,self.weight,self.bias)
+      if len(np.shape(ret)) == 1:
+        ret = [ret]
+    else:
+      ret = np.matmul(x,self.weight) + self.bias
     ret = [ret]
     return ret
   
