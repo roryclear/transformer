@@ -56,10 +56,6 @@ class Linear():
     self.weight = np.float32(self.weight)
     if self.bias is not None:
       self.bias = np.float32(self.bias)
-    if np.shape(self.weight) != (3072, 768) and np.shape(self.weight) != (768, 3072) and np.shape(self.weight) != (768,50257)\
-    and np.shape(self.weight) != (768,768):
-      print(np.shape(self.weight))
-      exit()
     x = x[0]
     if np.shape(self.weight) == (768,3072) and np.shape(x) == (1,768):
       #ret = np.matmul(x,self.weight) #kernel below
@@ -67,8 +63,7 @@ class Linear():
     else:
       ret = np.matmul(x,self.weight)
     if self.bias is not None:
-      for x in range(ret.shape[0]):
-        ret[x] += self.bias
+      ret += self.bias
     ret = [ret]
     return ret
   
