@@ -62,7 +62,7 @@ class Linear():
     if np.shape(x)[0] == 1:
       ret = openclk.matvec2(x,self.weight,self.bias)
       if len(np.shape(ret)) == 1:
-        ret = [ret]
+        ret = [ret] #todo
     else:
       ret = np.matmul(x,self.weight) + self.bias
     ret = [ret]
@@ -76,10 +76,19 @@ class LayerNorm:
     self.weight = None
 
   def __call__(self, x):  
+    x = np.float32(x)
+    self.weight = np.float32(self.weight)
+    self.bias = np.float32(self.bias)
     if np.shape(x)[1] == 1:
       x = x[0][0]
-      x = (x - x.mean()) / np.sqrt(np.mean((x - x.mean())**2) + self.eps)\
-      * self.weight + self.bias
+      #print("print rory x shape here =",np.shape(x))
+      #mm = x - x.mean() #kernel below
+      mm = openclk.minus_mean_multi(np.copy(x))
+      #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.h[0].ln_1.eps)) #kernel below
+      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+
+      #x = ((mm * self.h[0].ln_1.weight) / mm2) + self.h[0].ln_1.bias #kernel below
+      x = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
       x = [[x]]
       return x
     assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
@@ -88,8 +97,18 @@ class LayerNorm:
     #return x * self.weight + self.bias
     #it doesnt work still with actual copy?
     for i in range(len(x[0])):
-      x[0][i] = (x[0][i] - np.mean(x[0][i])) / np.sqrt(np.mean((x[0][i] - np.mean(x[0][i]))**2) + self.eps)\
-      * self.weight + self.bias
+      #x[0][i] = (x[0][i] - np.mean(x[0][i])) / np.sqrt(np.mean((x[0][i] - np.mean(x[0][i]))**2) + self.eps)\
+      #* self.weight + self.bias
+
+      # todo all in one kernel instead of loop
+      #mm = x[0][i] - np.mean(x[0][i]) #kernel below
+      #mm = x[0][i] - np.mean(x[0][i]) # this causes an error, not sure why
+      mm = openclk.minus_mean_multi(np.copy(x[0][i]))
+      #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.eps)) #kernel below
+      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+
+      #x = ((mm * self.weight) / mm2) + self.bias #kernel below
+      x[0][i] = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)  
     return x
 
 def encode(x):
@@ -340,7 +359,6 @@ class Transformer:
       #todo, why do things need to be np.copied???
       #mm = h - np.mean(h) #kernel below
       mm = openclk.minus_mean_multi(h)
-
       #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.h[0].ln_1.eps)) #kernel below
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
 
