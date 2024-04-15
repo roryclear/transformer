@@ -31,13 +31,14 @@ def scaled_dot_product_attention(x, key, value, attn_mask=None,
   key = np.transpose(key,(0,1,3,2))
   qk = np.matmul(x,key)
   qk = qk / math.sqrt(np.shape(x)[-1])
-  for a in range(len(qk)):
-    for b in range(len(qk[0])):
-      for c in range(len(qk[0][0])):
-        for d in range(len(qk[0][0][0])):
-          if d > c: qk[a][b][c][d] -= np.inf
-        qk[a][b][c] = np.exp(qk[a][b][c] - np.max(qk[a][b][c]))
-        qk[a][b][c] = qk[a][b][c] / qk[a][b][c].sum() 
+  qk = qk[0]
+  for x in range(len(qk)):
+    for y in range(len(qk[0])):
+      for z in range(len(qk[0][0])):
+        if z > y: qk[x][y][z] -= np.inf
+      qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
+      qk[x][y] = qk[x][y] / qk[x][y].sum()
+  qk = [qk]
   qk = np.matmul(qk,value)
   return qk
 
