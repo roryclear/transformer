@@ -257,17 +257,6 @@ class FeedForward:
 class Embedding:
   def __init__(self, vocab_size:int, embed_size:int):
     self.vocab_size, self.embed_size = vocab_size, embed_size
-    self.weight = None
-    self.weight = np.zeros([self.vocab_size,self.embed_size])
-    f = open("gpt2weights/embedding.txt", 'r')
-    lines = f.readlines()[1:]
-    for y in range(self.vocab_size):
-      for x in range(self.embed_size):
-        self.weight[y][x] = lines[y*self.embed_size + x].replace("\n","")
-
-    if not hasattr(self, 'vocab_counter'):
-      self.vocab_counter = np.arange(start=0,stop=self.vocab_size)
-      self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
 
   def __call__(self, idx):
     ret = np.resize(self.weight,new_shape=(len(idx[0]),768))
@@ -276,17 +265,6 @@ class Embedding:
 class Embedding_2: #todo crutch
   def __init__(self, vocab_size:int, embed_size:int):
     self.vocab_size, self.embed_size = vocab_size, embed_size
-    self.weight = None
-    self.weight = np.empty([self.vocab_size,self.embed_size])
-    f = open("gpt2weights/embedding2.txt", 'r')
-    lines = f.readlines()[1:]
-    for y in range(self.vocab_size):
-      for x in range(self.embed_size):
-        self.weight[y][x] = lines[self.embed_size*y + x].replace("\n","")
-
-    if not hasattr(self, 'vocab_counter'):
-      self.vocab_counter = np.arange(start=0,stop=self.vocab_size)
-      self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
 
   def __call__(self, idx):
     ret = np.empty((len(idx[0]),self.embed_size))
