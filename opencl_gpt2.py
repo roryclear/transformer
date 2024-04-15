@@ -28,20 +28,16 @@ def decode(index):
 
 def scaled_dot_product_attention(x, key, value, attn_mask=None,
                                   dropout_p:float=0.0, is_causal:bool=False):
-  my_mask = np.triu(np.full([np.shape(x)[2],np.shape(x)[2]],1)) 
-  my_mask = (my_mask - np.eye(np.shape(x)[2])) * -math.inf
-  my_mask[np.isnan(my_mask)] = 0
-  np.where(np.isnan(my_mask), 0, my_mask) # inf * 0 = nan
-  my_mask = [[my_mask]]
   key = np.transpose(key,(0,1,3,2))
   qk = np.matmul(x,key)
   qk = qk / math.sqrt(np.shape(x)[-1])
-  qk = qk + my_mask
   for a in range(len(qk)):
     for b in range(len(qk[0])):
       for c in range(len(qk[0][0])):
+        for d in range(len(qk[0][0][0])):
+          if d > c: qk[a][b][c][d] -= np.inf
         qk[a][b][c] = np.exp(qk[a][b][c] - np.max(qk[a][b][c]))
-        qk[a][b][c] = qk[a][b][c] / qk[a][b][c].sum()
+        qk[a][b][c] = qk[a][b][c] / qk[a][b][c].sum() 
   qk = np.matmul(qk,value)
   return qk
 
