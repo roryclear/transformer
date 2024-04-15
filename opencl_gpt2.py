@@ -299,10 +299,11 @@ class Embedding_2: #todo crutch
       self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
 
   def __call__(self, idx):
-    idx_np = []
-    for i in range(len(idx[0])):
-      idx_np.append([idx[0][i]])
-    idx_np = ([idx_np] == self.vocab_counter)
+    idx_np = np.zeros((len(idx[0]),self.vocab_size))
+    idx_np.fill(False)
+    for i in range(len(idx_np)):
+      idx_np[i][idx[0][i]] = True
+    idx_np = [idx_np]
     ret = np.matmul(idx_np,self.weight)
     return ret
 
