@@ -270,17 +270,7 @@ class Embedding:
       self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
 
   def __call__(self, idx):
-    if idx.shape[1] == 1:
-      b = np.repeat(False,self.vocab_size)
-      b[idx] = True
-      ret = [[np.matmul(b,self.weight)]]
-      return ret
-    
-    b = np.empty((1,idx.shape[1],self.vocab_size),dtype=bool)
-    b.fill(False)
-    for i in range(len(b[0])):
-      b[0][i][i] = True
-    ret = np.matmul(b,self.weight)
+    ret = np.resize(self.weight,new_shape=(len(idx[0]),768))
     return ret
   
 class Embedding_2: #todo crutch
