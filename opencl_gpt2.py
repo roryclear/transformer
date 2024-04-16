@@ -198,7 +198,8 @@ class Attention:
       return ret
 
     else:
-      xqkv = np.matmul(x,self.c_attn.weight)
+      #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
+      xqkv = [openclk.matmul_t(x[0],self.c_attn.weight)]
       xqkv += self.c_attn.bias
       xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
       for i in range(xq.shape[1]):
