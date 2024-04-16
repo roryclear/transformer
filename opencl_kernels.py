@@ -400,6 +400,7 @@ def matmulcr(a,b): #column-row weight (b)
     cols = np.shape(b)[0]
     rows = np.shape(b)[1]
     a_rows = np.shape(a)[0]
+    print("rory a_rows =",a_rows)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.zeros([a_rows,rows])
@@ -411,10 +412,10 @@ def matmulcr(a,b): #column-row weight (b)
     {{
         int x = get_global_id(0);
         if(x < {cols}) {{
-            for(int y = 0; y < {rows}; y++) {{
+            for(int y = 0; y < {a_rows}; y++) {{
                 float total = 0;
                 for(int k = 0; k < {rows}; k++) {{
-                    total += a[y*{rows} + k] * b[x*{cols} + k]; 
+                    total += a[y*{cols} + k] * b[x*{rows} + k]; 
                 }}
                 res[y*{cols} + x] = total;
             }}  
