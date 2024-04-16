@@ -29,9 +29,19 @@ def decode(index):
 def scaled_dot_product_attention(x, key, value, attn_mask=None,
                                   dropout_p:float=0.0, is_causal:bool=False):
   key = np.transpose(key,(0,1,3,2))
-  qk = np.matmul(x,key)
+  x = np.float32(x)
+  key = np.float32(key)
+  #qk = np.matmul(x,key)[0] #"kernel" below
+  ##my thing
+  
+  x = x[0]
+  key = key[0]
+  print("shapes",np.shape(x),np.shape(key))
+  qk = np.empty((12,np.shape(key)[2],np.shape(key)[2]),dtype=np.float32) #crutch
+  for i in range(12):
+    qk[i] = openclk.matmul_t(np.copy(x[i]),np.copy(key[i]))
+  
   qk = qk / math.sqrt(np.shape(x)[-1])
-  qk = qk[0]
   for x in range(len(qk)):
     for y in range(len(qk[0])):
       for z in range(len(qk[0][0])):

@@ -225,31 +225,3 @@ def time_it(func,a,b,s,i=1):
     print("time taken\t",s,"\t",f,"\t",total_time)
     return ret
 
-for i in range(105):
-    s = 112 - i
-    a = np.random.rand(12*s).astype(np.float32).reshape(12,s)
-    c_np = np.zeros((12,s))
-    for i in range(len(a)):
-        c_np[i] = a[i] - np.max(a[i])
-    c = minus_max(a,s)
-    np.testing.assert_allclose(c,c_np,rtol=1e-5)
-'''
-for i in range(2):
-    a = np.random.rand(12,1,64).astype(np.float32)
-    b = np.random.rand(12,64,112).astype(np.float32)
-    c_np = np.matmul(a,b)
-    c = time_it(matmul2,a,b,"mine",100)
-    c2 = time_it(matmul2_tg,a,b,"tg",100)
-    np.testing.assert_allclose(c,c_np,rtol=1e-5)
-    print("mine passed??")
-    np.testing.assert_allclose(c2,c_np,rtol=1e-5)
-
-for i in range(105):
-    s = 112-i
-    a = np.random.rand(12,1,64).astype(np.float32)
-    b = np.random.rand(12,64,s).astype(np.float32)
-    c_np = np.matmul(a,b)
-    c = matmul2(a,b,s)
-    np.testing.assert_allclose(c,c_np,rtol=1e-5)
-'''
-
