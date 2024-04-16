@@ -31,6 +31,7 @@ def scaled_dot_product_attention(x, key, value, attn_mask=None,
   key = np.transpose(key,(0,1,3,2))
   x = np.float32(x)
   key = np.float32(key)
+  value = np.float32(value)
   #qk = np.matmul(x,key)[0] # kernel below
   qk = openclk.matmul_t_3d(np.copy(x[0]),np.copy(key[0]))
   
@@ -42,7 +43,8 @@ def scaled_dot_product_attention(x, key, value, attn_mask=None,
       qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
       qk[x][y] = qk[x][y] / qk[x][y].sum()
   qk = [qk]
-  qk = np.matmul(qk,value)
+  #qk = np.matmul(qk,value)
+  qk = np.array([openclk.matmul_t_3d(np.copy(qk[0]),np.copy(value[0]))])
   return qk
 
 class Linear():
