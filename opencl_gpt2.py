@@ -31,15 +31,8 @@ def scaled_dot_product_attention(x, key, value, attn_mask=None,
   key = np.transpose(key,(0,1,3,2))
   x = np.float32(x)
   key = np.float32(key)
-  #qk = np.matmul(x,key)[0] #"kernel" below
-  ##my thing
-  
-  x = x[0]
-  key = key[0]
-  print("shapes",np.shape(x),np.shape(key))
-  qk = np.empty((12,np.shape(key)[2],np.shape(key)[2]),dtype=np.float32) #crutch
-  for i in range(12):
-    qk[i] = openclk.matmul_t(np.copy(x[i]),np.copy(key[i]))
+  #qk = np.matmul(x,key)[0] # kernel below
+  qk = openclk.matmul_t_3d(np.copy(x[0]),np.copy(key[0]))
   
   qk = qk / math.sqrt(np.shape(x)[-1])
   for x in range(len(qk)):
