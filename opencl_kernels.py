@@ -99,27 +99,6 @@ def sq_mean_sqrt(a):
     cl.enqueue_copy(queue, a, a_g)
     return a[0]
 
-def minus_mean(a):
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    prg = cl.Program(ctx, f"""
-    __kernel void minus_mean(
-        __global float *a)
-    {{
-    float avg = 0;
-    for(int i = 0; i < {len_short}; i++) {{
-        avg += a[i];
-    }}
-    avg = avg / {len_short};
-    int gidx0 = get_global_id(0);
-    a[gidx0] = a[gidx0] - avg;
-    }}
-    """).build()
-    knl = prg.minus_mean
-
-    knl(queue, (768,1), (256,1), a_g) #has to be multiple of 256
-    cl.enqueue_copy(queue, a, a_g)
-    return a
-
 def divide(a,b,c,d):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
@@ -363,108 +342,6 @@ def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kern
     knl = prg.matvec
     gidx = math.ceil(cols / 16) * 16
     knl(queue, (gidx,1), (16,1), a_g, b_g,c_g)
-    cl.enqueue_copy(queue, c, c_g)
-    return c
-
-def matmul(a,b):
-    cols = np.shape(b)[1]
-    rows = np.shape(b)[0]
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([13,cols])
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    prg = cl.Program(ctx, f"""
-    __kernel void matmul(
-        __global const float *a, __global const float *b, __global float *res)
-    {{
-        int x = get_global_id(0);
-        if(x < {cols}) {{
-            for(int y = 0; y < 13; y++) {{
-                float total = 0;
-                for(int k = 0; k < {rows}; k++) {{
-                    total += a[y*{rows} + k] * b[x + k*{cols}]; 
-                }}
-                res[y*{cols} + x] = total;
-            }}  
-        }}
-    }}
-    """).build()
-    knl = prg.matmul
-    group_size = math.ceil(cols / 16) * 16
-    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
-    cl.enqueue_copy(queue, c, c_g)
-    return c
-
-def matmulcr(a,b): #column-row weight (b)
-    cols = np.shape(b)[0]
-    rows = np.shape(b)[1]
-    a_rows = np.shape(a)[0]
-    print("rory a_rows =",a_rows)
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([a_rows,rows])
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    prg = cl.Program(ctx, f"""
-    __kernel void matmul(
-        __global const float *a, __global const float *b, __global float *res)
-    {{
-        int x = get_global_id(0);
-        if(x < {cols}) {{
-            for(int y = 0; y < {a_rows}; y++) {{
-                float total = 0;
-                for(int k = 0; k < {rows}; k++) {{
-                    total += a[y*{cols} + k] * b[x*{rows} + k]; 
-                }}
-                res[y*{cols} + x] = total;
-            }}  
-        }}
-    }}
-    """).build()
-    knl = prg.matmul
-    group_size = math.ceil(cols / 16) * 16
-    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
-    cl.enqueue_copy(queue, c, c_g)
-    return c
-
-def matmul_t(a,b):
-    a_rows = np.shape(a)[0]
-    b_cols = np.shape(b)[1]
-    b_rows = np.shape(b)[0]
-    c = np.zeros([a_rows,b_cols])
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    '''
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
-    print("SHAPE =",np.shape(b)) 
-    for j in range(np.shape(b)[0]):
-        for i in range(np.shape(b)[1]):
-            b[j][i] = np.copy(b2[i][j])
-    '''
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    prg = cl.Program(ctx, f"""
-    __kernel void matmul(
-        __global const float *a, __global const float *b, __global float *res)
-    {{
-        int x = get_global_id(0);
-        if(x < {b_cols}) {{
-            for(int y = 0; y < {a_rows}; y++) {{
-                float total = 0;
-                for(int k = 0; k < {b_rows}; k++) {{
-                    total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
-                }}
-                res[y*{b_cols} + x] = total;
-            }}  
-        }}
-    }}
-    """).build()
-    knl = prg.matmul
-    group_size = math.ceil(b_cols / 16) * 16
-    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
     cl.enqueue_copy(queue, c, c_g)
     return c
 

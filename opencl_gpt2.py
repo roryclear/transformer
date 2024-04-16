@@ -42,9 +42,8 @@ def scaled_dot_product_attention(x, key, value, attn_mask=None,
         if z > y: qk[x][y][z] -= np.inf
       qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
       qk[x][y] = qk[x][y] / qk[x][y].sum()
-  qk = [qk]
   #qk = np.matmul(qk,value)
-  qk = np.array([openclk.matmul_t_3d(np.copy(qk[0]),np.copy(value[0]))])
+  qk = np.array([openclk.matmul_t_3d(np.copy(qk),np.copy(value[0]))])
   return qk
 
 class Linear():
