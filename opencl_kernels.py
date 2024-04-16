@@ -428,28 +428,43 @@ def matmulcr(a,b): #column-row weight (b)
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmulb(a,b):
-    cols = np.shape(b)[1]
-    rows = np.shape(b)[0]
-    print("B[0][1] =",b[0][1],b[1][0])
-    #b = b.transpose()
-    print("B[0][1] =",b[0][1],b[1][0])
+def matmul_t(a,b):
+    a_rows = np.shape(a)[0]
+    b_cols = np.shape(b)[1]
+    b_rows = np.shape(b)[0]
+    c = np.zeros([a_rows,b_cols])
+    ####TRANSPOSED, this replicates it for a test. todo: fix 
+    '''
+    b2 = np.copy(b)
+    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
+    print("SHAPE =",np.shape(b)) 
+    for j in range(np.shape(b)[0]):
+        for i in range(np.shape(b)[1]):
+            b[j][i] = np.copy(b2[i][j])
+    '''
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([13,cols])
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
         __global const float *a, __global const float *b, __global float *res)
     {{
-        res[1] = b[1];
+        int x = get_global_id(0);
+        if(x < {b_cols}) {{
+            for(int y = 0; y < {a_rows}; y++) {{
+                float total = 0;
+                for(int k = 0; k < {b_rows}; k++) {{
+                    total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
+                }}
+                res[y*{b_cols} + x] = total;
+            }}  
+        }}
     }}
     """).build()
     knl = prg.matmul
-    print("rory rows cols =",rows,cols)
-    group_size = math.ceil(cols / 16) * 16
-    knl(queue, (1,1), (1,1), a_g, b_g,c_g) #todo, this is arbitrary
+    group_size = math.ceil(b_cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
     cl.enqueue_copy(queue, c, c_g)
     return c
 
@@ -465,36 +480,3 @@ def time_it(func,a,b,i=100):
             f = t
         #print(f)
     return ret,f
-
-'''
-for i in range(1):
-    a = np.random.rand(13,768).astype(np.float32)
-    b = np.random.rand(768,768).astype(np.float32)
-    c_np = np.matmul(a,b)
-    c = matmul(a,b)
-    np.testing.assert_allclose(c,c_np,rtol=1e-5)
-
-    a = np.random.rand(13,768).astype(np.float32) 
-    b = np.random.rand(768,3072).astype(np.float32)
-    c_np = np.matmul(a,b)
-    c = matmul(a,b)
-    np.testing.assert_allclose(c,c_np,rtol=1e-5)
-
-    a = np.random.rand(13,3072).astype(np.float32) 
-    b = np.random.rand(3072,768).astype(np.float32)
-    c_np = np.matmul(a,b)
-    c = matmul(a,b)
-    np.testing.assert_allclose(c,c_np,rtol=1e-5)
-
-    a = np.random.rand(13,3072).astype(np.float32) 
-    b = np.random.rand(3072,3072).astype(np.float32)
-    c_np = np.matmul(a,b)
-    c = matmul(a,b)
-    np.testing.assert_allclose(c,c_np,rtol=1e-5)
-
-    a = np.random.rand(13,768).astype(np.float32) 
-    b = np.random.rand(768,50257).astype(np.float32)
-    c_np = np.matmul(a,b)
-    c = matmul(a,b)
-    np.testing.assert_allclose(c,c_np,rtol=1e-5)
-'''

@@ -61,22 +61,8 @@ class Linear():
       if len(np.shape(ret)) == 1:
         ret = [ret] #todo
     else:
-      #print("rory matmul shapes??? =",np.shape(x),np.shape(self.weight))
-      #print("types =",type(x),type(self.weight),type(self.bias))
-      #print("rory types =",type(x[0][0]),type(self.weight[0][0]),type(self.bias[0]))
-      ret = np.matmul(x,self.weight)
-
-      if np.shape(self.weight) == (768,768) or np.shape(self.weight) == (3072,3072):   
-        ret2 = openclk.matmulcr(x,self.weight)
-        '''
-        for j in range(len(ret2)):
-          for i in range(len(ret2[0])):
-            if abs(ret2[j][i] - ret[j][i]) > abs(ret[j][i])*0.1:
-              print(j,"\t",i,"\t\t",ret2[j][i],ret[j][i])
-        ''' 
-        ret = ret2
-        #np.testing.assert_allclose(ret,ret2,rtol=1e-4)
-
+      #ret = np.matmul(x,self.weight) kernel below
+      ret = openclk.matmul_t(x,self.weight)
       ret += self.bias
     ret = [ret]
     return ret
