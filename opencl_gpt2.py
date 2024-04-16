@@ -26,8 +26,7 @@ def decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-def scaled_dot_product_attention(x, key, value, attn_mask=None,
-                                  dropout_p:float=0.0, is_causal:bool=False):
+def scaled_dot_product_attention(x, key, value):
   key = np.transpose(key,(0,1,3,2))
   x = np.float32(x)
   key = np.float32(key)
@@ -48,7 +47,6 @@ def scaled_dot_product_attention(x, key, value, attn_mask=None,
 
 class Linear():
   def __init__(self, in_features, out_features, bias=True):
-    # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
     self.bias = None
     self.weight = None
 
@@ -138,11 +136,22 @@ class Attention:
     self.dim = dim
     self.head_dim = dim // n_heads
 
-  def __call__(self, x, start_pos, mask):
+  def __call__(self, x, start_pos):
     #rory c_attn
     x = np.float32(x)
-    self.c_attn.weight = np.float32(self.c_attn.weight)
-    self.c_attn.bias = np.float32(self.c_attn.bias)
+    
+    if type(self.c_attn.weight[0][0]) != np.float32:
+      print(type(self.c_attn.weight[0][0]))
+      self.c_attn.weight = np.float32(self.c_attn.weight)
+    if type(self.c_attn.bias[0]) != np.float32:
+      print(type(self.c_attn.bias[0]))
+      self.c_attn.bias = np.float32(self.c_attn.bias)
+    if type(self.c_proj.bias[0]) != np.float32:
+      print(type(self.c_proj.bias[0]))
+      self.c_proj.bias = np.float32(self.c_proj.bias)
+    if type(self.c_proj.weight[0][0]) != np.float32:
+      print(type(self.c_proj.weight[0][0]))
+      self.c_proj.weight = np.float32(self.c_proj.weight)
 
     if start_pos > 0:
       if np.shape(self.c_attn.weight) == (768,2304):
@@ -178,7 +187,6 @@ class Attention:
       keys = np.float32(keys)
 
       #xq = np.matmul(xq,keys) / math.sqrt(self.head_dim) kernel below is same as
-      #print("rory shape in =",np.shape(xq),np.shape(keys))
       xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
 
       #for a in range(len(xq)):
@@ -192,9 +200,6 @@ class Attention:
       xq = openclk.matmul3(xq,values,(start_pos+1))
 
       xq = xq.reshape((1,1,self.dim))
-
-      self.c_proj.weight = np.float32(self.c_proj.weight)
-      self.c_proj.bias = np.float32(self.c_proj.bias)
 
       #ret = np.matmul(xq,self.c_proj.weight) + self.c_proj.bias kernel below
       ret = openclk.matvec(xq,self.c_proj.weight,self.c_proj.bias)
@@ -237,7 +242,7 @@ class Attention:
     #can't numpy them outside this if!
     keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
     
-    xq = scaled_dot_product_attention(xq,keys,values,mask)
+    xq = scaled_dot_product_attention(xq,keys,values)
     xq = xq.transpose((0,2,1,3))
     #xq = xq.transpose(1, 2)
     xq = xq.reshape(bsz, seqlen, self.dim) #todo !
@@ -286,10 +291,10 @@ class TransformerBlock:
     self.ln_1 = LayerNorm(dim,norm_eps)
     self.ln_2 = LayerNorm(dim,norm_eps)
 
-  def __call__(self, x, start_pos, mask):
+  def __call__(self, x, start_pos):
     h = np.copy(x)
     ln1 = self.ln_1(x)
-    attn = self.attn(ln1,start_pos,mask)
+    attn = self.attn(ln1,start_pos)
     h += attn
     h2 = np.copy(h)
     ln2 = self.ln_2(h2) 
@@ -306,23 +311,25 @@ class Transformer:
     self.ln_f = LayerNorm(dim,norm_eps)
     self.lm_head = Linear(dim, vocab_size, bias=False)
 
+  def convert(self):
+    #self.wte.weight = np.float32(self.wte.weight)
+    print(type(self.wte.weight[0][0]))
+    #self.wpe.weight = np.float32(self.wpe.weight)
+    print(type(self.wpe.weight[0][0]))
+    #self.lm_head.weight = np.float32(self.lm_head.weight)
+    print(type(self.lm_head.weight[0][0]))
+    #self.ln_f.weight = np.float32(self.ln_f.weight)
+    print(type(self.ln_f.weight[0]))
+    #self.ln_f.bias = np.float32(self.ln_f.bias)
+    print(type(self.ln_f.bias[0]))
+
   def forward(self, tokens, start_pos, temperature:float=0.0):
     if not hasattr(self, 'allpos'): 
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
     seqlen = tokens.shape[1]
-    if seqlen > 1:
-      mask = np.triu(np.full([seqlen,seqlen],1)) 
-      mask = (mask - np.eye(seqlen)) * -math.inf
-      mask[np.isnan(mask)] = 0
-      np.where(np.isnan(mask), 0, mask) # inf * 0 = nan
-      mask = [[mask]]
-    else:
-      mask = None
 
     if start_pos > 0 and opencl:
-      self.wpe.weight = np.float32(self.wpe.weight)
-      self.wte.weight = np.float32(self.wte.weight)
       self.h[0].ln_1.weight = np.float32(self.h[0].ln_1.weight)
       self.h[0].ln_1.bias = np.float32(self.h[0].ln_1.bias)
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0])
@@ -337,7 +344,7 @@ class Transformer:
       #x = ((mm * self.h[0].ln_1.weight) / mm2) + self.h[0].ln_1.bias #kernel below
       x = openclk.divide(np.copy(mm), mm2, self.h[0].ln_1.weight, self.h[0].ln_1.bias)
       x = [[x]]
-      attn = self.h[0].attn(x,start_pos,mask)
+      attn = self.h[0].attn(x,start_pos)
       h = h.reshape(1,1,768)
       h += attn
       h2 = np.copy(h)
@@ -346,7 +353,7 @@ class Transformer:
       h = mlp + h  
 
       for i in range(1,len(self.h)):
-        h = self.h[i](h, start_pos, mask)
+        h = self.h[i](h, start_pos)
       h = self.ln_f(h)
       logits = self.lm_head(h)
       logits = np.float64(logits) #todo shouldnt need f64
@@ -362,7 +369,7 @@ class Transformer:
 
     #rory - h self.h is the 12 transformer blocks, so this is just forward through all
       for hi in self.h:
-        h = hi(h, start_pos, mask)
+        h = hi(h, start_pos)
       h = self.ln_f(h)
       logits = self.lm_head(h)
 
@@ -407,6 +414,10 @@ class GPT2:
     self.model = model
 
   def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):
+    print("rory generate")
+    self.model.convert()
+    #with open('weights_2.pickle', 'wb') as handle:
+    #  pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
     prompt_tokens = encode(prompt)
     toks = [prompt_tokens[:] for _ in range(batch_size)]
     start_pos = 0
@@ -435,9 +446,10 @@ if __name__ == "__main__":
 
   #Tensor.manual_seed(420) #don't need
   np.random.seed(28)
-
-  filehandler = open("weights.obj", 'rb') 
+  #filehandler = open("weights.obj", 'rb') 
+  filehandler = open("weights.pickle", 'rb') 
   gpt2 = pickle.load(filehandler)
+  print(type(gpt2))
 
 
   texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
@@ -461,4 +473,5 @@ if __name__ == "__main__":
   "Imagine you are a young person who just graduated from middle school and has "
   "never really pursued a career in astrophysics. You're on an eight")]
   '''
+
   exit()
