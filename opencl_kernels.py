@@ -514,14 +514,6 @@ def matmul_t_3d(a,b):
     b_cols = np.shape(b)[2]
     b_rows = np.shape(b)[1]
     c = np.zeros([np.shape(a)[0],a_rows,b_cols])
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    #TODO remove, not needed in this one
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[0],np.shape(b2)[2],np.shape(b2)[1]),dtype=np.float32)
-    for k in range(np.shape(b)[0]):
-        for j in range(np.shape(b)[1]):
-            for i in range(np.shape(b)[2]):
-                b[k][j][i] = np.copy(b2[k][i][j])
     
     a = a.flatten()
     b = b.flatten()
@@ -539,7 +531,7 @@ def matmul_t_3d(a,b):
                 for(int y = 0; y < {a_rows}; y++) {{
                     float total = 0;
                     for(int k = 0; k < {b_rows}; k++) {{
-                        total += a[y*{b_rows} + k + z*{a_rows}*{a_cols}] * b[x*{b_rows} + k + z*{b_rows}*{b_cols}]; 
+                        total += a[y*{b_rows} + k + z*{a_rows}*{a_cols}] * b[x + k*{b_cols} + z*{b_rows}*{b_cols}]; 
                     }}
                     res[y*{b_cols} + x + z*{b_cols}*{a_rows}] = total;
                 }}  
@@ -552,7 +544,6 @@ def matmul_t_3d(a,b):
     knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
     cl.enqueue_copy(queue, c, c_g)
     return c
-
 
 def time_it(func,a,b,i=100):
     f = None
@@ -567,10 +558,9 @@ def time_it(func,a,b,i=100):
         #print(f)
     return ret,f
 
-'''
+
 a = np.random.rand(12,13,64).astype(np.float32)
 b = np.random.rand(12,64,13).astype(np.float32)
 c_np = np.matmul(a,b)
 c = matmul_t_3d(a,b)
 np.testing.assert_allclose(c,c_np,rtol=1e-5)
-'''
