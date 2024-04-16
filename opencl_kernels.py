@@ -316,30 +316,6 @@ def matmul3(a,b,s):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmul4(a,b,s):
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b = b.flatten() #todo, shouldnt be needed
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([1,1,s])
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    prg = cl.Program(ctx, f"""
-    __kernel void matmul(
-        __global const float *a, __global const float *b, __global float *res)
-    {{
-        int lidx0 = get_global_id(0);
-        float acc = 0;
-        for(int x = 0; x < {s}; x++) {{
-            acc += a[x] * b[x*{s} + lidx0];
-        }}
-        res[lidx0] = acc;
-    }}
-    """).build()
-    knl = prg.matmul
-    knl(queue, (768,1), (256,1), a_g, b_g,c_g)
-    cl.enqueue_copy(queue, c, c_g)
-    return c
-
 def matvec(a,b,c):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b = b.flatten()
@@ -390,6 +366,92 @@ def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kern
     cl.enqueue_copy(queue, c, c_g)
     return c
 
+def matmul(a,b):
+    cols = np.shape(b)[1]
+    rows = np.shape(b)[0]
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([13,cols])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int x = get_global_id(0);
+        if(x < {cols}) {{
+            for(int y = 0; y < 13; y++) {{
+                float total = 0;
+                for(int k = 0; k < {rows}; k++) {{
+                    total += a[y*{rows} + k] * b[x + k*{cols}]; 
+                }}
+                res[y*{cols} + x] = total;
+            }}  
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    group_size = math.ceil(cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def matmulcr(a,b): #column-row weight (b)
+    cols = np.shape(b)[0]
+    rows = np.shape(b)[1]
+    a_rows = np.shape(a)[0]
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([a_rows,rows])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int x = get_global_id(0);
+        if(x < {cols}) {{
+            for(int y = 0; y < {rows}; y++) {{
+                float total = 0;
+                for(int k = 0; k < {rows}; k++) {{
+                    total += a[y*{rows} + k] * b[x*{cols} + k]; 
+                }}
+                res[y*{cols} + x] = total;
+            }}  
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    group_size = math.ceil(cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def matmulb(a,b):
+    cols = np.shape(b)[1]
+    rows = np.shape(b)[0]
+    print("B[0][1] =",b[0][1],b[1][0])
+    #b = b.transpose()
+    print("B[0][1] =",b[0][1],b[1][0])
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([13,cols])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        res[1] = b[1];
+    }}
+    """).build()
+    knl = prg.matmul
+    print("rory rows cols =",rows,cols)
+    group_size = math.ceil(cols / 16) * 16
+    knl(queue, (1,1), (1,1), a_g, b_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
 def time_it(func,a,b,i=100):
     f = None
     total_time = 0
@@ -400,28 +462,38 @@ def time_it(func,a,b,i=100):
         total_time += t
         if f is None or t < f:
             f = t
-        print(f)
-    #print("time taken\t",s,"\t",f,"\t",total_time)
+        #print(f)
     return ret,f
+
 '''
-a = np.random.rand(1,768).astype(np.float32)
-b = np.random.rand(768,3072).astype(np.float32)
-c_np = np.matmul(a,b)
-t = 0
-t_b = 0
-for i in range(10):
-    print("here\n")
-    c,tx=time_it(matvec2,a,b)
-    t+=tx
-    c2,tx=time_it(matvec2_b,a,b)
-    np.testing.assert_allclose(c2,c_np,rtol=1e-5)
-    t_b+=tx
-    print(t,t_b)
-c = matvec2(a,b)
-c2 = matvec2_b(a,b)
-print("A time B time:\t",t,t_b,"B/A",(t_b/t))
-np.testing.assert_allclose(c,c_np,rtol=1e-5)
-np.testing.assert_allclose(c2,c_np,rtol=1e-5)
-print(c)
-print(c_np)
+for i in range(1):
+    a = np.random.rand(13,768).astype(np.float32)
+    b = np.random.rand(768,768).astype(np.float32)
+    c_np = np.matmul(a,b)
+    c = matmul(a,b)
+    np.testing.assert_allclose(c,c_np,rtol=1e-5)
+
+    a = np.random.rand(13,768).astype(np.float32) 
+    b = np.random.rand(768,3072).astype(np.float32)
+    c_np = np.matmul(a,b)
+    c = matmul(a,b)
+    np.testing.assert_allclose(c,c_np,rtol=1e-5)
+
+    a = np.random.rand(13,3072).astype(np.float32) 
+    b = np.random.rand(3072,768).astype(np.float32)
+    c_np = np.matmul(a,b)
+    c = matmul(a,b)
+    np.testing.assert_allclose(c,c_np,rtol=1e-5)
+
+    a = np.random.rand(13,3072).astype(np.float32) 
+    b = np.random.rand(3072,3072).astype(np.float32)
+    c_np = np.matmul(a,b)
+    c = matmul(a,b)
+    np.testing.assert_allclose(c,c_np,rtol=1e-5)
+
+    a = np.random.rand(13,768).astype(np.float32) 
+    b = np.random.rand(768,50257).astype(np.float32)
+    c_np = np.matmul(a,b)
+    c = matmul(a,b)
+    np.testing.assert_allclose(c,c_np,rtol=1e-5)
 '''
