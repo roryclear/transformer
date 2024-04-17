@@ -261,6 +261,16 @@ class Embedding_2: #todo crutch
     ret = [ret]
     return ret
 
+class Mock_tg_rand:
+  def __init__(self):
+    self.index = 0
+    file1 = open('random_nums.txt', 'r')
+    self.lines = file1.readlines()
+
+  def rand(self):
+    ret = np.float32(self.lines[self.index])
+    self.index+=1
+    return ret
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
@@ -392,8 +402,10 @@ class Transformer:
       #can't get around not using tg here for e2e test?
       #maybe store the output in a file
       #unif_samples = Tensor.rand(1, np.shape(logits)[0], 1)
-      unif_samples = np.random.rand(1, np.shape(logits)[0], 1).astype(np.float32)
-      #unif_samples = unif_samples.numpy()
+      if use_tg_rand:
+        unif_samples = [[[tg_rand.rand()]]]
+      else:
+        unif_samples = np.random.rand(1, 1, 1).astype(np.float32)
       b = np.empty_like(logits,dtype=bool)
       for i in range(len(logits[0][0])):
         if unif_samples[0][0][0] >= logits[0][0][i]: #Tensor random gets [[[0.14280224]]] with 420 seed,
@@ -445,6 +457,8 @@ class GPT2:
 # **** main code ****
 
 if __name__ == "__main__":
+  #bc tinygrad doesnt work in windows, and opencl doesnt work on WSL
+  use_tg_rand = True #mocks tg random function by just reading from a file
   default_prompt = "What is the answer to life, the universe, and everything?"
   #default_prompt = "What happened in 1939?"
   # should output:
@@ -460,29 +474,31 @@ if __name__ == "__main__":
   #filehandler = open("weights.pickle", 'rb')
   filehandler = open("weights.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
+  if use_tg_rand:
+    tg_rand = Mock_tg_rand()
   print(type(gpt2))
 
 
   texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
   print('Generating text...')
   for i,text in enumerate(texts): print((f"Response {i}:", "green"), text)
-  assert texts == [("What is the answer to life, the universe, and everything? "
-  "But what is the answer to the mystery of Enlightenment? Does the only "
-  "solution lie in a series of calls to agency? Do virtues and proper duties "
-  "need to separate? How does a patient become his or her own individual conscience?\n\n"
-  "What does the Universal Law mean? Why do some people do good and others contemptible? " 
-  "How does the Universal Law maximize the efficiency of the health system? How does the "
-  "Universal Law facilitate all of human virtue? What does it mean to be a man or a woman")]
-
   #assert for tg seed 420 unif samples
-  '''
-  assert texts == [("What is the answer to life, the universe, and everything?"
-  "\n\nIf you were an astrophysicist, or just a physicist, your answer might "
-  "be a bit different. For one, you might take a longer view of the universe. "
-  "But for other people — including scientists, artists, and other in-your-face "
-  "people — your answer might be far more like: Life doesn't exist at all.\n\n"
-  "Imagine you are a young person who just graduated from middle school and has "
-  "never really pursued a career in astrophysics. You're on an eight")]
-  '''
+  if tg_rand:
+    assert texts == [("What is the answer to life, the universe, and everything?"
+    "\n\nIf you were an astrophysicist, or just a physicist, your answer might "
+    "be a bit different. For one, you might take a longer view of the universe. "
+    "But for other people — including scientists, artists, and other in-your-face "
+    "people — your answer might be far more like: Life doesn't exist at all.\n\n"
+    "Imagine you are a young person who just graduated from middle school and has "
+    "never really pursued a career in astrophysics. You're on an eight")]
+  else:
+    # for np random
+    assert texts == [("What is the answer to life, the universe, and everything? "
+    "But what is the answer to the mystery of Enlightenment? Does the only "
+    "solution lie in a series of calls to agency? Do virtues and proper duties "
+    "need to separate? How does a patient become his or her own individual conscience?\n\n"
+    "What does the Universal Law mean? Why do some people do good and others contemptible? " 
+    "How does the Universal Law maximize the efficiency of the health system? How does the "
+    "Universal Law facilitate all of human virtue? What does it mean to be a man or a woman")]
 
   exit()
