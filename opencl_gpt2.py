@@ -48,7 +48,7 @@ class Linear():
     self.weight = None
 
   def __call__(self,x):
-    x = np.float32(x)
+    x = np.array(x)
     if self.bias is None:
       self.bias = np.zeros(np.shape(self.weight[1])).astype(np.float32)
     x = x[0]
@@ -375,7 +375,9 @@ class Transformer:
         h = hi(h, start_pos)
       h = self.ln_f(h)
       logits = self.lm_head(h)
+      #float32 here
 
+    #float64 here
     logits = [logits[0][-1]]
 
     if temperature < 1e-6:
