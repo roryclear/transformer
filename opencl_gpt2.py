@@ -51,7 +51,6 @@ class Linear():
     x = np.array(x) #todo
     if self.bias is None:
       self.bias = np.zeros(np.shape(self.weight[1])).astype(np.float32)
-    x = x[0]
     if np.shape(x)[0] == 1:
       ret = openclk.matvec2(x,self.weight,self.bias)
       if len(np.shape(ret)) == 1:
@@ -212,7 +211,7 @@ class Attention:
     xq = xq.transpose((0,2,1,3))
     #xq = xq.transpose(1, 2)
     xq = xq.reshape(bsz, seqlen, self.dim) #todo !
-    ret = self.c_proj(xq)
+    ret = self.c_proj(xq[0]) #todo
     return ret
   
 class FeedForward:
@@ -221,11 +220,12 @@ class FeedForward:
     self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
-    x = self.c_fc(x)
-    for i in range(np.shape(x)[1]):
+    x = self.c_fc(x[0]) #todo
+    x = x[0] #todo
+    for i in range(np.shape(x)[0]):
       # gelu() activation
-      x[0][i] = 0.5 * x[0][i] * (1 + np.tanh(x[0][i] * 0.7978845608 * (1 + 0.044715 * x[0][i] * x[0][i])))
-    ret = self.c_proj(x)
+      x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
+    ret = self.c_proj(x) #todo
     return ret
   
 class Embedding:
@@ -354,7 +354,7 @@ class Transformer:
       for i in range(1,len(self.h)):
         h = self.h[i](h, start_pos)
       h = self.ln_f(h)
-      logits = self.lm_head(h)
+      logits = self.lm_head(h[0]) #todo
     else:
       tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))
@@ -368,7 +368,7 @@ class Transformer:
       for hi in self.h:
         h = hi(h, start_pos)
       h = self.ln_f(h)
-      logits = self.lm_head(h)
+      logits = self.lm_head(h[0]) #todo
 
     logits = [logits[0][-1]]
 
