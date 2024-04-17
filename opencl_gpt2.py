@@ -28,9 +28,6 @@ def decode(index):
 
 def scaled_dot_product_attention(x, key, value):
   key = np.transpose(key,(0,1,3,2))
-  x = np.float32(x)
-  key = np.float32(key)
-  value = np.float32(value)
   #qk = np.matmul(x,key)[0] # kernel below
   qk = openclk.matmul_t_3d(np.copy(x[0]),np.copy(key[0]))
   
@@ -194,15 +191,15 @@ class Attention:
       #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
       xqkv = [openclk.matmul_t(x[0],self.c_attn.weight)]
       xqkv += self.c_attn.bias
-      xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
+      xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim)).astype(np.float32)
       for i in range(xq.shape[1]):
         xq[0][i] = xqkv[0][i][0:self.dim]
       xq = xq.reshape(1,xq.shape[1],self.n_heads,self.head_dim)
-      xk = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
+      xk = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim)).astype(np.float32)
       for i in range(xk.shape[1]):
         xk[0][i] = xqkv[0][i][self.dim:2*self.dim]
       xk = xk.reshape(1,xk.shape[1],self.n_heads,self.head_dim)
-      xv = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
+      xv = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim)).astype(np.float32)
       for i in range(xv.shape[1]):
         xv[0][i] = xqkv[0][i][self.dim*2:3*self.dim]
       xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
@@ -211,7 +208,6 @@ class Attention:
       # create kv cache
       if not hasattr(self, "cache_kv"):
         self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
-
     keys = xk
     values = xv
     s = list(np.shape(keys))
@@ -225,7 +221,6 @@ class Attention:
     xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
     #can't numpy them outside this if!
     keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
-    
     xq = scaled_dot_product_attention(xq,keys,values)
     xq = xq.transpose((0,2,1,3))
     #xq = xq.transpose(1, 2)
@@ -408,8 +403,13 @@ class Transformer:
       ret = b
     return ret #why the realize? what calls this? the h hi loop?
 
-  def __call__(self, tokens, start_pos, temperature:float=0.0,v_in=False):
+  def __call__(self, tokens, start_pos, temperature:np.float32=0.0,v_in=False):
     return self.forward(tokens, start_pos, temperature)
+
+def pt(x):
+  for _ in range(len(np.shape(x))):
+    x = x[0]
+  return str(type(x))
 
 VOCAB_SIZE = 50257
 class GPT2:
@@ -461,7 +461,7 @@ if __name__ == "__main__":
   print(type(gpt2))
 
 
-  texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
+  texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
   print('Generating text...')
   for i,text in enumerate(texts): print((f"Response {i}:", "green"), text)
   assert texts == [("What is the answer to life, the universe, and everything? "
