@@ -209,9 +209,8 @@ class Attention:
     keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
     xq = scaled_dot_product_attention(xq,keys,values)
     xq = xq.transpose((0,2,1,3))
-    #xq = xq.transpose(1, 2)
-    xq = xq.reshape(bsz, seqlen, self.dim) #todo !
-    ret = self.c_proj(xq[0]) #todo
+    xq = xq.reshape(seqlen, self.dim)
+    ret = self.c_proj(xq)
     return ret
   
 class FeedForward:
