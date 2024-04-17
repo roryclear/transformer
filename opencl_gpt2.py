@@ -227,13 +227,12 @@ class FeedForward:
     ret = self.c_proj(x) #todo
     return ret
   
-class Embedding:
+class Embedding: #todo, remove not used
   def __init__(self, vocab_size:int, embed_size:int):
-    self.vocab_size, self.embed_size = vocab_size, embed_size
+    self = self
 
   def __call__(self, idx):
-    ret = np.resize(self.weight,new_shape=(len(idx[0]),768))
-    return ret
+    return None
   
 class Embedding_2: #todo crutch
   def __init__(self, vocab_size:int, embed_size:int):
@@ -358,10 +357,7 @@ class Transformer:
       tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))
       s[1] = seqlen
-      allpos_s = np.empty(s,dtype=np.int32)
-      for i in range(seqlen):
-        allpos_s[0][i] = self.allpos[0][start_pos + i]
-      pos_emb = self.wpe(allpos_s)
+      pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,768))
       h = tok_emb + pos_emb
       #rory - h self.h is the 12 transformer blocks, so this is just forward through all
       for hi in self.h:
