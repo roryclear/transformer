@@ -69,8 +69,8 @@ class LayerNorm:
     self.bias = None
     self.weight = None
 
-  def __call__(self, x):  
-    if np.shape(x)[1] == 1:
+  def __call__(self, x):
+    if np.shape(x)[0] == 1:
       #mm = x - x.mean() #kernel below
       mm = openclk.minus_mean_multi(np.copy(x))
       #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.eps)) #kernel below
@@ -78,26 +78,26 @@ class LayerNorm:
 
       #x = ((mm * self.weight) / mm2) + self.bias #kernel below
       x = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
-      return x
-    assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
-    #x = x.layernorm(eps=self.eps, axis=self.axis)
-    #if not self.elementwise_affine: return x
-    #return x * self.weight + self.bias
-    #it doesnt work still with actual copy?
-    for i in range(len(x[0])):
-      #x[0][i] = (x[0][i] - np.mean(x[0][i])) / np.sqrt(np.mean((x[0][i] - np.mean(x[0][i]))**2) + self.eps)\
-      #* self.weight + self.bias
+    else:
+      assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
+      #x = x.layernorm(eps=self.eps, axis=self.axis)
+      #if not self.elementwise_affine: return x
+      #return x * self.weight + self.bias
+      #it doesnt work still with actual copy?
+      for i in range(len(x)):
+        #x[0][i] = (x[0][i] - np.mean(x[0][i])) / np.sqrt(np.mean((x[0][i] - np.mean(x[0][i]))**2) + self.eps)\
+        #* self.weight + self.bias
 
-      # todo all in one kernel instead of loop
-      #mm = x[0][i] - np.mean(x[0][i]) #kernel below
-      #mm = x[0][i] - np.mean(x[0][i]) # this causes an error, not sure why
-      mm = openclk.minus_mean_multi(np.copy(x[0][i]))
-      #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.eps)) #kernel below
-      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+        # todo all in one kernel instead of loop
+        #mm = x[0][i] - np.mean(x[0][i]) #kernel below
+        #mm = x[0][i] - np.mean(x[0][i]) # this causes an error, not sure why
+        mm = openclk.minus_mean_multi(np.copy(x[i]))
+        #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.eps)) #kernel below
+        mm2 = openclk.sq_mean_sqrt(np.copy(mm))
 
-      #x = ((mm * self.weight) / mm2) + self.bias #kernel below
-      x[0][i] = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)  
-    return x
+        #x = ((mm * self.weight) / mm2) + self.bias #kernel below
+        x[i] = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
+    return [x] #todo
 
 def encode(x):
   ret = []
@@ -267,11 +267,11 @@ class TransformerBlock:
 
   def __call__(self, x, start_pos):
     h = np.copy(x)
-    ln1 = self.ln_1(x)
+    ln1 = self.ln_1(x[0]) #todo
     attn = self.attn(ln1,start_pos)
     h += attn
     h2 = np.copy(h)
-    ln2 = self.ln_2(h2) 
+    ln2 = self.ln_2(h2[0]) 
     mlp = self.mlp(ln2)
     ret = mlp + h
     return ret
@@ -346,13 +346,13 @@ class Transformer:
       h = h.reshape(1,1,768)
       h += attn
       h2 = np.copy(h)
-      ln2 = self.h[0].ln_2(h2) 
+      ln2 = self.h[0].ln_2(h2[0]) 
       mlp = self.h[0].mlp(ln2)
       h = mlp + h  
 
       for i in range(1,len(self.h)):
         h = self.h[i](h, start_pos)
-      h = self.ln_f(h)
+      h = self.ln_f(h[0]) #todo
       logits = self.lm_head(h[0]) #todo
     else:
       tok_emb = self.wte(tokens) #rorys todo
@@ -366,7 +366,7 @@ class Transformer:
       #rory - h self.h is the 12 transformer blocks, so this is just forward through all
       for hi in self.h:
         h = hi(h, start_pos)
-      h = self.ln_f(h)
+      h = self.ln_f(h[0]) #todo
       logits = self.lm_head(h[0]) #todo
 
     logits = [logits[0][-1]]
