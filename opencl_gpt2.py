@@ -227,7 +227,7 @@ class FeedForward:
     ret = self.c_proj(x) #todo
     return ret
   
-class Embedding: #todo, remove not used
+class Embedding: #todo, not used but variables are
   def __init__(self, vocab_size:int, embed_size:int):
     self = self
 
@@ -239,11 +239,10 @@ class Embedding_2: #todo crutch
     self.vocab_size, self.embed_size = vocab_size, embed_size
 
   def __call__(self, idx):
-    ret = np.empty((len(idx[0]),self.embed_size)).astype(np.float32)
+    ret = np.empty((len(idx),self.embed_size)).astype(np.float32)
     for i in range(len(ret)):
       for j in range(len(ret[0])):
-        ret[i][j] = self.weight[idx[0][i]][j]
-    ret = [ret]
+        ret[i][j] = self.weight[idx[i]][j]
     return ret
 
 class Mock_tg_rand:
@@ -354,7 +353,8 @@ class Transformer:
       h = self.ln_f(h[0]) #todo
       logits = self.lm_head(h) #todo
     else:
-      tok_emb = self.wte(tokens) #rorys todo
+      tok_emb = self.wte(tokens[0]) #rorys todo
+      tok_emb = [tok_emb] #todo
       s = list(np.shape(self.allpos))
       s[1] = seqlen
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,768))
