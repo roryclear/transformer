@@ -59,7 +59,6 @@ class Linear():
       #ret = np.matmul(x,self.weight) kernel below
       ret = openclk.matmul_t(x,self.weight)
       ret += self.bias
-    ret = [ret]
     return ret
   
 class LayerNorm:
@@ -211,7 +210,7 @@ class Attention:
     xq = xq.transpose((0,2,1,3))
     xq = xq.reshape(seqlen, self.dim)
     ret = self.c_proj(xq)
-    return ret
+    return [ret] #todo
   
 class FeedForward:
   def __init__(self, dim, hidden_dim):
@@ -220,12 +219,11 @@ class FeedForward:
 
   def __call__(self, x):
     x = self.c_fc(x[0]) #todo
-    x = x[0] #todo
     for i in range(np.shape(x)[0]):
       # gelu() activation
       x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
-    ret = self.c_proj(x) #todo
-    return ret
+    ret = self.c_proj(x)
+    return [ret] #todo
   
 class Embedding: #todo, not used but variables are
   def __init__(self, vocab_size:int, embed_size:int):
@@ -351,7 +349,8 @@ class Transformer:
       for i in range(1,len(self.h)):
         h = self.h[i](h, start_pos)
       h = self.ln_f(h[0]) #todo
-      logits = self.lm_head(h) #todo
+      logits = self.lm_head(h)
+      logits = [logits] #todo
     else:
       tok_emb = self.wte(tokens[0]) #rorys todo
       tok_emb = [tok_emb] #todo
@@ -363,7 +362,8 @@ class Transformer:
       for hi in self.h:
         h = hi(h, start_pos)
       h = self.ln_f(h[0]) #todo
-      logits = self.lm_head(h) #todo
+      logits = self.lm_head(h)
+      logits = [logits] #todo
 
     logits = [logits[0][-1]]
 
