@@ -129,8 +129,8 @@ class Attention:
     if start_pos > 0:
       if np.shape(self.c_attn.weight) == (768,2304):
         self.c_attn.weight = self.c_attn.weight.reshape(2304,768) #have to do this for opencl...took way too long to realize
-      #xqkv = np.matmul(x[0],self.c_attn.weight.reshape(768,2304)) + self.c_attn.bias #kernel below...doesnt work with changes
-      xqkv = openclk.madd(x[0],self.c_attn.weight,self.c_attn.bias).reshape(2304) #todo make own kernel...
+      #xqkv = np.matmul(x,self.c_attn.weight.reshape(768,2304)) + self.c_attn.bias #kernel below...doesnt work with changes
+      xqkv = openclk.madd(x,self.c_attn.weight,self.c_attn.bias).reshape(2304) #todo make own kernel...
       xq = xqkv[0:self.dim]
       xk = xqkv[self.dim:2*self.dim]
       xk = xk.reshape(self.n_heads,self.head_dim)
@@ -346,8 +346,7 @@ class Transformer:
 
       #x = ((mm * self.h[0].ln_1.weight) / mm2) + self.h[0].ln_1.bias #kernel below
       x = openclk.divide(np.copy(mm), mm2, self.h[0].ln_1.weight, self.h[0].ln_1.bias)
-      x = [[x]]
-      attn = self.h[0].attn(x,start_pos)
+      attn = self.h[0].attn([x],start_pos)
       h = h.reshape(1,1,768)
       h += attn
       h2 = np.copy(h)
