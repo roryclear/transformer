@@ -166,15 +166,12 @@ class Attention:
       #kernel below
       xq = openclk.minus_max(xq,(start_pos+1))
       
-      values = values.astype(np.float32)
       #xq = np.matmul(xq,values) #kernel below
       xq = openclk.matmul3(xq,values,(start_pos+1))
 
-      xq = xq.reshape((1,1,self.dim))
-
-      #ret = np.matmul(xq,self.c_proj.weight) + self.c_proj.bias kernel below
+      #xq = xq.reshape((1,1,self.dim))
+      #ret = np.matmul(xq,self.c_proj.weight) + self.c_proj.bias #kernel below
       ret = openclk.matvec(xq,self.c_proj.weight,self.c_proj.bias)
-
       return ret
 
     else:
