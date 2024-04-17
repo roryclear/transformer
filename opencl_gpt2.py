@@ -52,10 +52,7 @@ class Linear():
 
   def __call__(self,x):
     x = np.float32(x)
-    self.weight = np.float32(self.weight)
-    if self.bias is not None:
-      self.bias = np.float32(self.bias)
-    else:
+    if self.bias is None:
       self.bias = np.zeros(np.shape(self.weight[1])).astype(np.float32)
     x = x[0]
     if np.shape(x)[0] == 1:
@@ -139,19 +136,6 @@ class Attention:
   def __call__(self, x, start_pos):
     #rory c_attn
     x = np.float32(x)
-    
-    if type(self.c_attn.weight[0][0]) != np.float32:
-      print(type(self.c_attn.weight[0][0]))
-      self.c_attn.weight = np.float32(self.c_attn.weight)
-    if type(self.c_attn.bias[0]) != np.float32:
-      print(type(self.c_attn.bias[0]))
-      self.c_attn.bias = np.float32(self.c_attn.bias)
-    if type(self.c_proj.bias[0]) != np.float32:
-      print(type(self.c_proj.bias[0]))
-      self.c_proj.bias = np.float32(self.c_proj.bias)
-    if type(self.c_proj.weight[0][0]) != np.float32:
-      print(type(self.c_proj.weight[0][0]))
-      self.c_proj.weight = np.float32(self.c_proj.weight)
 
     if start_pos > 0:
       if np.shape(self.c_attn.weight) == (768,2304):
@@ -312,6 +296,7 @@ class Transformer:
     self.lm_head = Linear(dim, vocab_size, bias=False)
 
   def convert(self):
+    print("CONVERT")
     #self.wte.weight = np.float32(self.wte.weight)
     print(type(self.wte.weight[0][0]))
     #self.wpe.weight = np.float32(self.wpe.weight)
@@ -322,6 +307,32 @@ class Transformer:
     print(type(self.ln_f.weight[0]))
     #self.ln_f.bias = np.float32(self.ln_f.bias)
     print(type(self.ln_f.bias[0]))
+    print("transformer block")
+    for hi in self.h:
+      #hi.attn.c_attn.weight = np.float32(hi.attn.c_attn.weight)
+      print(type(hi.attn.c_attn.weight[0][0]))
+      #hi.attn.c_attn.bias = np.float32(hi.attn.c_attn.bias)
+      print(type(hi.attn.c_attn.bias[0]))
+      #hi.attn.c_proj.weight = np.float32(hi.attn.c_proj.weight)
+      print(type(hi.attn.c_proj.weight[0][0]))
+      #hi.attn.c_proj.bias = np.float32(hi.attn.c_proj.bias)
+      print(type(hi.attn.c_proj.bias[0]))
+      #hi.mlp.c_fc.weight = np.float32(hi.mlp.c_fc.weight)
+      print(type(hi.mlp.c_fc.weight[0][0]))
+      #hi.mlp.c_fc.bias = np.float32(hi.mlp.c_fc.bias)
+      print(type(hi.mlp.c_fc.bias[0]))
+      #hi.mlp.c_proj.weight = np.float32(hi.mlp.c_proj.weight)
+      print(type(hi.mlp.c_proj.weight[0][0]))
+      #hi.mlp.c_proj.bias = np.float32(hi.mlp.c_proj.bias)
+      print(type(hi.mlp.c_proj.bias[0]))
+      #hi.ln_1.weight = np.float32(hi.ln_1.weight)
+      print(type(hi.ln_1.weight[0]))
+      #hi.ln_1.bias = np.float32(hi.ln_1.bias)
+      print(type(hi.ln_1.bias[0]))
+      #hi.ln_2.weight = np.float32(hi.ln_2.weight)
+      print(type(hi.ln_2.weight[0]))
+      #hi.ln_2.bias = np.float32(hi.ln_2.bias)
+      print(type(hi.ln_2.bias[0]))
 
   def forward(self, tokens, start_pos, temperature:float=0.0):
     if not hasattr(self, 'allpos'): 
@@ -330,8 +341,6 @@ class Transformer:
     seqlen = tokens.shape[1]
 
     if start_pos > 0 and opencl:
-      self.h[0].ln_1.weight = np.float32(self.h[0].ln_1.weight)
-      self.h[0].ln_1.bias = np.float32(self.h[0].ln_1.bias)
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0])
       #h = self.h[0](h,start_pos,mask)
       #ln1 = self.h[0].ln_1(h)
@@ -414,10 +423,10 @@ class GPT2:
     self.model = model
 
   def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):
-    print("rory generate")
-    self.model.convert()
+    #self.model.convert()
     #with open('weights_2.pickle', 'wb') as handle:
     #  pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
     prompt_tokens = encode(prompt)
     toks = [prompt_tokens[:] for _ in range(batch_size)]
     start_pos = 0
@@ -447,7 +456,8 @@ if __name__ == "__main__":
   #Tensor.manual_seed(420) #don't need
   np.random.seed(28)
   #filehandler = open("weights.obj", 'rb') 
-  filehandler = open("weights.pickle", 'rb') 
+  #filehandler = open("weights.pickle", 'rb')
+  filehandler = open("weights.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   print(type(gpt2))
 
