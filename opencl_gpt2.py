@@ -244,7 +244,6 @@ class FeedForward:
       # gelu() activation
       x[0][i] = 0.5 * x[0][i] * (1 + np.tanh(x[0][i] * 0.7978845608 * (1 + 0.044715 * x[0][i] * x[0][i])))
     ret = self.c_proj(x)
-    ret = np.float64(ret) #todo, shouldnt need f64
     return ret
   
 class Embedding:
