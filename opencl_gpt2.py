@@ -48,7 +48,7 @@ class Linear():
     self.weight = None
 
   def __call__(self,x):
-    x = np.array(x)
+    x = np.array(x) #todo
     if self.bias is None:
       self.bias = np.zeros(np.shape(self.weight[1])).astype(np.float32)
     x = x[0]
@@ -71,12 +71,8 @@ class LayerNorm:
     self.weight = None
 
   def __call__(self, x):  
-    x = np.float32(x)
-    self.weight = np.float32(self.weight)
-    self.bias = np.float32(self.bias)
     if np.shape(x)[1] == 1:
       x = x[0][0]
-      #print("print rory x shape here =",np.shape(x))
       #mm = x - x.mean() #kernel below
       mm = openclk.minus_mean_multi(np.copy(x))
       #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.h[0].ln_1.eps)) #kernel below
@@ -131,9 +127,7 @@ class Attention:
     self.head_dim = dim // n_heads
 
   def __call__(self, x, start_pos):
-    #rory c_attn
-    x = np.float32(x)
-
+    x = np.array(x)
     if start_pos > 0:
       if np.shape(self.c_attn.weight) == (768,2304):
         self.c_attn.weight = self.c_attn.weight.reshape(2304,768) #have to do this for opencl...took way too long to realize
@@ -165,8 +159,6 @@ class Attention:
       keys = keys.transpose(1,2,0)
       values = values.transpose(1,0,2)
       
-      keys = np.float32(keys)
-
       #xq = np.matmul(xq,keys) / math.sqrt(self.head_dim) kernel below is same as
       xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
 
@@ -378,15 +370,12 @@ class Transformer:
         allpos_s[0][i] = self.allpos[0][start_pos + i]
       pos_emb = self.wpe(allpos_s)
       h = tok_emb + pos_emb
-
-    #rory - h self.h is the 12 transformer blocks, so this is just forward through all
+      #rory - h self.h is the 12 transformer blocks, so this is just forward through all
       for hi in self.h:
         h = hi(h, start_pos)
       h = self.ln_f(h)
       logits = self.lm_head(h)
-      #float32 here
 
-    #float64 here
     logits = [logits[0][-1]]
 
     if temperature < 1e-6:
