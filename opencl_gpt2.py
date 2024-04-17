@@ -97,7 +97,7 @@ class LayerNorm:
 
         #x = ((mm * self.weight) / mm2) + self.bias #kernel below
         x[i] = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
-    return [x] #todo
+    return x #todo
 
 def encode(x):
   ret = []
@@ -268,11 +268,11 @@ class TransformerBlock:
   def __call__(self, x, start_pos):
     h = np.copy(x)
     ln1 = self.ln_1(x[0]) #todo
-    attn = self.attn(ln1,start_pos)
+    attn = self.attn([ln1],start_pos) #todo
     h += attn
     h2 = np.copy(h)
-    ln2 = self.ln_2(h2[0]) 
-    mlp = self.mlp(ln2)
+    ln2 = self.ln_2(h2[0]) #todo
+    mlp = self.mlp([ln2]) #todo
     ret = mlp + h
     return ret
     
@@ -346,14 +346,14 @@ class Transformer:
       h = h.reshape(1,1,768)
       h += attn
       h2 = np.copy(h)
-      ln2 = self.h[0].ln_2(h2[0]) 
-      mlp = self.h[0].mlp(ln2)
+      ln2 = self.h[0].ln_2(h2[0]) #todo
+      mlp = self.h[0].mlp([ln2]) #todo
       h = mlp + h  
 
       for i in range(1,len(self.h)):
         h = self.h[i](h, start_pos)
       h = self.ln_f(h[0]) #todo
-      logits = self.lm_head(h[0]) #todo
+      logits = self.lm_head(h) #todo
     else:
       tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))
@@ -367,7 +367,7 @@ class Transformer:
       for hi in self.h:
         h = hi(h, start_pos)
       h = self.ln_f(h[0]) #todo
-      logits = self.lm_head(h[0]) #todo
+      logits = self.lm_head(h) #todo
 
     logits = [logits[0][-1]]
 
