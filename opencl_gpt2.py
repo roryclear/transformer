@@ -439,6 +439,18 @@ class GPT2:
     #with open('weights_2.pickle', 'wb') as handle:
     #  pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
+    if tg_rand:
+      excepted_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
+      893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
+      1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
+      1244, 1011, 257, 2392, 1570, 286, 262, 6881, 13,\
+      887, 329, 584, 661, 851, 1390, 5519, 11, 7912,\
+      11, 290, 584, 287, 12, 14108, 12, 2550, 661, 851,\
+      534, 3280, 1244, 307, 1290, 517, 588, 25, 5155, 1595,\
+      470, 2152, 379, 477, 13, 198, 198, 25153, 345, 389, 257,\
+      1862, 1048, 508, 655, 18303, 422, 3504, 1524, 290, 468,\
+      1239, 1107, 19189, 257, 3451, 287, 48782, 23154, 13, 921, 821, 319, 281, 3624]
+
     prompt_tokens = encode(prompt)
     toks = [prompt_tokens[:] for _ in range(batch_size)]
     start_pos = 0
@@ -449,7 +461,10 @@ class GPT2:
         tokens = np.array(toks)
       tok = self.model(tokens, start_pos, temperature).tolist()
       start_pos = len(toks[0])
-      for i,t in enumerate(tok): toks[i].append(t)
+      for i,t in enumerate(tok):
+        if tg_rand:
+          np.testing.assert_equal(tok[0],excepted_tokens[start_pos-13])  
+        toks[i].append(t)
     ret = [decode(x) for x in toks]
     return ret
 
