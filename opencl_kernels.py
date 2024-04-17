@@ -300,7 +300,7 @@ def matvec(a,b,c):
     b = b.flatten()
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    d = np.zeros([1,1,768])
+    d = np.zeros([768])
     d = np.float32(d)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
     prg = cl.Program(ctx, f"""
