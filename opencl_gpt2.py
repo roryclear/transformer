@@ -369,7 +369,6 @@ class Transformer:
         h = self.h[i](h, start_pos)
       h = self.ln_f(h)
       logits = self.lm_head(h)
-      logits = np.float64(logits) #todo shouldnt need f64
     else:
       tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))
