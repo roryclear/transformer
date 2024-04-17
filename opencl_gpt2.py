@@ -146,7 +146,7 @@ class Attention:
       xv = xv.reshape(self.n_heads,self.head_dim)
       # create kv cache
       if not hasattr(self, "cache_kv"):
-        self.cache_kv = np.zeros(shape=[2, 1, MAX_CONTEXT, self.n_heads, self.head_dim])
+        self.cache_kv = np.zeros(shape=[2, 1, MAX_CONTEXT, self.n_heads, self.head_dim]).astype(np.float32)
         
       keys = self.cache_kv[0]
       values = self.cache_kv[1]
@@ -207,12 +207,12 @@ class Attention:
     
       # create kv cache
       if not hasattr(self, "cache_kv"):
-        self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
+        self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim]).astype(np.float32)
     keys = xk
     values = xv
     s = list(np.shape(keys))
     s[1] = MAX_CONTEXT
-    new_cache = np.zeros(shape=s)
+    new_cache = np.zeros(shape=s).astype(np.float32)
     new_cache = [np.copy(new_cache),np.copy(new_cache)]
     for i in range(len(keys[0])):
       new_cache[0][0][i] = keys[0][i]
@@ -254,7 +254,7 @@ class Embedding_2: #todo crutch
     self.vocab_size, self.embed_size = vocab_size, embed_size
 
   def __call__(self, idx):
-    ret = np.empty((len(idx[0]),self.embed_size))
+    ret = np.empty((len(idx[0]),self.embed_size)).astype(np.float32)
     for i in range(len(ret)):
       for j in range(len(ret[0])):
         ret[i][j] = self.weight[idx[0][i]][j]
@@ -390,7 +390,7 @@ class Transformer:
       #can't get around not using tg here for e2e test?
       #maybe store the output in a file
       #unif_samples = Tensor.rand(1, np.shape(logits)[0], 1)
-      unif_samples = np.random.rand(1, np.shape(logits)[0], 1)
+      unif_samples = np.random.rand(1, np.shape(logits)[0], 1).astype(np.float32)
       #unif_samples = unif_samples.numpy()
       b = np.empty_like(logits,dtype=bool)
       for i in range(len(logits[0][0])):
