@@ -72,15 +72,13 @@ class LayerNorm:
 
   def __call__(self, x):  
     if np.shape(x)[1] == 1:
-      x = x[0][0]
       #mm = x - x.mean() #kernel below
       mm = openclk.minus_mean_multi(np.copy(x))
-      #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.h[0].ln_1.eps)) #kernel below
+      #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.eps)) #kernel below
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
 
-      #x = ((mm * self.h[0].ln_1.weight) / mm2) + self.h[0].ln_1.bias #kernel below
+      #x = ((mm * self.weight) / mm2) + self.bias #kernel below
       x = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
-      x = [[x]]
       return x
     assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
     #x = x.layernorm(eps=self.eps, axis=self.axis)
