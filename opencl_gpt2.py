@@ -218,12 +218,12 @@ class FeedForward:
     self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
-    x = self.c_fc(x[0]) #todo
+    x = self.c_fc(x) #todo
     for i in range(np.shape(x)[0]):
       # gelu() activation
       x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
     ret = self.c_proj(x)
-    return [ret] #todo
+    return ret
   
 class Embedding: #todo, not used but variables are
   def __init__(self, vocab_size:int, embed_size:int):
@@ -268,8 +268,8 @@ class TransformerBlock:
     h += attn
     h2 = np.copy(h)
     ln2 = self.ln_2(h2[0]) #todo
-    mlp = self.mlp([ln2]) #todo
-    ret = mlp + h
+    mlp = self.mlp(ln2) #todo
+    ret = [mlp] + h #todo
     return ret
     
 class Transformer:
@@ -343,7 +343,7 @@ class Transformer:
       h += attn
       h2 = np.copy(h)
       ln2 = self.h[0].ln_2(h2[0]) #todo
-      mlp = self.h[0].mlp([ln2]) #todo
+      mlp = self.h[0].mlp(ln2) #todo
       h = mlp + h  
 
       for i in range(1,len(self.h)):
