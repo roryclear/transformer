@@ -145,15 +145,11 @@ class Attention:
       keys[start_pos] = xk
       values[start_pos] = xv
       
-      xq = xq.reshape(self.n_heads,1,self.head_dim)
-      xk = xk.reshape(1,self.n_heads,self.head_dim)
-      xv = xv.reshape(1,self.n_heads,self.head_dim)
-
       keys = np.resize(keys,(start_pos,self.n_heads,self.head_dim))
       values = np.resize(values,(start_pos,self.n_heads,self.head_dim))
 
-      keys = np.concatenate([keys,xk])
-      values = np.concatenate([values,xv])
+      keys = np.concatenate([keys,[xk]]) #todo
+      values = np.concatenate([values,[xv]]) #todo
       keys = keys.transpose(1,2,0)
       values = values.transpose(1,0,2)
       
