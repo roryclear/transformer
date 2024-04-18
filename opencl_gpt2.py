@@ -135,13 +135,15 @@ class Attention:
       xv = xqkv[self.dim*2:]
       xv = xv.reshape(self.n_heads,self.head_dim)
       # create kv cache
+
       if not hasattr(self, "cache_kv"):
-        self.cache_kv = np.zeros(shape=[2, 1, MAX_CONTEXT, self.n_heads, self.head_dim]).astype(np.float32)
-        
+        exit() #todo never called?
+        self.cache_kv = np.zeros(shape=[2, MAX_CONTEXT, self.n_heads, self.head_dim]).astype(np.float32)
+      self.cache_kv = np.reshape(self.cache_kv,newshape=[2, MAX_CONTEXT, self.n_heads, self.head_dim]) #todo, resave file?
       keys = self.cache_kv[0]
       values = self.cache_kv[1]
-      keys[-1][start_pos] = xk
-      values[-1][start_pos] = xv
+      keys[start_pos] = xk
+      values[start_pos] = xv
       
       xq = xq.reshape(self.n_heads,1,self.head_dim)
       xk = xk.reshape(1,self.n_heads,self.head_dim)
@@ -191,9 +193,7 @@ class Attention:
       bsz = 1
       seqlen, _, _ = xq.shape
     
-      # create kv cache
-      if not hasattr(self, "cache_kv"):
-        self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim]).astype(np.float32)
+
     keys = xk
     values = xv
     s = list(np.shape(keys))
