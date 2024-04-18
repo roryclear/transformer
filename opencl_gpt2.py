@@ -174,20 +174,16 @@ class Attention:
       #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
       xqkv = openclk.matmul_t(x,self.c_attn.weight)
       xqkv += self.c_attn.bias
-      xq = np.zeros(shape=(np.shape(xqkv)[0],self.dim)).astype(np.float32)
-      for i in range(xq.shape[0]):
-        xq[i] = xqkv[i][0:self.dim]
-      xq = xq.reshape(xq.shape[0],self.n_heads,self.head_dim)
-      xk = np.zeros(shape=(np.shape(xqkv)[0],self.dim)).astype(np.float32)
-      for i in range(xk.shape[0]):
-        xk[i] = xqkv[i][self.dim:2*self.dim]
-      xk = xk.reshape(xk.shape[0],self.n_heads,self.head_dim)
-      xv = np.zeros(shape=(np.shape(xqkv)[0],self.dim)).astype(np.float32)
-      for i in range(xv.shape[0]):
-        xv[i] = xqkv[i][self.dim*2:3*self.dim]
-      xv = xv.reshape(xv.shape[0],self.n_heads,self.head_dim)
-      bsz = 1
-      seqlen, _, _ = xq.shape
+      
+      #xq = np.zeros(shape=(len(xqkv),self.dim)).astype(np.float32)
+      xq = xqkv[:,:self.dim]
+      xk = xqkv[:,self.dim:2*self.dim]
+      xv = xqkv[:,2*self.dim:]
+
+      xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
+      xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
+      xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
+      seqlen = len(xq)
     
 
     keys = xk
