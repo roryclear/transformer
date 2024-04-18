@@ -27,9 +27,9 @@ def decode(index):
   return ret
 
 def scaled_dot_product_attention(x, key, value):
-  key = np.transpose(key,(0,1,3,2))
+  key = np.transpose(key,(0,2,1))
   #qk = np.matmul(x,key)[0] # kernel below
-  qk = openclk.matmul_t_3d(np.copy(x[0]),np.copy(key[0]))
+  qk = openclk.matmul_t_3d(np.copy(x),np.copy(key))
   
   qk = qk / math.sqrt(np.shape(x)[-1])
   for x in range(len(qk)):
@@ -39,7 +39,7 @@ def scaled_dot_product_attention(x, key, value):
       qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
       qk[x][y] = qk[x][y] / qk[x][y].sum()
   #qk = np.matmul(qk,value)
-  qk = np.array([openclk.matmul_t_3d(np.copy(qk),np.copy(value[0]))])
+  qk = np.array([openclk.matmul_t_3d(np.copy(qk),np.copy(value))])
   return qk
 
 class Linear():
@@ -174,21 +174,22 @@ class Attention:
 
     else:
       #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
-      xqkv = [openclk.matmul_t(x,self.c_attn.weight)]
+      xqkv = openclk.matmul_t(x,self.c_attn.weight)
       xqkv += self.c_attn.bias
-      xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim)).astype(np.float32)
-      for i in range(xq.shape[1]):
-        xq[0][i] = xqkv[0][i][0:self.dim]
-      xq = xq.reshape(1,xq.shape[1],self.n_heads,self.head_dim)
-      xk = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim)).astype(np.float32)
-      for i in range(xk.shape[1]):
-        xk[0][i] = xqkv[0][i][self.dim:2*self.dim]
-      xk = xk.reshape(1,xk.shape[1],self.n_heads,self.head_dim)
-      xv = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim)).astype(np.float32)
+      xq = np.zeros(shape=(np.shape(xqkv)[0],self.dim)).astype(np.float32)
+      for i in range(xq.shape[0]):
+        xq[i] = xqkv[i][0:self.dim]
+      xq = xq.reshape(xq.shape[0],self.n_heads,self.head_dim)
+      xk = np.zeros(shape=(np.shape(xqkv)[0],self.dim)).astype(np.float32)
+      for i in range(xk.shape[0]):
+        xk[i] = xqkv[i][self.dim:2*self.dim]
+      xk = xk.reshape(1,xk.shape[0],self.n_heads,self.head_dim)
+      xv = np.zeros(shape=(1,np.shape(xqkv)[0],self.dim)).astype(np.float32)
       for i in range(xv.shape[1]):
-        xv[0][i] = xqkv[0][i][self.dim*2:3*self.dim]
+        xv[0][i] = xqkv[i][self.dim*2:3*self.dim]
       xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
-      bsz, seqlen, _, _ = xq.shape
+      bsz = 1
+      seqlen, _, _ = xq.shape
     
       # create kv cache
       if not hasattr(self, "cache_kv"):
@@ -203,15 +204,15 @@ class Attention:
       new_cache[0][0][i] = keys[0][i]
       new_cache[1][0][i] = values[0][i]       
     self.cache_kv = new_cache
-    xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
+    xq = xq.transpose((1,0,2)) # same as (1,2) in tinygrad
     #can't numpy them outside this if!
     keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
-    xq = scaled_dot_product_attention(xq,keys,values)
-    xq = xq.transpose((0,2,1,3))
+    xq = scaled_dot_product_attention(xq,keys[0],values[0]) #todo
+    xq = xq.transpose((0,2,1,3)) #todo
     xq = xq.reshape(seqlen, self.dim)
     ret = self.c_proj(xq)
     return ret
-  
+    
 class FeedForward:
   def __init__(self, dim, hidden_dim):
     self.c_fc = Linear(dim, hidden_dim, bias=True)
