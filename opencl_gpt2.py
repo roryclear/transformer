@@ -174,7 +174,7 @@ class Attention:
 
     else:
       #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
-      xqkv = [openclk.matmul_t(x[0],self.c_attn.weight)]
+      xqkv = [openclk.matmul_t(x,self.c_attn.weight)]
       xqkv += self.c_attn.bias
       xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim)).astype(np.float32)
       for i in range(xq.shape[1]):
@@ -210,7 +210,7 @@ class Attention:
     xq = xq.transpose((0,2,1,3))
     xq = xq.reshape(seqlen, self.dim)
     ret = self.c_proj(xq)
-    return [ret] #todo
+    return ret
   
 class FeedForward:
   def __init__(self, dim, hidden_dim):
@@ -264,7 +264,7 @@ class TransformerBlock:
   def __call__(self, x, start_pos):
     h = np.copy(x)
     ln1 = self.ln_1(x[0]) #todo
-    attn = self.attn([ln1],start_pos) #todo
+    attn = self.attn(ln1,start_pos)
     h += attn
     h2 = np.copy(h)
     ln2 = self.ln_2(h2[0]) #todo
