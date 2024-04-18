@@ -257,11 +257,13 @@ class TransformerBlock:
 
   def __call__(self, x, start_pos):
     h = np.copy(x)
-    ln1 = self.ln_1(x[0]) #todo
+    x = x[0] #todo
+    ln1 = self.ln_1(x)
     attn = self.attn(ln1,start_pos)
     h += attn
     h2 = np.copy(h)
-    ln2 = self.ln_2(h2[0]) #todo
+    h2 = h2[0] #todo
+    ln2 = self.ln_2(h2)
     mlp = self.mlp(ln2) #todo
     ret = mlp + h
     return ret
@@ -315,13 +317,14 @@ class Transformer:
       print(type(hi.ln_2.bias[0]))
 
   def forward(self, tokens, start_pos, temperature:float=0.0):
+    tokens = tokens[0] #todo
     if not hasattr(self, 'allpos'): 
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
-    seqlen = tokens.shape[1]
+    seqlen = len(tokens)
 
     if start_pos > 0 and opencl:
-      h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0])
+      h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       #h = self.h[0](h,start_pos,mask)
       #ln1 = self.h[0].ln_1(h)
       #todo, why do things need to be np.copied???
@@ -348,7 +351,7 @@ class Transformer:
         logits = [logits] #todo
       logits = [logits] #todo
     else:
-      tok_emb = self.wte(tokens[0]) #rorys todo
+      tok_emb = self.wte(tokens) #rorys todo
       tok_emb = [tok_emb] #todo
       s = list(np.shape(self.allpos))
       s[1] = seqlen
