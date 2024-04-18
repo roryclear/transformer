@@ -342,11 +342,11 @@ class Transformer:
       h = np.array(h)
  
       mm = openclk.minus_mean_multi(np.copy(h))
-      mm = [mm]
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
       ln2 = openclk.divide(np.copy(mm), mm2, self.h[0].ln_2.weight, self.h[0].ln_2.bias)
-  
-      mlp = self.h[0].mlp(ln2) #todo
+      
+      ln2 = [ln2] #todo
+      mlp = self.h[0].mlp(ln2)
       h = np.array([[h]])
       h = mlp + h
 
