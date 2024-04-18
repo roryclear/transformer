@@ -38,8 +38,8 @@ def scaled_dot_product_attention(x, key, value):
         if z > y: qk[x][y][z] -= np.inf
       qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
       qk[x][y] = qk[x][y] / qk[x][y].sum()
-  #qk = np.matmul(qk,value)
-  qk = np.array([openclk.matmul_t_3d(np.copy(qk),np.copy(value))])
+  #qk = np.matmul(qk,value) # kernel below
+  qk = np.array(openclk.matmul_t_3d(np.copy(qk),np.copy(value)))
   return qk
 
 class Linear():
@@ -150,9 +150,8 @@ class Attention:
 
       keys = np.concatenate([keys,[xk]]) #todo
       values = np.concatenate([values,[xv]]) #todo
-      keys = keys.transpose(1,2,0)
-      values = values.transpose(1,0,2)
       
+      keys = keys.transpose(1,2,0) #todo, can we not do this?
       #xq = np.matmul(xq,keys) / math.sqrt(self.head_dim) kernel below is same as
       xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
 
@@ -163,6 +162,7 @@ class Attention:
       xq = openclk.minus_max(xq,(start_pos+1))
       
       #xq = np.matmul(xq,values) #kernel below
+      values = values.transpose(1,0,2)
       xq = openclk.matmul3(xq,values,(start_pos+1))
 
       #xq = xq.reshape((1,1,self.dim))
@@ -181,11 +181,11 @@ class Attention:
       xk = np.zeros(shape=(np.shape(xqkv)[0],self.dim)).astype(np.float32)
       for i in range(xk.shape[0]):
         xk[i] = xqkv[i][self.dim:2*self.dim]
-      xk = xk.reshape(1,xk.shape[0],self.n_heads,self.head_dim)
-      xv = np.zeros(shape=(1,np.shape(xqkv)[0],self.dim)).astype(np.float32)
-      for i in range(xv.shape[1]):
-        xv[0][i] = xqkv[i][self.dim*2:3*self.dim]
-      xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
+      xk = xk.reshape(xk.shape[0],self.n_heads,self.head_dim)
+      xv = np.zeros(shape=(np.shape(xqkv)[0],self.dim)).astype(np.float32)
+      for i in range(xv.shape[0]):
+        xv[i] = xqkv[i][self.dim*2:3*self.dim]
+      xv = xv.reshape(xv.shape[0],self.n_heads,self.head_dim)
       bsz = 1
       seqlen, _, _ = xq.shape
     
@@ -193,18 +193,17 @@ class Attention:
     keys = xk
     values = xv
     s = list(np.shape(keys))
-    s[1] = MAX_CONTEXT
+    s[0] = MAX_CONTEXT
     new_cache = np.zeros(shape=s).astype(np.float32)
     new_cache = [np.copy(new_cache),np.copy(new_cache)]
-    for i in range(len(keys[0])):
-      new_cache[0][0][i] = keys[0][i]
-      new_cache[1][0][i] = values[0][i]       
+    for i in range(len(keys)):
+      new_cache[0][i] = keys[i]
+      new_cache[1][i] = values[i]       
     self.cache_kv = new_cache
-    xq = xq.transpose((1,0,2)) # same as (1,2) in tinygrad
-    #can't numpy them outside this if!
-    keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
-    xq = scaled_dot_product_attention(xq,keys[0],values[0]) #todo
-    xq = xq.transpose((0,2,1,3)) #todo
+    xq = xq.transpose((1,0,2))
+    keys, values = keys.transpose((1,0,2)), values.transpose((1,0,2))
+    xq = scaled_dot_product_attention(xq,keys,values)
+    xq = xq.transpose((1,0,2))
     xq = xq.reshape(seqlen, self.dim)
     ret = self.c_proj(xq)
     return ret
