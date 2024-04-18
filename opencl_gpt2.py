@@ -53,8 +53,6 @@ class Linear():
       self.bias = np.zeros(np.shape(self.weight[1])).astype(np.float32)
     if np.shape(x)[0] == 1:
       ret = openclk.matvec2(x,self.weight,self.bias)
-      if len(np.shape(ret)) == 1:
-        ret = [ret] #todo
     else:
       #ret = np.matmul(x,self.weight) kernel below
       ret = openclk.matmul_t(x,self.weight)
@@ -210,11 +208,15 @@ class FeedForward:
     self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
-    x = self.c_fc(x) #todo
+    x = self.c_fc(x)
+    if len(np.shape(x)) == 1:
+      x = [x] #todo
     for i in range(np.shape(x)[0]):
       # gelu() activation
       x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
     ret = self.c_proj(x)
+    if len(np.shape(ret)) == 1:
+      ret = [ret]
     return ret
   
 class Embedding: #todo, not used but variables are
@@ -261,7 +263,7 @@ class TransformerBlock:
     h2 = np.copy(h)
     ln2 = self.ln_2(h2[0]) #todo
     mlp = self.mlp(ln2) #todo
-    ret = [mlp] + h #todo
+    ret = mlp + h
     return ret
     
 class Transformer:
@@ -342,6 +344,8 @@ class Transformer:
         h = self.h[i](h, start_pos)
       h = self.ln_f(h[0]) #todo
       logits = self.lm_head(h)
+      if len(np.shape(logits)) == 1:
+        logits = [logits] #todo
       logits = [logits] #todo
     else:
       tok_emb = self.wte(tokens[0]) #rorys todo
@@ -355,6 +359,8 @@ class Transformer:
         h = hi(h, start_pos)
       h = self.ln_f(h[0]) #todo
       logits = self.lm_head(h)
+      if len(np.shape(logits)) == 1:
+        logits = [logits] #todo
       logits = [logits] #todo
 
     logits = [logits[0][-1]]
