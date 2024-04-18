@@ -336,15 +336,22 @@ class Transformer:
       #x = ((mm * self.h[0].ln_1.weight) / mm2) + self.h[0].ln_1.bias #kernel below
       x = openclk.divide(np.copy(mm), mm2, self.h[0].ln_1.weight, self.h[0].ln_1.bias)
       attn = self.h[0].attn([x],start_pos)
-      h = h.reshape(1,1,768)
+      h = h.reshape(768)
+      h = np.array(h)
       h += attn
-      h2 = np.copy(h)
-      ln2 = self.h[0].ln_2(h2[0]) #todo
+      h = np.array(h)
+ 
+      mm = openclk.minus_mean_multi(np.copy(h))
+      mm = [mm]
+      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+      ln2 = openclk.divide(np.copy(mm), mm2, self.h[0].ln_2.weight, self.h[0].ln_2.bias)
+  
       mlp = self.h[0].mlp(ln2) #todo
-      h = mlp + h  
+      h = np.array([[h]])
+      h = mlp + h
 
       for i in range(1,len(self.h)):
-        x = np.copy(h)
+        x = h
         x = x[0] #todo
         ln1 = self.h[i].ln_1(x)
         attn = self.h[i].attn(ln1,start_pos)
