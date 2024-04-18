@@ -344,7 +344,17 @@ class Transformer:
       h = mlp + h  
 
       for i in range(1,len(self.h)):
-        h = self.h[i](h, start_pos)
+        x = np.copy(h)
+        x = x[0] #todo
+        ln1 = self.h[i].ln_1(x)
+        attn = self.h[i].attn(ln1,start_pos)
+        h += attn
+        h2 = np.copy(h)
+        h2 = h2[0] #todo
+        ln2 = self.h[i].ln_2(h2)
+        mlp = self.h[i].mlp(ln2) #todo
+        h = mlp + h
+        
       h = self.ln_f(h[0]) #todo
       logits = self.lm_head(h)
       if len(np.shape(logits)) == 1:
