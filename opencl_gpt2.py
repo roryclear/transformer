@@ -52,7 +52,7 @@ class Linear():
     if self.bias is None:
       self.bias = np.zeros(np.shape(self.weight[1])).astype(np.float32)
     if np.shape(x)[0] == 1:
-      ret = openclk.matvec2(x,self.weight,self.bias)
+      ret = openclk.matvec2(x,self.weight,np.zeros(np.shape(self.weight[1])).astype(np.float32))
     else:
       #ret = np.matmul(x,self.weight) kernel below
       ret = openclk.matmul_t(x,self.weight)
@@ -199,7 +199,10 @@ class Attention:
     xq = scaled_dot_product_attention(xq,keys,values)
     xq = xq.transpose((1,0,2))
     xq = xq.reshape(seqlen, self.dim)
-    ret = self.c_proj(xq)
+
+    #ret = np.matmul(x,self.weight) kernel below
+    ret = openclk.matmul_t(xq,self.c_proj.weight)
+    ret += self.c_proj.bias
     return ret
     
 class FeedForward:
@@ -375,10 +378,12 @@ class Transformer:
         x = openclk.matvec2(x,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
         #mlp = self.h[i].mlp(x) #above???
         h += x
-
-      h = [h]
-      h = self.ln_f(h) #todo
-      logits = self.lm_head(h)
+      
+      mm = openclk.minus_mean_multi(np.copy(h))
+      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+      h = openclk.divide(np.copy(mm), mm2, self.ln_f.weight, self.ln_f.bias)
+      logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
+      #logits = self.lm_head(h)
     else:
       tok_emb = self.wte(tokens) #rorys todo
       tok_emb = [tok_emb] #todo
@@ -390,7 +395,10 @@ class Transformer:
       for hi in self.h:
         h = hi(h, start_pos)
       h = self.ln_f(h[0]) #todo
-      logits = self.lm_head(h)[-1] #todo
+
+      ret = openclk.matmul_t(h,self.lm_head.weight)
+      logits = ret[-1] #todo
+      #logits = self.lm_head(h)[-1] #todo
 
     if temperature < 1e-6:
       ret = logits.argmax(-1)
