@@ -375,37 +375,29 @@ class Transformer:
       x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
       x = openclk.matvec2(x,self.h[0].mlp.c_proj.weight,self.h[0].mlp.c_proj.bias)
       h = x + h
-      h = [[h]]
 
       for i in range(1,len(self.h)):
         x = h
-        x = x[0] #todo
-
+        #x = x[0][0] #todo
         mm = openclk.minus_mean_multi(np.copy(x))
-        mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+        mm2 = openclk.sq_mean_sqrt_b(np.copy(mm))
         ln1 = openclk.divide(np.copy(mm), mm2, self.h[i].ln_1.weight, self.h[i].ln_1.bias)
         #ln1 = self.h[i].ln_1(x) above kernels
 
         attn = self.h[i].attn(ln1,start_pos)
         h += attn
-        h2 = np.copy(h)
-        h2 = h2[0] #todo
 
-        mm = openclk.minus_mean_multi(np.copy(h2))
+        mm = openclk.minus_mean_multi(np.copy(h))
         mm2 = openclk.sq_mean_sqrt(np.copy(mm))
         x = openclk.divide(np.copy(mm), mm2, self.h[i].ln_2.weight, self.h[i].ln_2.bias)
         
-        ## mlp??
         x = openclk.matvec2(x,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias)
-        x = [x] #todo
-        x[0] = 0.5 * x[0] * (1 + np.tanh(x[0] * 0.7978845608 * (1 + 0.044715 * x[0] * x[0])))
-        x = np.array(x) #todo
-        ret = openclk.matvec2(x,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
-        ret = [ret]
-        mlp = ret
+        x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
+        x = openclk.matvec2(x,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
         #mlp = self.h[i].mlp(x) #above???
-        h = mlp + h
-      
+        h += x
+
+      h = [[h]]
       h = self.ln_f(h[0]) #todo
       logits = self.lm_head(h)
       if len(np.shape(logits)) == 1:
