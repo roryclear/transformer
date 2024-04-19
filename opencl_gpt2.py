@@ -123,10 +123,10 @@ class Attention:
   def __call__(self, x, start_pos):
     x = np.array(x)
     if start_pos > 0:
-      if np.shape(self.c_attn.weight) == (768,2304):
-        self.c_attn.weight = self.c_attn.weight.reshape(2304,768) #have to do this for opencl...took way too long to realize
-      #xqkv = np.matmul(x,self.c_attn.weight.reshape(768,2304)) + self.c_attn.bias #kernel below...doesnt work with changes
-      xqkv = openclk.madd(x,self.c_attn.weight,self.c_attn.bias).reshape(2304) #todo make own kernel...
+      x = np.array([x]) #todo
+      xqkv = openclk.matmul_t(x,self.c_attn.weight) + self.c_attn.bias
+      x = x[0] #todo
+      xqkv = xqkv.reshape(2304)
       xq = xqkv[0:self.dim]
       xk = xqkv[self.dim:2*self.dim]
       xk = xk.reshape(self.n_heads,self.head_dim)
