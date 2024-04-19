@@ -397,12 +397,9 @@ class Transformer:
         #mlp = self.h[i].mlp(x) #above???
         h += x
 
-      h = [[h]]
-      h = self.ln_f(h[0]) #todo
+      h = [h]
+      h = self.ln_f(h) #todo
       logits = self.lm_head(h)
-      if len(np.shape(logits)) == 1:
-        logits = [logits] #todo
-      logits = [logits] #todo
     else:
       tok_emb = self.wte(tokens) #rorys todo
       tok_emb = [tok_emb] #todo
@@ -414,39 +411,33 @@ class Transformer:
       for hi in self.h:
         h = hi(h, start_pos)
       h = self.ln_f(h[0]) #todo
-      logits = self.lm_head(h)
-      if len(np.shape(logits)) == 1:
-        logits = [logits] #todo
-      logits = [logits] #todo
-
-    logits = [logits[0][-1]]
+      logits = self.lm_head(h)[-1] #todo
 
     if temperature < 1e-6:
       ret = logits.argmax(-1)
     else:
       logits = np.array(logits) / temperature
-      logits[0] = np.exp(logits[0] - np.max(logits[0]))
-      logits[0] = logits[0] / logits[0].sum()
-      logits = logits.cumsum(1)
-      logits = logits / logits[0][-1]
-      logits = [logits]
+      logits = np.exp(logits - np.max(logits))
+      logits = logits / logits.sum()
+      logits = logits.cumsum(0)
+      logits = logits / logits[-1]
       #can't get around not using tg here for e2e test?
       #maybe store the output in a file
       #unif_samples = Tensor.rand(1, np.shape(logits)[0], 1)
       if use_tg_rand:
-        unif_samples = [[[tg_rand.rand()]]]
+        unif_samples = tg_rand.rand()
       else:
-        unif_samples = np.random.rand(1, 1, 1).astype(np.float32)
+        unif_samples = np.random.rand().astype(np.float32)
       b = np.empty_like(logits,dtype=bool)
-      for i in range(len(logits[0][0])):
-        if unif_samples[0][0][0] >= logits[0][0][i]: #Tensor random gets [[[0.14280224]]] with 420 seed,
-          b[0][0][i] = True
+      for i in range(len(logits)):
+        if unif_samples >= logits[i]:
+          b[i] = True
         else:
-          b[0][0][i] = False
+          b[i] = False
 
-      b = b.sum(2)[0]
-      ret = b
-    return ret #why the realize? what calls this? the h hi loop?
+      b = b.sum()
+      ret = np.array([b])
+    return ret
 
   def __call__(self, tokens, start_pos, temperature:np.float32=0.0,v_in=False):
     return self.forward(tokens, start_pos, temperature)
