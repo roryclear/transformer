@@ -346,16 +346,11 @@ class Transformer:
       x = openclk.divide(np.copy(mm), mm2, self.h[0].ln_2.weight, self.h[0].ln_2.bias)
       x = openclk.matvec2(x,self.h[0].mlp.c_fc.weight,self.h[0].mlp.c_fc.bias)
 
-      x = [x] #todo
-      for i in range(np.shape(x)[0]):
-        # gelu() activation
-        x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
-      ret = self.h[0].mlp.c_proj(x)
-
-      mlp = ret
-      #mlp = self.h[0].mlp(ln2) inlined above
-      h = np.array([[h]])
-      h = mlp + h
+      # gelu() activation
+      x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
+      x = openclk.matvec2(x,self.h[0].mlp.c_proj.weight,self.h[0].mlp.c_proj.bias)
+      h = x + h
+      h = [[h]]
 
       for i in range(1,len(self.h)):
         x = h
