@@ -323,39 +323,13 @@ class Transformer:
 
     if start_pos > 0 and opencl:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
-      #h = self.h[0](h,start_pos,mask)
-      #ln1 = self.h[0].ln_1(h)
-      #todo, why do things need to be np.copied???
-      #mm = h - np.mean(h) #kernel below
-      mm = openclk.minus_mean_multi(h)
-      #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.h[0].ln_1.eps)) #kernel below
-      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-
-      #x = ((mm * self.h[0].ln_1.weight) / mm2) + self.h[0].ln_1.bias #kernel below
-      x = openclk.divide(np.copy(mm), mm2, self.h[0].ln_1.weight, self.h[0].ln_1.bias)
-      attn = self.h[0].attn([x],start_pos)
-      h = h.reshape(768)
-      h = np.array(h)
-      h += attn
-      h = np.array(h)
- 
-      mm = openclk.minus_mean_multi(np.copy(h))
-      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-      x = openclk.divide(np.copy(mm), mm2, self.h[0].ln_2.weight, self.h[0].ln_2.bias)
-      x = openclk.matvec2(x,self.h[0].mlp.c_fc.weight,self.h[0].mlp.c_fc.bias)
-
-      # gelu() activation
-      x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
-      x = openclk.matvec2(x,self.h[0].mlp.c_proj.weight,self.h[0].mlp.c_proj.bias)
-      h = x + h
-
-      for i in range(1,len(self.h)):
+      for i in range(len(self.h)):
         x = h
         mm = openclk.minus_mean_multi(np.copy(x))
         mm2 = openclk.sq_mean_sqrt_b(np.copy(mm))
         ln1 = openclk.divide(np.copy(mm), mm2, self.h[i].ln_1.weight, self.h[i].ln_1.bias)
         attn = self.h[i].attn(ln1,start_pos)
-        h += attn
+        h = x + attn
         mm = openclk.minus_mean_multi(np.copy(h))
         mm2 = openclk.sq_mean_sqrt(np.copy(mm))
         x = openclk.divide(np.copy(mm), mm2, self.h[i].ln_2.weight, self.h[i].ln_2.bias)
