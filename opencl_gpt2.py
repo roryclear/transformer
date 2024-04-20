@@ -354,7 +354,6 @@ class Transformer:
         mm = openclk.minus_mean_multi(np.copy(x))
         mm2 = openclk.sq_mean_sqrt_b(np.copy(mm))
         ln1 = openclk.divide(np.copy(mm), mm2, self.h[i].ln_1.weight, self.h[i].ln_1.bias)
-        #ln1 = self.h[i].ln_1(x) above kernels
         attn = self.h[i].attn(ln1,start_pos)
         h += attn
         mm = openclk.minus_mean_multi(np.copy(h))
@@ -363,14 +362,12 @@ class Transformer:
         x = openclk.matvec2(x,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias)
         x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
         x = openclk.matvec2(x,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
-        #mlp = self.h[i].mlp(x) #above???
         h += x
       
       mm = openclk.minus_mean_multi(np.copy(h))
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
       h = openclk.divide(np.copy(mm), mm2, self.ln_f.weight, self.ln_f.bias)
       logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
-      #logits = self.lm_head(h)
     else:
       tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))
@@ -380,46 +377,30 @@ class Transformer:
 
 
       #rory - h self.h is the 12 transformer blocks, so this is just forward through all
-      h = np.copy(x)
-      for i in range(len(x)): #todo, kernel instead of loop
-        mm = openclk.minus_mean_multi(np.copy(x[i]))
-        mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-        x[i] = openclk.divide(np.copy(mm), mm2, self.h[0].ln_1.weight, self.h[0].ln_1.bias)
-      ln1 = x
-      attn = self.h[0].attn(ln1,start_pos)
-      h += attn
-      x = np.copy(h)
-
-      for i in range(len(x)):
-        mm = openclk.minus_mean_multi(np.copy(x[i]))
-        mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-        x[i] = openclk.divide(np.copy(mm), mm2, self.h[0].ln_2.weight, self.h[0].ln_2.bias)
-
-      x = openclk.matmul_t(x,self.h[0].mlp.c_fc.weight)
-      x += self.h[0].mlp.c_fc.bias
-      for i in range(len(x)):
-        x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
-      ret = openclk.matmul_t(x,self.h[0].mlp.c_proj.weight)
-      ret += self.h[0].mlp.c_proj.bias
-      mlp = ret
-      ret = mlp + h
-      x = [ret] #todo
-      for i in range(1,len(self.h)):
-        h = np.copy(x)
-        x = x[0] #todo
-        ln1 = self.h[i].ln_1(x)
-        attn = self.h[i].attn(ln1,start_pos)
+      for i in range(len(self.h)):
+        h = np.copy(x) #todo
+        for j in range(len(x)): #todo, kernel instead of loop
+          mm = openclk.minus_mean_multi(np.copy(x[j]))
+          mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+          x[j] = openclk.divide(np.copy(mm), mm2, self.h[i].ln_1.weight, self.h[i].ln_1.bias)
+        attn = self.h[i].attn(x,start_pos)
         h += attn
-        h2 = np.copy(h)
-        h2 = h2[0] #todo
-        ln2 = self.h[i].ln_2(h2)
-        mlp = self.h[i].mlp(ln2)
-        ret = mlp + h
-        x = ret
-      h = x
-        #h = hi(h, start_pos) above
+        x = np.copy(h)
 
-      h = self.ln_f(h[0]) #todo
+        for j in range(len(x)):
+          mm = openclk.minus_mean_multi(np.copy(x[j]))
+          mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+          x[j] = openclk.divide(np.copy(mm), mm2, self.h[i].ln_2.weight, self.h[i].ln_2.bias)
+
+        x = openclk.matmul_t(x,self.h[i].mlp.c_fc.weight)
+        x += self.h[i].mlp.c_fc.bias
+        for j in range(len(x)):
+          x[j] = 0.5 * x[j] * (1 + np.tanh(x[j] * 0.7978845608 * (1 + 0.044715 * x[j] * x[j])))
+        x = openclk.matmul_t(x,self.h[i].mlp.c_proj.weight)
+        x += self.h[i].mlp.c_proj.bias
+        x += h
+
+      h = self.ln_f(x)
       ret = openclk.matmul_t(h,self.lm_head.weight)
       logits = ret[-1] #todo
       ret = None
