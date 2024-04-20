@@ -210,14 +210,11 @@ class Transformer:
     self.h = [TransformerBlock(dim, n_heads, norm_eps) for i in range(n_layers)]
     self.ln_f = LayerNorm(dim,norm_eps)
     self.lm_head = Linear(dim, vocab_size, bias=False)
+    self.dim = dim
 
   def forward(self, tokens, start_pos, temperature:float=0.0):
-    if not hasattr(self, 'allpos'): 
-      self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
-
     seqlen = len(tokens)
-
-    if start_pos > 0 and opencl:
+    if start_pos > 0:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
         x = h
@@ -240,9 +237,7 @@ class Transformer:
       logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
     else:
       tok_emb = self.wte(tokens)
-      s = list(np.shape(self.allpos))
-      s[1] = seqlen
-      pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,768))
+      pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,self.dim))
       x = tok_emb + pos_emb
 
       #rory - h self.h is the 12 transformer blocks, so this is just forward through all
@@ -363,7 +358,7 @@ if __name__ == "__main__":
   #Tensor.manual_seed(420) #don't need
   np.random.seed(28)
   #filehandler = open("weights.obj", 'rb') 
-  #filehandler = open("weights.pickle", 'rb')
+  #filehandler = open("weights_2.pickle", 'rb')
   filehandler = open("weights.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   if use_tg_rand:
