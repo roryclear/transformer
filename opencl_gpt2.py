@@ -85,7 +85,7 @@ class LayerNorm:
 
         #x = ((mm * self.weight) / mm2) + self.bias #kernel below
         x[i] = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
-    return x #todo
+    return x
 
 def encode(x):
   ret = []
@@ -351,7 +351,6 @@ class Transformer:
 
       for i in range(1,len(self.h)):
         x = h
-        #x = x[0][0] #todo
         mm = openclk.minus_mean_multi(np.copy(x))
         mm2 = openclk.sq_mean_sqrt_b(np.copy(mm))
         ln1 = openclk.divide(np.copy(mm), mm2, self.h[i].ln_1.weight, self.h[i].ln_1.bias)
@@ -374,7 +373,6 @@ class Transformer:
       #logits = self.lm_head(h)
     else:
       tok_emb = self.wte(tokens) #rorys todo
-      tok_emb = [tok_emb] #todo
       s = list(np.shape(self.allpos))
       s[1] = seqlen
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,768))
@@ -383,7 +381,6 @@ class Transformer:
 
       #rory - h self.h is the 12 transformer blocks, so this is just forward through all
       h = np.copy(x)
-      x = x[0] #todo
       for i in range(len(x)): #todo, kernel instead of loop
         mm = openclk.minus_mean_multi(np.copy(x[i]))
         mm2 = openclk.sq_mean_sqrt(np.copy(mm))
@@ -391,7 +388,7 @@ class Transformer:
       ln1 = x
       attn = self.h[0].attn(ln1,start_pos)
       h += attn
-      x = np.copy(h)[0] #todo
+      x = np.copy(h)
 
       for i in range(len(x)):
         mm = openclk.minus_mean_multi(np.copy(x[i]))
@@ -406,8 +403,7 @@ class Transformer:
       ret += self.h[0].mlp.c_proj.bias
       mlp = ret
       ret = mlp + h
-      x = ret
-
+      x = [ret] #todo
       for i in range(1,len(self.h)):
         h = np.copy(x)
         x = x[0] #todo
