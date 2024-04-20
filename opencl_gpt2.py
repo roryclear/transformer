@@ -207,7 +207,7 @@ class FeedForward:
     ret += self.c_fc.bias
     x = ret
     #x = self.c_fc(x) #above
-    for i in range(np.shape(x)[0]):
+    for i in range(len(x)):
       # gelu() activation
       x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
     x = np.array(x) #todo
@@ -255,6 +255,7 @@ class TransformerBlock:
 
   def __call__(self, x, start_pos):
     h = np.copy(x)
+    exit()
     x = x[0] #todo
     ln1 = self.ln_1(x)
     attn = self.attn(ln1,start_pos)
@@ -343,7 +344,7 @@ class Transformer:
       h = openclk.divide(np.copy(mm), mm2, self.ln_f.weight, self.ln_f.bias)
       logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
     else:
-      tok_emb = self.wte(tokens) #rorys todo
+      tok_emb = self.wte(tokens)
       s = list(np.shape(self.allpos))
       s[1] = seqlen
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,768))
@@ -403,7 +404,7 @@ class Transformer:
           b[i] = False
 
       b = b.sum()
-      ret = np.array([b])
+      ret = np.array(b)
     return ret
 
   def __call__(self, tokens, start_pos, temperature:np.float32=0.0,v_in=False):
@@ -441,21 +442,19 @@ class GPT2:
       1862, 1048, 508, 655, 18303, 422, 3504, 1524, 290, 468,\
       1239, 1107, 19189, 257, 3451, 287, 48782, 23154, 13, 921, 821, 319, 281, 3624]
 
-    prompt_tokens = encode(prompt)
-    toks = [prompt_tokens[:] for _ in range(batch_size)]
+    toks = encode(prompt)
     start_pos = 0
     for _ in trange(max_length, disable=(timing==True)):
-      if batch_size == 1 and len(toks[0][start_pos:]) == 1:
-        tokens = np.array([[toks[0][start_pos]]])
+      if batch_size == 1 and len(toks[start_pos:]) == 1:
+        tokens = np.array([[toks[start_pos]]])
       else:
-        tokens = np.array(toks)
+        tokens = np.array([toks])
       tok = self.model(tokens, start_pos, temperature).tolist()
-      start_pos = len(toks[0])
-      for i,t in enumerate(tok):
-        if tg_rand:
-          np.testing.assert_equal(tok[0],excepted_tokens[start_pos-13])  
-        toks[i].append(t)
-    ret = [decode(x) for x in toks]
+      start_pos = len(toks)
+      if tg_rand:
+        np.testing.assert_equal(tok,excepted_tokens[start_pos-13])  
+      toks.append(tok)
+    ret = [decode(toks)]
     return ret
 
 # **** main code ****
