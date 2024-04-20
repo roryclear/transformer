@@ -316,7 +316,6 @@ class Transformer:
       print(type(hi.ln_2.bias[0]))
 
   def forward(self, tokens, start_pos, temperature:float=0.0):
-    tokens = tokens[0] #todo
     if not hasattr(self, 'allpos'): 
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
@@ -349,7 +348,6 @@ class Transformer:
       s[1] = seqlen
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,768))
       x = tok_emb + pos_emb
-
 
       #rory - h self.h is the 12 transformer blocks, so this is just forward through all
       for i in range(len(self.h)):
@@ -446,16 +444,15 @@ class GPT2:
     start_pos = 0
     for _ in trange(max_length, disable=(timing==True)):
       if batch_size == 1 and len(toks[start_pos:]) == 1:
-        tokens = np.array([[toks[start_pos]]])
+        tokens = np.array([toks[start_pos]])
       else:
-        tokens = np.array([toks])
+        tokens = np.array(toks)
       tok = self.model(tokens, start_pos, temperature).tolist()
       start_pos = len(toks)
       if tg_rand:
         np.testing.assert_equal(tok,excepted_tokens[start_pos-13])  
       toks.append(tok)
-    ret = [decode(toks)]
-    return ret
+    return decode(toks)
 
 # **** main code ****
 
@@ -482,26 +479,26 @@ if __name__ == "__main__":
   print(type(gpt2))
 
 
-  texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
   print('Generating text...')
-  for i,text in enumerate(texts): print((f"Response {i}:", "green"), text)
+  print((f"Response:", "green"), text)
   #assert for tg seed 420 unif samples
   if tg_rand:
-    assert texts == [("What is the answer to life, the universe, and everything?"
+    assert text == ("What is the answer to life, the universe, and everything?"
     "\n\nIf you were an astrophysicist, or just a physicist, your answer might "
     "be a bit different. For one, you might take a longer view of the universe. "
     "But for other people — including scientists, artists, and other in-your-face "
     "people — your answer might be far more like: Life doesn't exist at all.\n\n"
     "Imagine you are a young person who just graduated from middle school and has "
-    "never really pursued a career in astrophysics. You're on an eight")]
+    "never really pursued a career in astrophysics. You're on an eight")
   else:
     # for np random
-    assert texts == [("What is the answer to life, the universe, and everything? "
+    assert text == ("What is the answer to life, the universe, and everything? "
     "But what is the answer to the mystery of Enlightenment? Does the only "
     "solution lie in a series of calls to agency? Do virtues and proper duties "
     "need to separate? How does a patient become his or her own individual conscience?\n\n"
     "What does the Universal Law mean? Why do some people do good and others contemptible? " 
     "How does the Universal Law maximize the efficiency of the health system? How does the "
-    "Universal Law facilitate all of human virtue? What does it mean to be a man or a woman")]
+    "Universal Law facilitate all of human virtue? What does it mean to be a man or a woman")
 
   exit()
