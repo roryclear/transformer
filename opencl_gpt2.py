@@ -28,9 +28,7 @@ def decode(index):
 
 def scaled_dot_product_attention(x, key, value):
   key = np.transpose(key,(0,2,1))
-  #qk = np.matmul(x,key)[0] # kernel below
   qk = openclk.matmul_t_3d(np.copy(x),np.copy(key))
-  
   qk = qk / math.sqrt(np.shape(x)[-1])
   for x in range(len(qk)):
     for y in range(len(qk[0])):
@@ -38,7 +36,6 @@ def scaled_dot_product_attention(x, key, value):
         if z > y: qk[x][y][z] -= np.inf
       qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
       qk[x][y] = qk[x][y] / qk[x][y].sum()
-  #qk = np.matmul(qk,value) # kernel below
   qk = np.array(openclk.matmul_t_3d(np.copy(qk),np.copy(value)))
   return qk
 
@@ -58,33 +55,10 @@ class LayerNorm:
     self.weight = None
 
   def __call__(self, x):
-    if np.shape(x)[0] == 1:
-      #mm = x - x.mean() #kernel below
-      mm = openclk.minus_mean_multi(np.copy(x))
-      #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.eps)) #kernel below
+    for i in range(len(x)):
+      mm = openclk.minus_mean_multi(np.copy(x[i]))
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-
-      #x = ((mm * self.weight) / mm2) + self.bias #kernel below
-      x = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
-    else:
-      assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
-      #x = x.layernorm(eps=self.eps, axis=self.axis)
-      #if not self.elementwise_affine: return x
-      #return x * self.weight + self.bias
-      #it doesnt work still with actual copy?
-      for i in range(len(x)):
-        #x[0][i] = (x[0][i] - np.mean(x[0][i])) / np.sqrt(np.mean((x[0][i] - np.mean(x[0][i]))**2) + self.eps)\
-        #* self.weight + self.bias
-
-        # todo all in one kernel instead of loop
-        #mm = x[0][i] - np.mean(x[0][i]) #kernel below
-        #mm = x[0][i] - np.mean(x[0][i]) # this causes an error, not sure why
-        mm = openclk.minus_mean_multi(np.copy(x[i]))
-        #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.eps)) #kernel below
-        mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-
-        #x = ((mm * self.weight) / mm2) + self.bias #kernel below
-        x[i] = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
+      x[i] = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
     return x
 
 def encode(x):
@@ -123,58 +97,34 @@ class Attention:
       xk = xk.reshape(self.n_heads,self.head_dim)
       xv = xqkv[self.dim*2:]
       xv = xv.reshape(self.n_heads,self.head_dim)
-      # create kv cache
-
-      if not hasattr(self, "cache_kv"):
-        exit() #todo never called?
-        self.cache_kv = np.zeros(shape=[2, MAX_CONTEXT, self.n_heads, self.head_dim]).astype(np.float32)
       self.cache_kv = np.reshape(self.cache_kv,newshape=[2, MAX_CONTEXT, self.n_heads, self.head_dim]) #todo, resave file?
       keys = self.cache_kv[0]
       values = self.cache_kv[1]
       keys[start_pos] = xk
-      values[start_pos] = xv
-      
+      values[start_pos] = xv  
       keys = np.resize(keys,(start_pos,self.n_heads,self.head_dim))
       values = np.resize(values,(start_pos,self.n_heads,self.head_dim))
-
       keys = np.concatenate([keys,[xk]]) #todo
-      values = np.concatenate([values,[xv]]) #todo
-      
+      values = np.concatenate([values,[xv]]) #todo  
       keys = keys.transpose(1,2,0) #todo, can we not do this?
-      #xq = np.matmul(xq,keys) / math.sqrt(self.head_dim) kernel below is same as
       xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
-
-      #for a in range(len(xq)):
-      #  xq[a] = exp(xq[a] - np.max(xq[a]))
-      #  xq[a] = xq[a] / xq[a].sum()
-      #kernel below
       xq = openclk.minus_max(xq,(start_pos+1))
-      
-      #xq = np.matmul(xq,values) #kernel below
       values = values.transpose(1,0,2)
       xq = openclk.matmul3(xq,values,(start_pos+1))
-
-      #xq = xq.reshape((1,1,self.dim))
-      #ret = np.matmul(xq,self.c_proj.weight) + self.c_proj.bias #kernel below
       ret = openclk.matvec(xq,self.c_proj.weight,self.c_proj.bias)
       return ret
-
     else:
       #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
       xqkv = openclk.matmul_t(x,self.c_attn.weight)
       xqkv += self.c_attn.bias
-      
-      #xq = np.zeros(shape=(len(xqkv),self.dim)).astype(np.float32)
       xq = xqkv[:,:self.dim]
       xk = xqkv[:,self.dim:2*self.dim]
       xv = xqkv[:,2*self.dim:]
-
       xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
       xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
       xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
       seqlen = len(xq)
-    
-
+  
     keys = xk
     values = xv
     s = list(np.shape(keys))
@@ -202,17 +152,13 @@ class FeedForward:
     self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
-    #ret = np.matmul(x,self.weight) kernel below
     ret = openclk.matmul_t(x,self.c_fc.weight)
     ret += self.c_fc.bias
     x = ret
-    #x = self.c_fc(x) #above
     for i in range(len(x)):
       # gelu() activation
       x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
     x = np.array(x) #todo
-
-    #ret = np.matmul(x,self.weight) kernel below
     ret = openclk.matmul_t(x,self.c_proj.weight)
     ret += self.c_proj.bias
     return ret
@@ -254,18 +200,7 @@ class TransformerBlock:
     self.ln_2 = LayerNorm(dim,norm_eps)
 
   def __call__(self, x, start_pos):
-    h = np.copy(x)
-    exit()
-    x = x[0] #todo
-    ln1 = self.ln_1(x)
-    attn = self.attn(ln1,start_pos)
-    h += attn
-    h2 = np.copy(h)
-    h2 = h2[0] #todo
-    ln2 = self.ln_2(h2)
-    mlp = self.mlp(ln2) #todo
-    ret = mlp + h
-    return ret
+    return None
     
 class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
@@ -275,45 +210,6 @@ class Transformer:
     self.h = [TransformerBlock(dim, n_heads, norm_eps) for i in range(n_layers)]
     self.ln_f = LayerNorm(dim,norm_eps)
     self.lm_head = Linear(dim, vocab_size, bias=False)
-
-  def convert(self):
-    print("CONVERT")
-    #self.wte.weight = np.float32(self.wte.weight)
-    print(type(self.wte.weight[0][0]))
-    #self.wpe.weight = np.float32(self.wpe.weight)
-    print(type(self.wpe.weight[0][0]))
-    #self.lm_head.weight = np.float32(self.lm_head.weight)
-    print(type(self.lm_head.weight[0][0]))
-    #self.ln_f.weight = np.float32(self.ln_f.weight)
-    print(type(self.ln_f.weight[0]))
-    #self.ln_f.bias = np.float32(self.ln_f.bias)
-    print(type(self.ln_f.bias[0]))
-    print("transformer block")
-    for hi in self.h:
-      #hi.attn.c_attn.weight = np.float32(hi.attn.c_attn.weight)
-      print(type(hi.attn.c_attn.weight[0][0]))
-      #hi.attn.c_attn.bias = np.float32(hi.attn.c_attn.bias)
-      print(type(hi.attn.c_attn.bias[0]))
-      #hi.attn.c_proj.weight = np.float32(hi.attn.c_proj.weight)
-      print(type(hi.attn.c_proj.weight[0][0]))
-      #hi.attn.c_proj.bias = np.float32(hi.attn.c_proj.bias)
-      print(type(hi.attn.c_proj.bias[0]))
-      #hi.mlp.c_fc.weight = np.float32(hi.mlp.c_fc.weight)
-      print(type(hi.mlp.c_fc.weight[0][0]))
-      #hi.mlp.c_fc.bias = np.float32(hi.mlp.c_fc.bias)
-      print(type(hi.mlp.c_fc.bias[0]))
-      #hi.mlp.c_proj.weight = np.float32(hi.mlp.c_proj.weight)
-      print(type(hi.mlp.c_proj.weight[0][0]))
-      #hi.mlp.c_proj.bias = np.float32(hi.mlp.c_proj.bias)
-      print(type(hi.mlp.c_proj.bias[0]))
-      #hi.ln_1.weight = np.float32(hi.ln_1.weight)
-      print(type(hi.ln_1.weight[0]))
-      #hi.ln_1.bias = np.float32(hi.ln_1.bias)
-      print(type(hi.ln_1.bias[0]))
-      #hi.ln_2.weight = np.float32(hi.ln_2.weight)
-      print(type(hi.ln_2.weight[0]))
-      #hi.ln_2.bias = np.float32(hi.ln_2.bias)
-      print(type(hi.ln_2.bias[0]))
 
   def forward(self, tokens, start_pos, temperature:float=0.0):
     if not hasattr(self, 'allpos'): 
@@ -377,7 +273,6 @@ class Transformer:
       ret = openclk.matmul_t(h,self.lm_head.weight)
       logits = ret[-1] #todo
       ret = None
-      #logits = self.lm_head(h)[-1] #todo
 
     if temperature < 1e-6:
       ret = logits.argmax(-1)
@@ -387,9 +282,6 @@ class Transformer:
       logits = logits / logits.sum()
       logits = logits.cumsum(0)
       logits = logits / logits[-1]
-      #can't get around not using tg here for e2e test?
-      #maybe store the output in a file
-      #unif_samples = Tensor.rand(1, np.shape(logits)[0], 1)
       if use_tg_rand:
         unif_samples = tg_rand.rand()
       else:
