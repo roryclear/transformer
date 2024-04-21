@@ -94,7 +94,6 @@ class Attention:
       xk = xk.reshape(self.n_heads,self.head_dim)
       xv = xqkv[self.dim*2:]
       xv = xv.reshape(self.n_heads,self.head_dim)
-      self.cache_kv = np.reshape(self.cache_kv,newshape=[2, MAX_CONTEXT, self.n_heads, self.head_dim]) #todo, resave file?
       keys = self.cache_kv[0]
       values = self.cache_kv[1]
       keys[start_pos] = xk
