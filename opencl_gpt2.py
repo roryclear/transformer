@@ -88,10 +88,7 @@ class Attention:
   def __call__(self, x, start_pos):
     x = np.array(x)
     if start_pos > 0:
-      x = np.array([x]) #todo
-      xqkv = openclk.matmul_t(x,self.c_attn.weight) + self.c_attn.bias
-      x = x[0] #todo
-      xqkv = xqkv.reshape(2304)
+      xqkv = openclk.matmul_t_b(x,self.c_attn.weight) + self.c_attn.bias
       xq = xqkv[0:self.dim]
       xk = xqkv[self.dim:2*self.dim]
       xk = xk.reshape(self.n_heads,self.head_dim)
