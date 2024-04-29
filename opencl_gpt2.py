@@ -260,9 +260,12 @@ class Transformer:
         x += self.h[i].mlp.c_proj.bias
         x += h
 
-      h = self.ln_f(x)
-      ret = openclk.matmul_t_c(h[-1],self.lm_head.weight) #todo
-      print("shapes =",np.shape(h),np.shape(self.lm_head.weight),np.shape(ret))
+      mm = openclk.minus_mean_multi(np.copy(x[-1])) #todo
+      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+      x = openclk.divide(np.copy(mm), mm2, self.ln_f.weight, self.ln_f.bias)
+
+      ret = openclk.matmul_t_c(x,self.lm_head.weight) #todo
+      print("shapes =",np.shape(x),np.shape(self.lm_head.weight),np.shape(ret))
       #logits = ret[-1] #todo
       logits = ret
       ret = None
