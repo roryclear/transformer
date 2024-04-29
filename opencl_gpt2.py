@@ -261,8 +261,10 @@ class Transformer:
         x += h
 
       h = self.ln_f(x)
-      ret = openclk.matmul_t(h,self.lm_head.weight)
-      logits = ret[-1] #todo
+      ret = openclk.matmul_t_c(h[-1],self.lm_head.weight) #todo
+      print("shapes =",np.shape(h),np.shape(self.lm_head.weight),np.shape(ret))
+      #logits = ret[-1] #todo
+      logits = ret
       ret = None
 
     if temperature < 1e-6:
