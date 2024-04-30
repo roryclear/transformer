@@ -468,9 +468,7 @@ def matmul_t_3d(a,b):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmul4(a,b):
-    a_rows = np.shape(a)[0]
-    a_cols = np.shape(a)[1]
+def matvec4(a,b):
     b_cols = np.shape(b)[1]
     b_rows = np.shape(b)[0]
     c = np.zeros(b_cols)
@@ -487,13 +485,11 @@ def matmul4(a,b):
     {{
         int x = get_global_id(0);
         if(x < {b_cols}) {{
-            for(int y = 0; y < {a_rows}; y++) {{
-                float total = 0;
-                for(int k = 0; k < {b_rows}; k++) {{
-                    total += a[y*{b_rows} + k] * b[x*{b_cols} + k]; 
-                }}
-                res[x] = total;
-            }}  
+            float total = 0;
+            for(int k = 0; k < {b_rows}; k++) {{
+                total += a[k] * b[x*{b_cols} + k]; 
+            }}
+            res[x] = total;
         }}
     }}
     """).build()

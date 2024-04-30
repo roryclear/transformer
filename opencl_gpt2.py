@@ -40,7 +40,7 @@ def scaled_dot_product_attention(x, key, value):
   return qk
 
 def scaled_dot_product_attention_b(x, key, value):
-  qk = openclk.matmul4(np.copy(x),np.copy(key))
+  qk = openclk.matvec4(np.copy(x),np.copy(key))
   qk = qk / math.sqrt(np.shape(x)[-1])
   qk = np.array(openclk.matmul_t(np.copy(qk),np.copy(value)))
   return qk
