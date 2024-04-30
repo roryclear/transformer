@@ -109,17 +109,17 @@ class Attention:
       xq = openclk.matmul3(xq,values,(start_pos+1))
       ret = openclk.matvec(xq,self.c_proj.weight,self.c_proj.bias)
       return ret
-    else:
-      #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
-      xqkv = openclk.matmul_t(x,self.c_attn.weight)
-      xqkv += self.c_attn.bias
-      xq = xqkv[:,:self.dim]
-      xk = xqkv[:,self.dim:2*self.dim]
-      xv = xqkv[:,2*self.dim:]
-      xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
-      xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
-      xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
-      seqlen = len(xq)
+
+    #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
+    xqkv = openclk.matmul_t(x,self.c_attn.weight)
+    xqkv += self.c_attn.bias
+    xq = xqkv[:,:self.dim]
+    xk = xqkv[:,self.dim:2*self.dim]
+    xv = xqkv[:,2*self.dim:]
+    xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
+    xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
+    xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
+    seqlen = len(xq)
   
     keys = xk
     values = xv
