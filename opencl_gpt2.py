@@ -39,6 +39,17 @@ def scaled_dot_product_attention(x, key, value):
   qk = np.array(openclk.matmul_t_3d(np.copy(qk),np.copy(value)))
   return qk
 
+def scaled_dot_product_attention_b(x, key, value):
+  key = np.transpose(key,(0,2,1)) #todo
+  key = key[-1] #todo
+  x = x[-1] #todo
+  qk = openclk.matmul4(np.copy(x),np.copy(key))
+  qk = qk[-1] #todo
+  qk = qk / math.sqrt(np.shape(x)[-1])
+  value = value[-1]
+  qk = np.array(openclk.matmul_t(np.copy(qk),np.copy(value)))
+  return qk
+
 class Linear():
   def __init__(self, in_features, out_features, bias=True):
     self.bias = None
@@ -85,7 +96,7 @@ class Attention:
     self.dim = dim
     self.head_dim = dim // n_heads
 
-  def __call__(self, x, start_pos):
+  def __call__(self, x, start_pos,od_out=False):
     x = np.array(x)
     if start_pos > 0:
       xqkv = openclk.matmul_t_b(x,self.c_attn.weight) + self.c_attn.bias
@@ -110,6 +121,34 @@ class Attention:
       ret = openclk.matvec(xq,self.c_proj.weight,self.c_proj.bias)
       return ret
 
+    if od_out:
+      #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
+      xqkv = openclk.matmul_t(x,self.c_attn.weight)
+      xqkv += self.c_attn.bias
+      xq = xqkv[:,:self.dim]
+      xk = xqkv[:,self.dim:2*self.dim]
+      xv = xqkv[:,2*self.dim:]
+      xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
+      xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
+      xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
+      seqlen = len(xq)
+    
+      keys = xk
+      values = xv
+      s = list(np.shape(keys))
+      s[0] = MAX_CONTEXT
+      new_cache = np.zeros(shape=s).astype(np.float32)
+      new_cache = [np.copy(new_cache),np.copy(new_cache)]
+      for i in range(len(keys)):
+        new_cache[0][i] = keys[i]
+        new_cache[1][i] = values[i]       
+      self.cache_kv = new_cache
+      xq = scaled_dot_product_attention_b(xq,keys,values)
+      #ret = np.matmul(x,self.weight) kernel below
+      ret = openclk.matmul_t_c(xq,self.c_proj.weight)
+      ret += self.c_proj.bias
+      return ret
+
     #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
     xqkv = openclk.matmul_t(x,self.c_attn.weight)
     xqkv += self.c_attn.bias
@@ -131,8 +170,7 @@ class Attention:
       new_cache[0][i] = keys[i]
       new_cache[1][i] = values[i]       
     self.cache_kv = new_cache
-    xq = xq.transpose((1,0,2))
-    keys, values = keys.transpose((1,0,2)), values.transpose((1,0,2))
+    xq, keys, values = xq.transpose((1,0,2)), keys.transpose((1,0,2)), values.transpose((1,0,2))
     xq = scaled_dot_product_attention(xq,keys,values)
     xq = xq.transpose((1,0,2))
     xq = xq.reshape(seqlen, self.dim)
@@ -265,10 +303,9 @@ class Transformer:
         mm = openclk.minus_mean_multi(np.copy(x[j]))
         mm2 = openclk.sq_mean_sqrt(np.copy(mm))
         x[j] = openclk.divide(np.copy(mm), mm2, self.h[-1].ln_1.weight, self.h[-1].ln_1.bias)
-      attn = self.h[-1].attn(x,start_pos)
+      attn = self.h[-1].attn(x,start_pos,od_out=True)
       
       h = h[-1]
-      attn = attn[-1]
       h += attn
       x = np.copy(h)
 
