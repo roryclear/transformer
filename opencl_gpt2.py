@@ -40,13 +40,8 @@ def scaled_dot_product_attention(x, key, value):
   return qk
 
 def scaled_dot_product_attention_b(x, key, value):
-  key = np.transpose(key,(0,2,1)) #todo
-  key = key[-1] #todo
-  x = x[-1] #todo
   qk = openclk.matmul4(np.copy(x),np.copy(key))
-  qk = qk[-1] #todo
   qk = qk / math.sqrt(np.shape(x)[-1])
-  value = value[-1]
   qk = np.array(openclk.matmul_t(np.copy(qk),np.copy(value)))
   return qk
 
@@ -143,7 +138,8 @@ class Attention:
         new_cache[0][i] = keys[i]
         new_cache[1][i] = values[i]       
       self.cache_kv = new_cache
-      xq = scaled_dot_product_attention_b(xq,keys,values)
+      
+      xq = scaled_dot_product_attention_b(xq[-1],keys[-1],values[-1]) #todo x3
       #ret = np.matmul(x,self.weight) kernel below
       ret = openclk.matmul_t_c(xq,self.c_proj.weight)
       ret += self.c_proj.bias
