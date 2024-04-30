@@ -237,7 +237,7 @@ class Transformer:
       x = tok_emb + pos_emb
 
       #rory - h self.h is the 12 transformer blocks, so this is just forward through all
-      for i in range(len(self.h)):
+      for i in range(len(self.h)-1):
         h = np.copy(x) #todo
         for j in range(len(x)): #todo, kernel instead of loop
           mm = openclk.minus_mean_multi(np.copy(x[j]))
@@ -259,16 +259,39 @@ class Transformer:
         x = openclk.matmul_t(x,self.h[i].mlp.c_proj.weight)
         x += self.h[i].mlp.c_proj.bias
         x += h
+        ############
+      h = np.copy(x) #todo
+      for j in range(len(x)): #todo, kernel instead of loop
+        mm = openclk.minus_mean_multi(np.copy(x[j]))
+        mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+        x[j] = openclk.divide(np.copy(mm), mm2, self.h[-1].ln_1.weight, self.h[-1].ln_1.bias)
+      attn = self.h[-1].attn(x,start_pos)
+      
+      h = h[-1]
+      attn = attn[-1]
+      h += attn
+      x = np.copy(h)
 
-      mm = openclk.minus_mean_multi(np.copy(x[-1])) #todo
+      print("rory attn shape =",np.shape(attn),"vs",np.shape(x))
+      mm = openclk.minus_mean_multi(np.copy(x))
+      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+      x = openclk.divide(np.copy(mm), mm2, self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
+
+      x = openclk.matmul_t_c(x,self.h[-1].mlp.c_fc.weight)
+
+      x += self.h[-1].mlp.c_fc.bias
+
+      x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
+      x = openclk.matmul_t_c(x,self.h[-1].mlp.c_proj.weight)
+      x += self.h[-1].mlp.c_proj.bias
+      x += h
+
+
+      mm = openclk.minus_mean_multi(np.copy(x)) #todo
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
       x = openclk.divide(np.copy(mm), mm2, self.ln_f.weight, self.ln_f.bias)
 
-      ret = openclk.matmul_t_c(x,self.lm_head.weight) #todo
-      print("shapes =",np.shape(x),np.shape(self.lm_head.weight),np.shape(ret))
-      #logits = ret[-1] #todo
-      logits = ret
-      ret = None
+      logits = openclk.matmul_t_c(x,self.lm_head.weight)
 
     if temperature < 1e-6:
       ret = logits.argmax(-1)
