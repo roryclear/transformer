@@ -126,8 +126,6 @@ class Attention:
       xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
       xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
       xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
-      seqlen = len(xq)
-    
       keys = xk
       values = xv
       s = list(np.shape(keys))
@@ -138,13 +136,14 @@ class Attention:
         new_cache[0][i] = keys[i]
         new_cache[1][i] = values[i]       
       self.cache_kv = new_cache
-      
-      xq = scaled_dot_product_attention_b(xq[-1],keys[-1],values[-1]) #todo x3
+      xq = xq[-1] #todo
+      keys = keys[-1] #todo
+      values = values[-1] #todo
+      xq = scaled_dot_product_attention_b(xq,keys,values)
       #ret = np.matmul(x,self.weight) kernel below
       ret = openclk.matmul_t_c(xq,self.c_proj.weight)
       ret += self.c_proj.bias
       return ret
-
     #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
     xqkv = openclk.matmul_t(x,self.c_attn.weight)
     xqkv += self.c_attn.bias
@@ -294,18 +293,15 @@ class Transformer:
         x += self.h[i].mlp.c_proj.bias
         x += h
         ############
-      h = np.copy(x) #todo
+      h = np.copy(x[-1]) #todo
       for j in range(len(x)): #todo, kernel instead of loop
         mm = openclk.minus_mean_multi(np.copy(x[j]))
         mm2 = openclk.sq_mean_sqrt(np.copy(mm))
         x[j] = openclk.divide(np.copy(mm), mm2, self.h[-1].ln_1.weight, self.h[-1].ln_1.bias)
-      attn = self.h[-1].attn(x,start_pos,od_out=True)
-      
-      h = h[-1]
+      attn = self.h[-1].attn(x,start_pos,od_out=True)    
       h += attn
       x = np.copy(h)
 
-      print("rory attn shape =",np.shape(attn),"vs",np.shape(x))
       mm = openclk.minus_mean_multi(np.copy(x))
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
       x = openclk.divide(np.copy(mm), mm2, self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
