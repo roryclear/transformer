@@ -33,39 +33,42 @@ def add(a,b,b_s=0,a_s=0):
 len = 768
 loop_size = int(len / 256)
 len_short = 768
+
 def minus_mean_multi(a):
+    size = np.shape(a)[0]
+    seg = int(size / 32) #todo
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     prg = cl.Program(ctx, f"""
-    __kernel void sum(
-        __global float *data0)
+    __kernel void mm(
+        __global float *a)
     {{
-    float avg = 0;
-    __attribute__ ((aligned (16))) __local float temp[256];
-    int lidx0 = get_local_id(0); /* 256 */
-    int gidx0 = get_global_id(0); /* 256 */
-    float acc0 = 0.0f;
-    for (int ridx0 = 0; ridx0 < {loop_size}; ridx0++) {{
-        float val0 = data0[(lidx0*{loop_size})+ridx0];
-        acc0 = (val0+acc0);
-    }}
-    temp[lidx0] = acc0;
-    barrier(CLK_LOCAL_MEM_FENCE); //rory need this barrier when input is large like 7680, 768 seems to work
-    //I think this woudlnt work if loop was smaller than len / 256?
-    float acc1 = 0.0f;
-    for (int ridx1 = 0; ridx1 < 256; ridx1++) {{
-        float val1 = temp[ridx1];
-        acc1 += val1;
-    }}
-    avg = acc1 / {len};
-    for(int i = 0; i < {loop_size}; i++) {{
-        data0[lidx0*{loop_size} + i] = data0[lidx0*{loop_size} + i] - avg;
-    }}
+        __attribute__ ((aligned (16))) __local float temp[{seg}];
+        __attribute__ ((aligned (16))) __local float mean;
+        int lidx0 = get_local_id(0);
+        float total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += a[lidx0*{seg} + i];
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < 32; i++) {{ //rory todo 32
+                total += temp[i];
+            }}
+            mean = total / {size};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] -= mean;
+        }}
     }}
     """).build()
-    knl = prg.sum
-    knl(queue, (256,1), (256,1), a_g) #rory to test large stuff
+    knl = prg.mm
+    knl(queue, (32,1), (32,1), a_g) #rory to test large stuff
     cl.enqueue_copy(queue, a, a_g)
     return a
+
 
 def sq_mean_sqrt(a):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
