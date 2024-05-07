@@ -248,7 +248,7 @@ class Transformer:
       for i in range(len(self.h)):
         x = h
         mm = openclk.minus_mean_multi(np.copy(x))
-        mm2 = openclk.sq_mean_sqrt_b(np.copy(mm))
+        mm2 = openclk.sq_mean_sqrt(np.copy(mm))
         ln1 = openclk.divide(np.copy(mm), mm2, self.h[i].ln_1.weight, self.h[i].ln_1.bias)
         attn = self.h[i].attn(ln1,start_pos)
         h = x + attn
