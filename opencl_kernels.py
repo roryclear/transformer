@@ -69,15 +69,15 @@ def minus_mean_multi(a):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def kernel_0(a):
+def kernel_0(a,c,d):
     size = np.shape(a)[0]
     seg = int(size / 32) #todo
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b = np.zeros(1).astype(np.float32)
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
-        __global float *a, __global float *b)
+        __global float *a, __global const float *c, __global const float *d)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
@@ -99,7 +99,6 @@ def kernel_0(a):
         for(int i = 0; i < {seg}; i++) {{
             a[i + lidx0*{seg}] -= mean;
         }}
-        //SECOND PART?
         barrier(CLK_LOCAL_MEM_FENCE);
         total = 0;
         for(int i = 0; i < {seg}; i++) {{
@@ -112,17 +111,18 @@ def kernel_0(a):
             for(int i = 0; i < 32; i++) {{ //rory todo 32
                 total += temp[i];
             }}
-            mean = total / {size};
-            mean = pow(mean + 1e-5,0.5);  
+            mean = pow(total / {size} + 1e-5,0.5);
         }}
-        b[0] = mean;        
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * c[i + lidx0*{seg}]) / mean + d[i + lidx0*{seg}];
+        }}
     }}
     """).build()
     knl = prg.mm
-    knl(queue, (32,1), (32,1), a_g, b_g) #rory to test large stuff
+    knl(queue, (32,1), (32,1), a_g, c_g, d_g) #rory to test large stuff
     cl.enqueue_copy(queue, a, a_g)
-    cl.enqueue_copy(queue, b, b_g)
-    return a,b[0]
+    return a
 
 
 def sq_mean_sqrt(a):
