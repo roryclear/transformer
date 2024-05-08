@@ -69,6 +69,61 @@ def minus_mean_multi(a):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
+def kernel_0(a):
+    size = np.shape(a)[0]
+    seg = int(size / 32) #todo
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = np.zeros(1).astype(np.float32)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    prg = cl.Program(ctx, f"""
+    __kernel void mm(
+        __global float *a, __global float *b)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{seg}];
+        __attribute__ ((aligned (16))) __local float mean;
+        int lidx0 = get_local_id(0);
+        float total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += a[lidx0*{seg} + i];
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < 32; i++) {{ //rory todo 32
+                total += temp[i];
+            }}
+            mean = total / {size};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] -= mean;
+        }}
+        //SECOND PART?
+        barrier(CLK_LOCAL_MEM_FENCE);
+        total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += pow(a[lidx0*{seg} + i],2);
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < 32; i++) {{ //rory todo 32
+                total += temp[i];
+            }}
+            mean = total / {size};
+            mean = pow(mean + 1e-5,0.5);  
+        }}
+        b[0] = mean;        
+    }}
+    """).build()
+    knl = prg.mm
+    knl(queue, (32,1), (32,1), a_g, b_g) #rory to test large stuff
+    cl.enqueue_copy(queue, a, a_g)
+    cl.enqueue_copy(queue, b, b_g)
+    return a,b[0]
+
 
 def sq_mean_sqrt(a):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
