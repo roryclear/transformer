@@ -248,10 +248,7 @@ class Transformer:
         ln1 = openclk.kernel_0(np.copy(x),self.h[i].ln_1.weight, self.h[i].ln_1.bias)
         attn = self.h[i].attn(ln1,start_pos)
         h = x + attn
-        #print("rory shapes =",np.shape(h),np.shape(self.h[i].ln_2.weight)\
-        #,np.shape(self.h[i].ln_2.bias),np.shape(self.h[i].mlp.c_fc.weight),np.shape(self.h[i].mlp.c_fc.bias))
         x = openclk.kernel_1(np.copy(h),self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias)
-        x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
         x = openclk.matvec2(x,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
         h += x
       

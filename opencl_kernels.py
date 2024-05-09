@@ -184,8 +184,14 @@ def kernel_1(a,c,d,e,f):
         barrier(CLK_LOCAL_MEM_FENCE);    
         for(int i = 0; i < {int(cols / ls)}; i++) {{
             for(int j = 0; j < {rows}; j++) {{
-                res[i + lidx0*12] += a[j] * e[(i + lidx0*12)*{rows} + j];
+                res[i + lidx0*{int(cols / ls)}] += a[j] * e[(i + lidx0*{int(cols / ls)})*{rows} + j];
             }}
+        }} 
+        barrier(CLK_LOCAL_MEM_FENCE);  
+        for(int i = 0; i < {int(cols / ls)}; i++) {{
+            res[i + lidx0*{int(cols / ls)}] = 0.5 * res[i + lidx0*{int(cols / ls)}]\
+            * (1 + tanh(res[i + lidx0*{int(cols / ls)}] * 0.7978845608\
+            * (1 + 0.044715 * pow(res[i + lidx0*{int(cols / ls)}],2))));
         }}
     }}
     """).build()
