@@ -248,9 +248,10 @@ class Transformer:
         ln1 = openclk.kernel_0(np.copy(x),self.h[i].ln_1.weight, self.h[i].ln_1.bias)
         attn = self.h[i].attn(ln1,start_pos)
         h = x + attn
-        _,x = openclk.kernel_1(np.copy(h),self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,np.copy(self.h[i].mlp.c_fc.bias)\
+        x = openclk.kernel_1(np.copy(h),self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,np.copy(self.h[i].mlp.c_fc.bias)\
         ,self.h[i].mlp.c_proj.weight,np.copy(self.h[i].mlp.c_proj.bias))
         h += x
+        x = None
       
       h = openclk.kernel_0(np.copy(h),self.ln_f.weight, self.ln_f.bias)
       logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))

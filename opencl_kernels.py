@@ -212,10 +212,9 @@ def kernel_1(a,c,d,e,f,g,h):
     """).build()
     knl = prg.knl
     knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g,\
-    g_g,h_g) #rory to test large stuff
-    cl.enqueue_copy(queue, f, f_g)
+    g_g,h_g)
     cl.enqueue_copy(queue, h, h_g)
-    return f,h
+    return h
 
 def sq_mean_sqrt(a):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
