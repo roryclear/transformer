@@ -248,8 +248,8 @@ class Transformer:
         ln1 = openclk.kernel_0(np.copy(x),self.h[i].ln_1.weight, self.h[i].ln_1.bias)
         attn = self.h[i].attn(ln1,start_pos)
         h = x + attn
-        x = openclk.kernel_1(np.copy(h),self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias)
-        x = openclk.matvec2(x,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
+        _,x = openclk.kernel_1(np.copy(h),self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,np.copy(self.h[i].mlp.c_fc.bias)\
+        ,self.h[i].mlp.c_proj.weight,np.copy(self.h[i].mlp.c_proj.bias))
         h += x
       
       h = openclk.kernel_0(np.copy(h),self.ln_f.weight, self.ln_f.bias)

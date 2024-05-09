@@ -125,7 +125,7 @@ def kernel_0(a,c,d):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def kernel_1(a,c,d,e,f):
+def kernel_1(a,c,d,e,f,g,h):
     rows = 768
     cols = 3072
     size = np.shape(a)[0]
@@ -133,15 +133,24 @@ def kernel_1(a,c,d,e,f):
     seg = int(size / ls)
     f = f.flatten()
     f = np.float32(f)
+    g_rows = np.shape(g)[0]
+    g_cols = np.shape(g)[1]
+    g = g.flatten()
+    g = np.float32(g)
+    h = h.flatten()
+    h = np.float32(h)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
     e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
-    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
+    f_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
+    g_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=g)
+    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     prg = cl.Program(ctx, f"""
     __kernel void knl(
         __global float *a, __global const float *c, __global const float *d,
-        __global const float *e, __global float *res)
+        __global const float *e, __global float *f, __global const float *g,
+        __global float *h)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
@@ -184,21 +193,29 @@ def kernel_1(a,c,d,e,f):
         barrier(CLK_LOCAL_MEM_FENCE);    
         for(int i = 0; i < {int(cols / ls)}; i++) {{
             for(int j = 0; j < {rows}; j++) {{
-                res[i + lidx0*{int(cols / ls)}] += a[j] * e[(i + lidx0*{int(cols / ls)})*{rows} + j];
+                f[i + lidx0*{int(cols / ls)}] += a[j] * e[(i + lidx0*{int(cols / ls)})*{rows} + j];
             }}
         }} 
         barrier(CLK_LOCAL_MEM_FENCE);  
         for(int i = 0; i < {int(cols / ls)}; i++) {{
-            res[i + lidx0*{int(cols / ls)}] = 0.5 * res[i + lidx0*{int(cols / ls)}]\
-            * (1 + tanh(res[i + lidx0*{int(cols / ls)}] * 0.7978845608\
-            * (1 + 0.044715 * pow(res[i + lidx0*{int(cols / ls)}],2))));
+            f[i + lidx0*{int(cols / ls)}] = 0.5 * f[i + lidx0*{int(cols / ls)}]\
+            * (1 + tanh(f[i + lidx0*{int(cols / ls)}] * 0.7978845608\
+            * (1 + 0.044715 * pow(f[i + lidx0*{int(cols / ls)}],2))));
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);  //TODO this is probably slower than it should be
+        for(int i = 0; i < {int(np.shape(h)[0] / ls)}; i++) {{
+            for(int j = 0; j < {g_rows}; j++) {{
+                h[lidx0 + i*{ls}] += f[j] * g[lidx0 + i*{ls} + j*{g_cols}];
+            }}
         }}
     }}
     """).build()
     knl = prg.knl
-    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,res_g) #rory to test large stuff
-    cl.enqueue_copy(queue, f, res_g)
-    return f
+    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g,\
+    g_g,h_g) #rory to test large stuff
+    cl.enqueue_copy(queue, f, f_g)
+    cl.enqueue_copy(queue, h, h_g)
+    return f,h
 
 def sq_mean_sqrt(a):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -417,38 +434,30 @@ def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kern
     return c
 
 def matvec2_b(a,b,c): #pass bias in instead of adding to zero, todo for other kernels
-    rows = 768
-    cols = 3072
     ls = 256
+    rows = np.shape(b)[0]
+    cols = np.shape(b)[1]
+    print("rows cols =",rows,cols)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b = b.flatten()
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = c.flatten()
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    seg = int(cols / ls)
-    #print("rory seg =",seg,"rows =",rows,"cols =",cols)
     prg = cl.Program(ctx, f"""
     __kernel void matvec(
         __global const float *a, __global const float *b , __global float *res)
     {{
         int lidx0 = get_local_id(0);
-        for(int i = 0; i < {seg}; i++) {{
-            for(int j = 0; j < {rows}; j++) {{
-                res[i + lidx0*{seg}] += a[j] * b[i + lidx0*{seg} + j*{cols}];
-                /*
-                res[0] = b[0];
-                res[1] = b[1];
-                res[2] = b[2];
-                res[3] = b[3];
-                res[4] = b[4];
-                */
+        for(int i = 0; i < 3; i++) {{
+            for(int j = 0; j < 3072; j++) {{
+                res[lidx0 + i*256] += a[j] * b[lidx0 + i*256 + j*768];
             }}
         }}
     }}
     """).build()
     knl = prg.matvec
-    knl(queue, (ls,1), (ls,1), a_g, b_g,c_g)
+    knl(queue, (256,1), (256,1), a_g, b_g,c_g)
     cl.enqueue_copy(queue, c, c_g)
     return c
 
