@@ -71,7 +71,8 @@ def minus_mean_multi(a):
 
 def kernel_0(a,c,d):
     size = np.shape(a)[0]
-    seg = int(size / 32) #todo
+    ls = 256
+    seg = int(size / ls) #todo
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
@@ -90,7 +91,7 @@ def kernel_0(a,c,d):
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
             total = 0;
-            for(int i = 0; i < 32; i++) {{ //rory todo 32
+            for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
             mean = total / {size};  
@@ -108,7 +109,7 @@ def kernel_0(a,c,d):
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
             total = 0;
-            for(int i = 0; i < 32; i++) {{ //rory todo 32
+            for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
             mean = pow(total / {size} + 1e-5,0.5);
@@ -120,10 +121,78 @@ def kernel_0(a,c,d):
     }}
     """).build()
     knl = prg.mm
-    knl(queue, (32,1), (32,1), a_g, c_g, d_g) #rory to test large stuff
+    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g) #rory to test large stuff
     cl.enqueue_copy(queue, a, a_g)
     return a
 
+def kernel_1(a,c,d,e,f):
+    rows = 768
+    cols = 3072
+    size = np.shape(a)[0]
+    ls = 256
+    seg = int(size / ls)
+    f = f.flatten()
+    f = np.float32(f)
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
+    e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
+    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
+    prg = cl.Program(ctx, f"""
+    __kernel void knl(
+        __global float *a, __global const float *c, __global const float *d,
+        __global const float *e, __global float *res)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{seg}];
+        __attribute__ ((aligned (16))) __local float mean;
+        int lidx0 = get_local_id(0);
+        float total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += a[lidx0*{seg} + i];
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = total / {size};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] -= mean;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += pow(a[lidx0*{seg} + i],2);
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = pow(total / {size} + 1e-5,0.5);
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * c[i + lidx0*{seg}]) / mean + d[i + lidx0*{seg}];
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);    
+        for(int i = 0; i < {int(cols / ls)}; i++) {{
+            for(int j = 0; j < {rows}; j++) {{
+                res[i + lidx0*12] += a[j] * e[(i + lidx0*12)*{rows} + j];
+            }}
+        }}
+    }}
+    """).build()
+    knl = prg.knl
+    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,res_g) #rory to test large stuff
+    cl.enqueue_copy(queue, f, res_g)
+    return f
 
 def sq_mean_sqrt(a):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -338,6 +407,42 @@ def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kern
     knl = prg.matvec
     gidx = math.ceil(cols / 16) * 16
     knl(queue, (gidx,1), (16,1), a_g, b_g,c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def matvec2_b(a,b,c): #pass bias in instead of adding to zero, todo for other kernels
+    rows = 768
+    cols = 3072
+    ls = 256
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten()
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = c.flatten()
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    seg = int(cols / ls)
+    #print("rory seg =",seg,"rows =",rows,"cols =",cols)
+    prg = cl.Program(ctx, f"""
+    __kernel void matvec(
+        __global const float *a, __global const float *b , __global float *res)
+    {{
+        int lidx0 = get_local_id(0);
+        for(int i = 0; i < {seg}; i++) {{
+            for(int j = 0; j < {rows}; j++) {{
+                res[i + lidx0*{seg}] += a[j] * b[i + lidx0*{seg} + j*{cols}];
+                /*
+                res[0] = b[0];
+                res[1] = b[1];
+                res[2] = b[2];
+                res[3] = b[3];
+                res[4] = b[4];
+                */
+            }}
+        }}
+    }}
+    """).build()
+    knl = prg.matvec
+    knl(queue, (ls,1), (ls,1), a_g, b_g,c_g)
     cl.enqueue_copy(queue, c, c_g)
     return c
 
