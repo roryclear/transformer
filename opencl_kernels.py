@@ -146,11 +146,12 @@ def kernel_1(a,c,d,e,f,g,h):
     f_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
     g_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=g)
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
+    l_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.copy(a))
     prg = cl.Program(ctx, f"""
     __kernel void knl(
         __global float *a, __global const float *c, __global const float *d,
         __global const float *e, __global float *f, __global const float *g,
-        __global float *h)
+        __global float *h, __global const float *l)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
@@ -208,11 +209,15 @@ def kernel_1(a,c,d,e,f,g,h):
                 h[lidx0 + i*{ls}] += f[j] * g[lidx0 + i*{ls} + j*{g_cols}];
             }}
         }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {int(np.shape(h)[0] / ls)}; i++) {{
+            h[i + lidx0*{int(np.shape(h)[0] / ls)}] += l[i + lidx0*{int(np.shape(h)[0] / ls)}];
+        }}
     }}
     """).build()
     knl = prg.knl
     knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g,\
-    g_g,h_g)
+    g_g,h_g,l_g)
     cl.enqueue_copy(queue, h, h_g)
     return h
 
