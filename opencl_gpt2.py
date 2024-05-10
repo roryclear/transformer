@@ -245,13 +245,12 @@ class Transformer:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
         #inlined attn
-        xq,xk,xv = openclk.kernel_2(np.copy(h),self.h[i].ln_1.weight, self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
-        np.copy(self.h[i].attn.c_attn.bias),self.h[i].attn.dim)
+        keys = self.h[i].attn.cache_kv[0]
+        xq,xk,xv,keys = openclk.kernel_2(np.copy(h),self.h[i].ln_1.weight, self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
+        np.copy(self.h[i].attn.c_attn.bias),self.h[i].attn.dim,keys,start_pos)
         xk = xk.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xv = xv.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        keys = self.h[i].attn.cache_kv[0]
         values = self.h[i].attn.cache_kv[1]
-        keys[start_pos] = xk
         values[start_pos] = xv
         keys = np.resize(keys,(start_pos,self.h[i].attn.n_heads,self.h[i].attn.head_dim))
         values = np.resize(values,(start_pos,self.h[i].attn.n_heads,self.h[i].attn.head_dim))
