@@ -245,12 +245,13 @@ class Transformer:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
         #inlined attn
-        ln1 = openclk.kernel_0(np.copy(h),self.h[i].ln_1.weight, self.h[i].ln_1.bias)
-        xqkv = openclk.matmul_t_b(ln1,self.h[i].attn.c_attn.weight) + self.h[i].attn.c_attn.bias
+        xqkv = openclk.kernel_2(np.copy(h),self.h[i].ln_1.weight, self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight)
+        xqkv += self.h[i].attn.c_attn.bias
         xq = xqkv[0:self.h[i].attn.dim]
         xk = xqkv[self.dim:2*self.h[i].attn.dim]
         xk = xk.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xv = xqkv[self.h[i].attn.dim*2:]
+        xqkv = None
         xv = xv.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         keys = self.h[i].attn.cache_kv[0]
         values = self.h[i].attn.cache_kv[1]
