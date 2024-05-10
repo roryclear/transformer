@@ -125,22 +125,28 @@ def kernel_0(a,c,d):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def kernel_2(a,c,d,e,f):
+def kernel_2(a,c,d,e,f,g): #g = size
     size = np.shape(a)[0]
     ls = 256
     seg_e = int(np.shape(e)[1] / ls)
     rows_e = np.shape(e)[0]
+    xq = f[0:g]
+    xk = f[g:2*g]
+    xv = f[2*g:]
     seg = int(size / ls) #todo
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
     e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
     f_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
+    xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
+    xk_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xk)
+    xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
 
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
-        __global float *f)
+        __global const float *f, __global float *xq, __global float *xk, __global float *xv)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
@@ -186,14 +192,18 @@ def kernel_2(a,c,d,e,f):
             for(int k = 0; k < {rows_e}; k++) {{
                 total += a[k] * e[(lidx0*{seg_e} + i)*{rows_e} + k]; 
             }}
-        f[lidx0*{seg_e} + i] += total;
+        if((lidx0*{seg_e} + i) < {g}) {{xq[lidx0*{seg_e} + i] += total;}}
+        if((lidx0*{seg_e} + i) >= {g} && (lidx0*{seg_e} + i) < {2*g}) {{xk[lidx0*{seg_e} + i - {g}] += total;}}
+        if((lidx0*{seg_e} + i) >= {2*g}) {{xv[lidx0*{seg_e} + i - {2*g}] += total;}}
         }}
     }}
     """).build()
     knl = prg.mm
-    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g)
-    cl.enqueue_copy(queue, f, f_g)
-    return f
+    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g,xq_g,xk_g,xv_g)
+    cl.enqueue_copy(queue, xq, xq_g)
+    cl.enqueue_copy(queue, xk, xk_g)
+    cl.enqueue_copy(queue, xv, xv_g)
+    return xq,xk,xv
 
 def kernel_1(a,c,d,e,f,g,h):
     rows = 768
