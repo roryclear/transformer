@@ -125,7 +125,7 @@ def kernel_0(a,c,d):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def kernel_2(a,c,d,e):
+def kernel_2(a,c,d,e,f):
     size = np.shape(a)[0]
     ls = 256
     seg_e = int(np.shape(e)[1] / ls)
@@ -135,14 +135,12 @@ def kernel_2(a,c,d,e):
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
     e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
-
-    ret = np.zeros([np.shape(e)[1]]).astype(np.float32)
-    ret_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ret)
+    f_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
 
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
-        __global float *ret)
+        __global float *f)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
@@ -188,14 +186,14 @@ def kernel_2(a,c,d,e):
             for(int k = 0; k < {rows_e}; k++) {{
                 total += a[k] * e[(lidx0*{seg_e} + i)*{rows_e} + k]; 
             }}
-        ret[lidx0*{seg_e} + i] = total;
+        f[lidx0*{seg_e} + i] += total;
         }}
     }}
     """).build()
     knl = prg.mm
-    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,ret_g)
-    cl.enqueue_copy(queue, ret, ret_g)
-    return ret
+    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g)
+    cl.enqueue_copy(queue, f, f_g)
+    return f
 
 def kernel_1(a,c,d,e,f,g,h):
     rows = 768
