@@ -252,10 +252,10 @@ class Transformer:
         xv = xv.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         values = self.h[i].attn.cache_kv[1]
         values[start_pos] = xv
-        keys = np.resize(keys,(start_pos,self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        values = np.resize(values,(start_pos,self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        keys = np.concatenate([keys,[xk]]) #todo
-        values = np.concatenate([values,[xv]]) #todo  
+        keys = np.resize(keys,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
+        keys[start_pos] = xk
+        values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
+        values[start_pos] = xv
         keys = keys.transpose(1,2,0) #todo, can we not do this?
         xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
         xq = openclk.minus_max(xq,(start_pos+1))
