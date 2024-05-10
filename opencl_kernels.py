@@ -412,6 +412,37 @@ def matvec(a,b,c):
     cl.enqueue_copy(queue, d, d_g)
     return d
 
+def matvec_b(a,b,c):
+    ls = 256
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    a = a.flatten()
+    b = b.flatten()
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d = np.zeros([768])
+    d = np.float32(d)
+    len_mv = np.shape(a)[0]
+    prg = cl.Program(ctx, f"""
+    __kernel void matvec(
+        __global const float *a, __global const float *b, __global float *c)
+    {{
+        int lidx0 = get_local_id(0);
+        for(int i = 0; i < {int(len_mv / ls)}; i++) {{
+            float acc = 0;
+            for(int x = 0; x < {len_mv}; x++) {{
+                acc += a[x] * b[x*{len_mv} + lidx0*{int(len_mv / ls)} + i];
+            }}
+            c[lidx0*{int(len_mv / ls)} + i] = acc + c[lidx0*{int(len_mv / ls)} + i];
+        }}
+    }}
+    """).build()
+    knl = prg.matvec
+    knl(queue, (256,1), (256,1), a_g, b_g,c_g)
+    cl.enqueue_copy(queue, d, c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    np.testing.assert_allclose(d,c,rtol=1e-5)
+    return c
+
 def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kernels
     rows = np.shape(b)[0]
     cols = np.shape(b)[1]
