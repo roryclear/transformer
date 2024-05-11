@@ -205,10 +205,9 @@ def kernel_2(a,c,d,e,f,g,keys,start_pos): #g = size
     knl = prg.mm
     knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g,xq_g,xk_g,xv_g,keys_g)
     cl.enqueue_copy(queue, xq, xq_g)
-    cl.enqueue_copy(queue, xk, xk_g)
     cl.enqueue_copy(queue, xv, xv_g)
     cl.enqueue_copy(queue, keys, keys_g)
-    return xq,xk,xv,keys
+    return xq,xv,keys
 
 def kernel_1(a,c,d,e,f,g,h):
     rows = 768
