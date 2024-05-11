@@ -248,12 +248,10 @@ class Transformer:
         keys = self.h[i].attn.cache_kv[0]
         xq,xk,xv,keys = openclk.kernel_2(np.copy(h),self.h[i].ln_1.weight, self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
         np.copy(self.h[i].attn.c_attn.bias),self.h[i].attn.dim,keys,start_pos)
-        xk = xk.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xv = xv.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         values = self.h[i].attn.cache_kv[1]
         values[start_pos] = xv
         keys = np.resize(keys,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        keys[start_pos] = xk
         values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
         values[start_pos] = xv
         keys = keys.transpose(1,2,0) #todo, can we not do this?

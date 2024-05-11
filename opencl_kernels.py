@@ -195,7 +195,7 @@ def kernel_2(a,c,d,e,f,g,keys,start_pos): #g = size
             }}
         if((lidx0*{seg_e} + i) < {g}) {{xq[lidx0*{seg_e} + i] += total;}}
         if((lidx0*{seg_e} + i) >= {g} && (lidx0*{seg_e} + i) < {2*g}) {{
-            xk[lidx0*{seg_e} + i - {g}] += total;
+            xk[lidx0*{seg_e} + i - {g}] += total; //TODO don't need this?
             keys[{start_pos}*{keys_shape} + lidx0*{seg_e} + i - {g}] = xk[lidx0*{seg_e} + i - {g}];
         }}
         if((lidx0*{seg_e} + i) >= {2*g}) {{xv[lidx0*{seg_e} + i - {2*g}] += total;}}
