@@ -409,24 +409,27 @@ def matmul2_b(a,b):
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
 
     #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
-
+    ls = 256
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
         __global const float *a, __global const float *b, __global float *res)
     {{
-    for(int k = 0; k < {12*s}; k++) {{
-        for(int x = 0; x < {s}; x++) {{
+    int lidx0 = get_local_id(0);
+    for(int z = 0; z < 12; z++) {{
+        for(int k = 0; k < {s*s}; k+={ls}) {{
+            int x = (k + z*{s*s} + lidx0) % {s};
+            int y = (k + z*{s*s} + lidx0) / {s};
             float acc0 = 0.0f;
             for(int i = 0; i < 64; i++) {{
-                acc0 += a[i + 64*k] * b[x+i*{s} + {s}*64*k];
+                acc0 += a[i + 64*y] * b[z*{s*s} + x + i*{s} + y*{s}*64];
             }}                  
-            res[x + k*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
+            res[x + y*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
         }}
     }}
     }}
     """).build()
     knl = prg.matmul
-    knl(queue, (1,1), (1,1), a_g, b_g,c_g)
+    knl(queue, (ls,1), (ls,1), a_g, b_g,c_g)
     cl.enqueue_copy(queue, c, c_g)
     return c
 
