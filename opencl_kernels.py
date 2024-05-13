@@ -399,7 +399,7 @@ def matmul2(a,b,s=112):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmul2_b(a,b):
+def kernel_3(a,b):
     s = np.shape(b)[2]
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b = b.flatten() #todo, shouldnt be needed
@@ -426,6 +426,29 @@ def matmul2_b(a,b):
             res[x + y*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
         }}
     }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+    if(lidx0 < 12){{
+    float m = -INFINITY;
+    for(int i = 0; i < {s}; i++) {{
+        float val = res[i + lidx0*{s}];
+        m = max(m,val);
+    }}
+    for(int i = 0; i < {s}; i++) {{
+        res[i + lidx0*{s}] = exp(res[i + lidx0*{s}] - m);
+    }}
+    }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+    if(lidx0 < 12) {{
+    float t = 0;
+    for(int i = 0; i < {s}; i++) {{
+        float val = res[i + lidx0*{s}];
+        t = t+val;
+    }}
+    for(int i = 0; i < {s}; i++) {{
+        res[i + lidx0*{s}] = res[i + lidx0*{s}] / t;
+    }}
+    }}
+
     }}
     """).build()
     knl = prg.matmul
@@ -469,6 +492,44 @@ def minus_max(a,s=112):
     knl(queue, (12,1), (12,1), a_g,c_g) #todo hardcoded
     cl.enqueue_copy(queue, c, c_g)
     return c
+
+def minus_max_b(a):
+    s = np.shape(a)[2] #todo remove dim
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    ls = 256
+
+    prg = cl.Program(ctx, f"""
+    __kernel void k(
+        __global float *data0)
+    {{
+        int lidx0 = get_local_id(0);
+        if(lidx0 < 12){{
+        float m = -INFINITY;
+        for(int i = 0; i < {s}; i++) {{
+            float val = data0[i + lidx0*{s}];
+            m = max(m,val);
+        }}
+        for(int i = 0; i < {s}; i++) {{
+            data0[i + lidx0*{s}] = exp(data0[i + lidx0*{s}] - m);
+        }}
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE); //not needed in practice?
+        if(lidx0 < 12) {{
+        float t = 0;
+        for(int i = 0; i < {s}; i++) {{
+            float val = data0[i + lidx0*{s}];
+            t = t+val;
+        }}
+        for(int i = 0; i < {s}; i++) {{
+            data0[i + lidx0*{s}] = data0[i + lidx0*{s}] / t;
+        }}
+        }}
+    }}
+    """).build()
+    knl = prg.k
+    knl(queue, (ls,1), (ls,1), a_g) #todo hardcoded
+    cl.enqueue_copy(queue, a, a_g)
+    return a
 
 def matmul3(a,b,s):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
