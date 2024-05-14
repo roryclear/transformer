@@ -578,18 +578,29 @@ def matmul3_b(a,b,s):
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     ls = 256
     seg = int((12*64) / ls)
+    seg2 = math.ceil((np.shape(b)[0] / 64) / 256)
     #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
         __global const float *a, __global const float *b, __global float *bt, __global float *res)
     {{
         int lidx0 = get_local_id(0);
+        for(int i = 0; i < {seg2}; i++) {{
+            int y = (lidx0*{seg2} + i) / 12;
+            int x = (lidx0*{seg2} + i) % 12;
+            for(int k = 0; k < 64; k++) {{
+                if((y*12*64 + x*64 + k) < {np.shape(b)[0]}) {{
+                    bt[x*64*{s} + y*64 + k] = b[y*12*64 + x*64 + k];
+                }}
+            }}
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
         for(int g = 0; g < {seg}; g++) {{
             int y = (g + lidx0*{seg}) / 64;
             int x = (g + lidx0*{seg}) % 64;
             float acc0 = 0;
             for(int i = 0; i < {s}; i++) {{
-                acc0 += a[i + {s}*y] * b[i*64 + x + y*{s}*64];
+                acc0 += a[i + {s}*y] * bt[i*64 + x + y*{s}*64];
             }}
             res[x + y*64] = acc0;
         }}
