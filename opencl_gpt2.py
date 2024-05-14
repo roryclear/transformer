@@ -262,6 +262,7 @@ class Transformer:
         xq = openclk.kernel_3(xq,keys)
         values = values.transpose(1,0,2)
         xq = openclk.matmul3(xq,values,(start_pos+1))
+        #xq = openclk.matmul3_b(xq,values,(start_pos+1))
         attn = openclk.matvec_b(xq,self.h[i].attn.c_proj.weight,np.copy(self.h[i].attn.c_proj.bias))
         h += attn
         #inlined attn
