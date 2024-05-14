@@ -256,11 +256,8 @@ class Transformer:
         xv = xv.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         values[start_pos] = xv
         values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        values[start_pos] = xv
         keys = keys.transpose(1,2,0) #todo, can we not do this?
-        #xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
-        xq,values = openclk.kernel_3(xq,keys,values)
-        xq = openclk.matmul3_b(xq,values,(start_pos+1))
+        xq = openclk.kernel_3(xq,keys,values)
         attn = openclk.matvec_b(xq,self.h[i].attn.c_proj.weight,np.copy(self.h[i].attn.c_proj.bias))
         h += attn
         #inlined attn

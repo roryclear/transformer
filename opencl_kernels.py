@@ -411,12 +411,15 @@ def kernel_3(a,keys,values):
     xq = np.zeros(12*s).astype(np.float32)
     xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
     seg2 = math.ceil((np.shape(values)[0] / 64) / 256)
+    res = np.zeros([12,1,64]).astype(np.float32)
+    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
     ls = 256
+    seg = int((12*64) / ls)
     prg = cl.Program(ctx, f"""
-    __kernel void matmul(
+    __kernel void k(
         __global const float *a, __global const float *keys, __global const float *values,
-        __global float *valuest, __global float *xq)
+        __global float *valuest, __global float *xq, __global float *res)
     {{
     int lidx0 = get_local_id(0);
     for(int z = 0; z < 12; z++) {{
@@ -462,14 +465,22 @@ def kernel_3(a,keys,values):
         }}
     }}
     }}
-
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for(int g = 0; g < {seg}; g++) {{
+        int y = (g + lidx0*{seg}) / 64;
+        int x = (g + lidx0*{seg}) % 64;
+        float acc0 = 0;
+        for(int i = 0; i < {s}; i++) {{
+            acc0 += xq[i + {s}*y] * valuest[i*64 + x + y*{s}*64];
+        }}
+        res[x + y*64] = acc0;
+    }}
     }}
     """).build()
-    knl = prg.matmul
-    knl(queue, (ls,1), (ls,1), a_g, keys_g, values_g, valuest_g, xq_g)
-    cl.enqueue_copy(queue, xq, xq_g)
-    cl.enqueue_copy(queue, valuest, valuest_g)
-    return xq,valuest
+    knl = prg.k
+    knl(queue, (ls,1), (ls,1), a_g, keys_g, values_g, valuest_g, xq_g,res_g)
+    cl.enqueue_copy(queue, res, res_g)
+    return res
 
 def minus_max(a,s=112):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
