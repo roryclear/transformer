@@ -399,20 +399,24 @@ def matmul2(a,b,s=112):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def kernel_3(a,b):
-    s = np.shape(b)[2]
+def kernel_3(a,keys,values):
+    s = np.shape(keys)[2]
+    values = values.flatten()
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b = b.flatten() #todo, shouldnt be needed
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([12,1,s])
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-
+    keys = keys.flatten() #todo, shouldnt be needed
+    keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
+    values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=values)
+    valuest = np.zeros_like(values).astype(np.float32)
+    valuest_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=valuest)
+    xq = np.zeros(12*s).astype(np.float32)
+    xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
+    seg2 = math.ceil((np.shape(values)[0] / 64) / 256)
     #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
     ls = 256
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
-        __global const float *a, __global const float *b, __global float *res)
+        __global const float *a, __global const float *keys, __global const float *values,
+        __global float *valuest, __global float *xq)
     {{
     int lidx0 = get_local_id(0);
     for(int z = 0; z < 12; z++) {{
@@ -421,40 +425,51 @@ def kernel_3(a,b):
             int y = (k + z*{s*s} + lidx0) / {s};
             float acc0 = 0.0f;
             for(int i = 0; i < 64; i++) {{
-                acc0 += a[i + 64*y] * b[z*{s*s} + x + i*{s} + y*{s}*64];
+                acc0 += a[i + 64*y] * keys[z*{s*s} + x + i*{s} + y*{s}*64];
             }}                  
-            res[x + y*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
+            xq[x + y*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
         }}
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
     if(lidx0 < 12){{
     float m = -INFINITY;
     for(int i = 0; i < {s}; i++) {{
-        float val = res[i + lidx0*{s}];
+        float val = xq[i + lidx0*{s}];
         m = max(m,val);
     }}
     for(int i = 0; i < {s}; i++) {{
-        res[i + lidx0*{s}] = exp(res[i + lidx0*{s}] - m);
+        xq[i + lidx0*{s}] = exp(xq[i + lidx0*{s}] - m);
     }}
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
     if(lidx0 < 12) {{
     float t = 0;
     for(int i = 0; i < {s}; i++) {{
-        float val = res[i + lidx0*{s}];
+        float val = xq[i + lidx0*{s}];
         t = t+val;
     }}
     for(int i = 0; i < {s}; i++) {{
-        res[i + lidx0*{s}] = res[i + lidx0*{s}] / t;
+        xq[i + lidx0*{s}] = xq[i + lidx0*{s}] / t;
+    }}
+    }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for(int i = 0; i < {seg2}; i++) {{
+        int y = (lidx0*{seg2} + i) / 12;
+        int x = (lidx0*{seg2} + i) % 12;
+        for(int k = 0; k < 64; k++) {{
+        if((y*12*64 + x*64 + k) < {np.shape(values)[0]}) {{
+            valuest[x*64*{s} + y*64 + k] = values[y*12*64 + x*64 + k];
+        }}
     }}
     }}
 
     }}
     """).build()
     knl = prg.matmul
-    knl(queue, (ls,1), (ls,1), a_g, b_g,c_g)
-    cl.enqueue_copy(queue, c, c_g)
-    return c
+    knl(queue, (ls,1), (ls,1), a_g, keys_g, values_g, valuest_g, xq_g)
+    cl.enqueue_copy(queue, xq, xq_g)
+    cl.enqueue_copy(queue, valuest, valuest_g)
+    return xq,valuest
 
 def minus_max(a,s=112):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -566,50 +581,36 @@ def matmul3(a,b,s):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmul3_b(a,b,s):
-    a = a.flatten()
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b = b.flatten() #todo, shouldnt be needed
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    bt = np.zeros_like(b)
-    bt_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bt)
-    c = np.zeros([12,1,64])
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+def matmul3_b(xq,values,s):
+    xq = xq.flatten()
+    xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
+    values = values.flatten() #todo, shouldnt be needed
+    values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=values)
+    res = np.zeros([12,1,64]).astype(np.float32)
+    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     ls = 256
     seg = int((12*64) / ls)
-    seg2 = math.ceil((np.shape(b)[0] / 64) / 256)
-    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
+    seg2 = math.ceil((np.shape(values)[0] / 64) / 256)
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
-        __global const float *a, __global const float *b, __global float *bt, __global float *res)
+        __global const float *xq, __global const float *values, __global float *res)
     {{
         int lidx0 = get_local_id(0);
-        for(int i = 0; i < {seg2}; i++) {{
-            int y = (lidx0*{seg2} + i) / 12;
-            int x = (lidx0*{seg2} + i) % 12;
-            for(int k = 0; k < 64; k++) {{
-                if((y*12*64 + x*64 + k) < {np.shape(b)[0]}) {{
-                    bt[x*64*{s} + y*64 + k] = b[y*12*64 + x*64 + k];
-                }}
-            }}
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
         for(int g = 0; g < {seg}; g++) {{
             int y = (g + lidx0*{seg}) / 64;
             int x = (g + lidx0*{seg}) % 64;
             float acc0 = 0;
             for(int i = 0; i < {s}; i++) {{
-                acc0 += a[i + {s}*y] * bt[i*64 + x + y*{s}*64];
+                acc0 += xq[i + {s}*y] * values[i*64 + x + y*{s}*64];
             }}
             res[x + y*64] = acc0;
         }}
     }}
     """).build()
     knl = prg.matmul
-    knl(queue, (ls,1), (ls,1), a_g, b_g,bt_g,c_g)
-    cl.enqueue_copy(queue, c, c_g)
-    return c
+    knl(queue, (ls,1), (ls,1), xq_g, values_g,res_g)
+    cl.enqueue_copy(queue, res, res_g)
+    return res
 
 def transpose_f(a):
     s = np.shape(a)[0]    
