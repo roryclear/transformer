@@ -567,6 +567,7 @@ def matmul3(a,b,s):
     return c
 
 def matmul3_b(a,b,s):
+    a = a.flatten()
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b = b.flatten() #todo, shouldnt be needed
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
@@ -575,36 +576,57 @@ def matmul3_b(a,b,s):
     c = np.zeros([12,1,64])
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-
+    ls = 256
+    seg = int((12*64) / ls)
     #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
         __global const float *a, __global const float *b, __global float *bt, __global float *res)
     {{
-                     
-        for(int i = 0; i < {s}; i++) {{
-            for(int j = 0; j < 12; j++) {{
-                for(int k = 0; k < 64; k++) {{
-                    bt[j*64*{s} + i*64 + k] = b[i*12*64 + j*64 + k];
-                }}
+        int lidx0 = get_local_id(0);
+        for(int g = 0; g < {seg}; g++) {{
+            int y = (g + lidx0*{seg}) / 64;
+            int x = (g + lidx0*{seg}) % 64;
+            float acc0 = 0;
+            for(int i = 0; i < {s}; i++) {{
+                acc0 += a[i + {s}*y] * b[i*64 + x + y*{s}*64];
             }}
+            res[x + y*64] = acc0;
         }}
+    }}
+    """).build()
+    knl = prg.matmul
+    knl(queue, (ls,1), (ls,1), a_g, b_g,bt_g,c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    return c
 
-        for(int g = 0; g < 12; g++) {{
-            for(int x = 0; x < 64; x++) {{
-                float acc0 = 0;
-                for(int i = 0; i < {s}; i++) {{
-                    acc0 += a[i + {s}*g] * bt[i*64 + x + g*{s}*64];
+def transpose_f(a):
+    s = np.shape(a)[0]    
+    a = a.flatten()
+    at = np.zeros_like(a)
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    at_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=at)
+    seg2 = math.ceil((np.shape(a)[0] / 64) / 256)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global float *at)
+    {{
+        int lidx0 = get_local_id(0);
+        for(int i = 0; i < {seg2}; i++) {{
+            int y = (lidx0*{seg2} + i) / 12;
+            int x = (lidx0*{seg2} + i) % 12;
+            for(int k = 0; k < 64; k++) {{
+                if((y*12*64 + x*64 + k) < {np.shape(a)[0]}) {{
+                    at[x*64*{s} + y*64 + k] = a[y*12*64 + x*64 + k];
                 }}
-                res[x + g*64] = acc0;
             }}
         }}
     }}
     """).build()
     knl = prg.matmul
-    knl(queue, (1,1), (1,1), a_g, b_g,bt_g,c_g)
-    cl.enqueue_copy(queue, c, c_g)
-    return c
+    knl(queue, (256,1), (256,1), a_g, at_g)
+    cl.enqueue_copy(queue, at, at_g)
+    return at.reshape(12,s,64)
 
 def matvec(a,b,c):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -889,7 +911,8 @@ def matvec4(a,b):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def transpose(a):    
+def transpose(a):
+    s = np.shape(a)[0]    
     a = a.flatten()
     at = np.zeros_like(a)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -898,10 +921,10 @@ def transpose(a):
     __kernel void matmul(
         __global const float *a, __global float *at)
     {{
-        for(int i = 0; i < 15; i++) {{
+        for(int i = 0; i < {s}; i++) {{
             for(int j = 0; j < 12; j++) {{
                 for(int k = 0; k < 64; k++) {{
-                    at[j*64*15 + i*64 + k] = a[i*12*64 + j*64 + k];
+                    at[j*64*{s} + i*64 + k] = a[i*12*64 + j*64 + k];
                 }}
             }}
         }}
@@ -910,14 +933,14 @@ def transpose(a):
     knl = prg.matmul
     knl(queue, (1,1), (1,1), a_g, at_g)
     cl.enqueue_copy(queue, at, at_g)
-    return at.reshape(12,15,64)
+    return at.reshape(12,s,64)
 
-def time_it(func,a,b,i=100):
+def time_it(func,a,i=100):
     f = None
     total_time = 0
     for _ in range(i):
         st = time.perf_counter()
-        ret = func(a,b)
+        ret = func(a)
         t = time.perf_counter() - st
         total_time += t
         if f is None or t < f:
@@ -926,8 +949,13 @@ def time_it(func,a,b,i=100):
 
 #12,15,64
 '''
-a = np.random.rand(15,12,64).astype(np.float32)
-b_np = a.transpose(1,0,2)
-b = transpose(a)
-np.testing.assert_allclose(b,b_np,rtol=1e-5)
+i = 15
+for i in range(12,130):
+    a = np.random.rand(i,12,64).astype(np.float32)
+    b_np = a.transpose(1,0,2)
+    bf,tf = time_it(transpose_f,a,100)
+    b,t = time_it(transpose,a,100)
+    np.testing.assert_allclose(b,b_np,rtol=1e-5)
+    np.testing.assert_allclose(bf,b_np,rtol=1e-5)
+    print(i,"times =\t",t,"\t",tf)
 '''
