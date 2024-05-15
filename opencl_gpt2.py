@@ -105,7 +105,7 @@ class Attention:
       keys = np.resize(keys,(start_pos,self.n_heads,self.head_dim))
       values = np.resize(values,(start_pos,self.n_heads,self.head_dim))
       keys = np.concatenate([keys,[xk]]) #todo
-      values = np.concatenate([values,[xv]]) #todo  
+      values = np.concatenate([values,[xv]]) #todo
       keys = keys.transpose(1,2,0) #todo, can we not do this?
       xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
       xq = openclk.minus_max(xq,(start_pos+1))
@@ -256,8 +256,8 @@ class Transformer:
         xv = xv.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         values[start_pos] = xv
         values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        keys = keys.transpose(1,2,0) #todo, can we not do this?
-        xq = openclk.kernel_3(xq,keys,values)
+        xq = openclk.kernel_3(np.copy(xq),np.copy(keys),np.copy(values))
+        #keys, values = None, None
         attn = openclk.matvec_b(xq,self.h[i].attn.c_proj.weight,np.copy(self.h[i].attn.c_proj.bias))
         h += attn
         #inlined attn

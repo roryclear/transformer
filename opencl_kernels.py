@@ -400,11 +400,14 @@ def matmul2(a,b,s=112):
     return c
 
 def kernel_3(a,keys,values):
-    s = np.shape(keys)[2]
+    s = np.shape(keys)[0]
+    s2 = np.shape(keys)[0]    
     values = values.flatten()
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     keys = keys.flatten() #todo, shouldnt be needed
     keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
+    keyst = np.zeros_like(keys).astype(np.float32)
+    keyst_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keyst)
     values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=values)
     valuest = np.zeros_like(values).astype(np.float32)
     valuest_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=valuest)
@@ -418,17 +421,28 @@ def kernel_3(a,keys,values):
     seg = int((12*64) / ls)
     prg = cl.Program(ctx, f"""
     __kernel void k(
-        __global const float *a, __global const float *keys, __global const float *values,
+        __global const float *a, __global const float *keys, __global float *keyst, __global const float *values,
         __global float *valuest, __global float *xq, __global float *res)
     {{
-    int lidx0 = get_local_id(0);
+    int lidx0 = get_local_id(0);              
+    for(int i = 0; i < {seg2}; i++) {{
+            int y = (lidx0*{seg2} + i) / 12;
+            int x = (lidx0*{seg2} + i) % 12;
+            for(int k = 0; k < 64; k++) {{
+                if((y*12*64 + x*64 + k) < {np.shape(keys)[0]}) {{
+                    //at[x*64*64 + y*64 + k] = a[y*12*64 + x*64 + k];
+                    keyst[x*64*{s2} + y + k*{s2}] = keys[y*12*64 + x*64 + k];
+                }}
+            }}
+        }}
+    barrier(CLK_LOCAL_MEM_FENCE);
     for(int z = 0; z < 12; z++) {{
         for(int k = 0; k < {s*s}; k+={ls}) {{
             int x = (k + z*{s*s} + lidx0) % {s};
             int y = (k + z*{s*s} + lidx0) / {s};
             float acc0 = 0.0f;
             for(int i = 0; i < 64; i++) {{
-                acc0 += a[i + 64*y] * keys[z*{s*s} + x + i*{s} + y*{s}*64];
+                acc0 += a[i + 64*y] * keyst[z*{s*s} + x + i*{s} + y*{s}*64];
             }}                  
             xq[x + y*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
         }}
@@ -478,7 +492,7 @@ def kernel_3(a,keys,values):
     }}
     """).build()
     knl = prg.k
-    knl(queue, (ls,1), (ls,1), a_g, keys_g, values_g, valuest_g, xq_g,res_g)
+    knl(queue, (ls,1), (ls,1), a_g, keys_g, keyst_g, values_g, valuest_g, xq_g,res_g)
     cl.enqueue_copy(queue, res, res_g)
     return res
 
@@ -640,7 +654,8 @@ def transpose_f(a):
             int x = (lidx0*{seg2} + i) % 12;
             for(int k = 0; k < 64; k++) {{
                 if((y*12*64 + x*64 + k) < {np.shape(a)[0]}) {{
-                    at[x*64*{s} + y*64 + k] = a[y*12*64 + x*64 + k];
+                    //at[x*64*{s} + y*64 + k] = a[y*12*64 + x*64 + k];
+                    at[x*64*{s} + y + k*{s}] = a[y*12*64 + x*64 + k];
                 }}
             }}
         }}
@@ -649,7 +664,8 @@ def transpose_f(a):
     knl = prg.matmul
     knl(queue, (256,1), (256,1), a_g, at_g)
     cl.enqueue_copy(queue, at, at_g)
-    return at.reshape(12,s,64)
+    return at.reshape(12,64,s)
+    #return at.reshape(12,s,64)
 
 def matvec(a,b,c):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -947,7 +963,8 @@ def transpose(a):
         for(int i = 0; i < {s}; i++) {{
             for(int j = 0; j < 12; j++) {{
                 for(int k = 0; k < 64; k++) {{
-                    at[j*64*{s} + i*64 + k] = a[i*12*64 + j*64 + k];
+                    //at[j*64*{s} + i*64 + k] = a[i*12*64 + j*64 + k];
+                    at[j*64*{s} + i + k*{s}] = a[i*12*64 + j*64 + k];
                 }}
             }}
         }}
@@ -956,7 +973,7 @@ def transpose(a):
     knl = prg.matmul
     knl(queue, (1,1), (1,1), a_g, at_g)
     cl.enqueue_copy(queue, at, at_g)
-    return at.reshape(12,s,64)
+    return at.reshape(12,64,s)
 
 def time_it(func,a,i=100):
     f = None
@@ -973,11 +990,11 @@ def time_it(func,a,i=100):
 #12,15,64
 '''
 i = 15
-for i in range(12,130):
+for i in range(14,130):
     a = np.random.rand(i,12,64).astype(np.float32)
-    b_np = a.transpose(1,0,2)
+    b_np = a.transpose(1,2,0)
     bf,tf = time_it(transpose_f,a,100)
-    b,t = time_it(transpose,a,100)
+    b,t = time_it(transpose,a,1)
     np.testing.assert_allclose(b,b_np,rtol=1e-5)
     np.testing.assert_allclose(bf,b_np,rtol=1e-5)
     print(i,"times =\t",t,"\t",tf)
