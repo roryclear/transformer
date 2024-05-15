@@ -419,6 +419,7 @@ def kernel_3(a,keys,values):
     #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
     ls = 256
     seg = int((12*64) / ls)
+    seg3 = math.ceil(12*s*s / ls)
     prg = cl.Program(ctx, f"""
     __kernel void k(
         __global const float *a, __global const float *keys, __global float *keyst, __global const float *values,
@@ -426,28 +427,26 @@ def kernel_3(a,keys,values):
     {{
     int lidx0 = get_local_id(0);              
     for(int i = 0; i < {seg2}; i++) {{
-            int y = (lidx0*{seg2} + i) / 12;
-            int x = (lidx0*{seg2} + i) % 12;
-            for(int k = 0; k < 64; k++) {{
-                if((y*12*64 + x*64 + k) < {np.shape(keys)[0]}) {{
-                    //at[x*64*64 + y*64 + k] = a[y*12*64 + x*64 + k];
-                    keyst[x*64*{s2} + y + k*{s2}] = keys[y*12*64 + x*64 + k];
+            if((lidx0*{seg2} + i) < {12*s*s}) {{
+                int y = (lidx0*{seg2} + i) / 12;
+                int x = (lidx0*{seg2} + i) % 12;
+                for(int k = 0; k < 64; k++) {{
+                    if((y*12*64 + x*64 + k) < {np.shape(keys)[0]}) {{
+                        //at[x*64*64 + y*64 + k] = a[y*12*64 + x*64 + k];
+                        keyst[x*64*{s2} + y + k*{s2}] = keys[y*12*64 + x*64 + k];
+                    }}
                 }}
             }}
         }}
     barrier(CLK_LOCAL_MEM_FENCE);
-    if(lidx0<1){{
-    for(int z = 0; z < {12*s*s}; z++) {{
-        int x = z % {s};
-        int k = z / {s};
-        float acc0 = 0.0f;
+    for(int z = 0; z < {seg3}; z++) {{
+        int x = (z + lidx0*{seg3}) % {s};
+        int k = (z + lidx0*{seg3}) / {s};
+        float acc0 = 0;
         for(int i = 0; i < 64; i++) {{
-            //acc0 += a[i + 64*y] * keyst[z*{s*s} + x + i*{s} + y*{s}*64];
             acc0 += a[i + 64*k] * keyst[x+i*{s} + {s}*64*k];
         }}                  
-        //xq[x + y*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
         xq[x + k*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
-    }}
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
     if(lidx0 < 12){{
