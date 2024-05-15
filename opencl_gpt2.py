@@ -256,8 +256,11 @@ class Transformer:
         xv = xv.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         values[start_pos] = xv
         values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        xq = openclk.kernel_3(xq,keys,values)
-        h = openclk.matvec_b(xq,self.h[i].attn.c_proj.weight,np.copy(self.h[i].attn.c_proj.bias),h)
+        h = openclk.kernel_3(xq,keys,values,self.h[i].attn.c_proj.weight,\
+        np.copy(self.h[i].attn.c_proj.bias),h)
+        #np.testing.assert_allclose(h2,h,rtol=1e-5)
+        #h = openclk.matvec_b(xq,self.h[i].attn.c_proj.weight,np.copy(self.h[i].attn.c_proj.bias),h)
+
         h = openclk.kernel_1(h,self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,np.copy(self.h[i].mlp.c_fc.bias)\
         ,self.h[i].mlp.c_proj.weight,np.copy(self.h[i].mlp.c_proj.bias))
       

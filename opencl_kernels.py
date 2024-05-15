@@ -399,7 +399,7 @@ def matmul2(a,b,s=112):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def kernel_3(xq,keys,values):
+def kernel_3(xq,keys,values,weight,bias,h):
     s = np.shape(keys)[0]
     s2 = np.shape(keys)[0]    
     values = values.flatten()
@@ -413,6 +413,10 @@ def kernel_3(xq,keys,values):
     valuest_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=valuest)
     temp = np.zeros(12*s).astype(np.float32)
     temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=temp)
+    weight = weight.flatten()
+    weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
+    bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
+    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     seg2 = math.ceil((np.shape(values)[0] / 64) / 256)
     ls = 256
     seg = int((12*64) / ls)
@@ -420,7 +424,8 @@ def kernel_3(xq,keys,values):
     prg = cl.Program(ctx, f"""
     __kernel void k(
         __global float *xq, __global const float *keys, __global float *keyst, __global const float *values,
-        __global float *valuest, __global float *temp)
+        __global float *valuest, __global float *temp, __global const float *weight,
+        __global const float *bias, __global float *h)
     {{
     int lidx0 = get_local_id(0);              
     for(int i = 0; i < {seg2}; i++) {{
@@ -486,12 +491,21 @@ def kernel_3(xq,keys,values):
         }}
         xq[x + y*64] = acc0;
     }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for(int i = 0; i < 3; i++) {{
+        float acc = 0;
+        for(int x = 0; x < 768; x++) {{
+            acc += xq[x] * weight[x*768 + lidx0*3 + i];
+        }}
+        h[lidx0*3 + i] += acc + bias[lidx0*3 + i];
+    }}
     }}
     """).build()
     knl = prg.k
-    knl(queue, (ls,1), (ls,1), xq_g, keys_g, keyst_g, values_g, valuest_g, temp_g)
-    cl.enqueue_copy(queue, xq, xq_g)
-    return xq
+    knl(queue, (ls,1), (ls,1), xq_g, keys_g, keyst_g, values_g, valuest_g, temp_g,\
+    weight_g, bias_g,h_g)
+    cl.enqueue_copy(queue, h, h_g)
+    return h
 
 def minus_max(a,s=112):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -699,6 +713,7 @@ def matvec_b(a,b,c,h):
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     s = np.shape(a)[0]
     seg = int(np.shape(a)[0] / ls)
+    print("s and seg ->",s,seg)
     prg = cl.Program(ctx, f"""
     __kernel void matvec(
         __global const float *a, __global const float *b, __global const float *c,
@@ -708,10 +723,12 @@ def matvec_b(a,b,c,h):
         for(int i = 0; i < {seg}; i++) {{
             float acc = 0;
             for(int x = 0; x < {s}; x++) {{
-                acc += a[x] * b[x*{s} + lidx0*{seg} + i];
+                acc += a[x];// * b[x*{s} + lidx0*{seg} + i];
             }}
             h[lidx0*{seg} + i] += acc + c[lidx0*{seg} + i];
         }}
+    h[0] = b[0];
+    h[1] = b[1];
     }}
     """).build()
     knl = prg.matvec
