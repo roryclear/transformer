@@ -401,19 +401,20 @@ def matmul2(a,b,s=112):
 
 def kernel_3(xq,keys,values,weight,bias,h):
     s = np.shape(keys)[0]
-    s2 = np.shape(keys)[0]    
-    values = values.flatten()
-    xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
-    keys = keys.flatten() #todo, shouldnt be needed
-    keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
+    s2 = np.shape(keys)[0]
     keyst = np.zeros_like(keys).astype(np.float32)
+    valuest = np.zeros_like(values).astype(np.float32)
+    temp = np.zeros(12*s).astype(np.float32)
+    keys = keys.flatten() #todo, shouldnt be needed
+    values = values.flatten()
+    weight = weight.flatten()
+    keys_len = np.shape(keys)[0]    
+    xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
+    keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
     keyst_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keyst)
     values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=values)
-    valuest = np.zeros_like(values).astype(np.float32)
     valuest_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=valuest)
-    temp = np.zeros(12*s).astype(np.float32)
     temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=temp)
-    weight = weight.flatten()
     weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
     bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
@@ -421,6 +422,8 @@ def kernel_3(xq,keys,values,weight,bias,h):
     ls = 256
     seg = int((12*64) / ls)
     seg3 = math.ceil(12*s*s / ls)
+    s4 = np.shape(bias)[0]
+    seg4 = int(s4 / ls)
     prg = cl.Program(ctx, f"""
     __kernel void k(
         __global float *xq, __global const float *keys, __global float *keyst, __global const float *values,
@@ -433,7 +436,7 @@ def kernel_3(xq,keys,values,weight,bias,h):
                 int y = (lidx0*{seg2} + i) / 12;
                 int x = (lidx0*{seg2} + i) % 12;
                 for(int k = 0; k < 64; k++) {{
-                    if((y*12*64 + x*64 + k) < {np.shape(keys)[0]}) {{
+                    if((y*12*64 + x*64 + k) < {keys_len}) {{
                         keyst[x*64*{s2} + y + k*{s2}] = keys[y*12*64 + x*64 + k];
                     }}
                 }}
@@ -492,12 +495,12 @@ def kernel_3(xq,keys,values,weight,bias,h):
         xq[x + y*64] = acc0;
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
-    for(int i = 0; i < 3; i++) {{
+    for(int i = 0; i < {seg4}; i++) {{
         float acc = 0;
-        for(int x = 0; x < 768; x++) {{
-            acc += xq[x] * weight[x*768 + lidx0*3 + i];
+        for(int x = 0; x < {s4}; x++) {{
+            acc += xq[x] * weight[x*{s4} + lidx0*{seg4} + i];
         }}
-        h[lidx0*3 + i] += acc + bias[lidx0*3 + i];
+        h[lidx0*{seg4} + i] += acc + bias[lidx0*{seg4} + i];
     }}
     }}
     """).build()
