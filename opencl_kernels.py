@@ -399,11 +399,11 @@ def matmul2(a,b,s=112):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def kernel_3(a,keys,values):
+def kernel_3(xq,keys,values):
     s = np.shape(keys)[0]
     s2 = np.shape(keys)[0]    
     values = values.flatten()
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
     keys = keys.flatten() #todo, shouldnt be needed
     keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
     keyst = np.zeros_like(keys).astype(np.float32)
@@ -411,19 +411,16 @@ def kernel_3(a,keys,values):
     values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=values)
     valuest = np.zeros_like(values).astype(np.float32)
     valuest_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=valuest)
-    xq = np.zeros(12*s).astype(np.float32)
-    xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
+    temp = np.zeros(12*s).astype(np.float32)
+    temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=temp)
     seg2 = math.ceil((np.shape(values)[0] / 64) / 256)
-    res = np.zeros([12,1,64]).astype(np.float32)
-    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
-    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
     ls = 256
     seg = int((12*64) / ls)
     seg3 = math.ceil(12*s*s / ls)
     prg = cl.Program(ctx, f"""
     __kernel void k(
-        __global const float *a, __global const float *keys, __global float *keyst, __global const float *values,
-        __global float *valuest, __global float *xq, __global float *res)
+        __global float *xq, __global const float *keys, __global float *keyst, __global const float *values,
+        __global float *valuest, __global float *temp)
     {{
     int lidx0 = get_local_id(0);              
     for(int i = 0; i < {seg2}; i++) {{
@@ -443,30 +440,30 @@ def kernel_3(a,keys,values):
         int k = (z + lidx0*{seg3}) / {s};
         float acc0 = 0;
         for(int i = 0; i < 64; i++) {{
-            acc0 += a[i + 64*k] * keyst[x+i*{s} + {s}*64*k];
+            acc0 += xq[i + 64*k] * keyst[x+i*{s} + {s}*64*k];
         }}                  
-        xq[x + k*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
+        temp[x + k*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
     if(lidx0 < 12){{
     float m = -INFINITY;
     for(int i = 0; i < {s}; i++) {{
-        float val = xq[i + lidx0*{s}];
+        float val = temp[i + lidx0*{s}];
         m = max(m,val);
     }}
     for(int i = 0; i < {s}; i++) {{
-        xq[i + lidx0*{s}] = exp(xq[i + lidx0*{s}] - m);
+        temp[i + lidx0*{s}] = exp(temp[i + lidx0*{s}] - m);
     }}
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
     if(lidx0 < 12) {{
     float t = 0;
     for(int i = 0; i < {s}; i++) {{
-        float val = xq[i + lidx0*{s}];
+        float val = temp[i + lidx0*{s}];
         t = t+val;
     }}
     for(int i = 0; i < {s}; i++) {{
-        xq[i + lidx0*{s}] = xq[i + lidx0*{s}] / t;
+        temp[i + lidx0*{s}] = temp[i + lidx0*{s}] / t;
     }}
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -485,16 +482,16 @@ def kernel_3(a,keys,values):
         int x = (g + lidx0*{seg}) % 64;
         float acc0 = 0;
         for(int i = 0; i < {s}; i++) {{
-            acc0 += xq[i + {s}*y] * valuest[i*64 + x + y*{s}*64];
+            acc0 += temp[i + {s}*y] * valuest[i*64 + x + y*{s}*64];
         }}
-        res[x + y*64] = acc0;
+        xq[x + y*64] = acc0;
     }}
     }}
     """).build()
     knl = prg.k
-    knl(queue, (ls,1), (ls,1), a_g, keys_g, keyst_g, values_g, valuest_g, xq_g,res_g)
-    cl.enqueue_copy(queue, res, res_g)
-    return res
+    knl(queue, (ls,1), (ls,1), xq_g, keys_g, keyst_g, values_g, valuest_g, temp_g)
+    cl.enqueue_copy(queue, xq, xq_g)
+    return xq
 
 def minus_max(a,s=112):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
