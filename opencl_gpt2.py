@@ -28,7 +28,7 @@ def decode(index):
 
 def scaled_dot_product_attention(x, key, value):
   key = np.transpose(key,(0,2,1))
-  qk = openclk.matmul_t_3d(np.copy(x),np.copy(key))
+  qk = openclk.matmul_t_3d(x,key)
   qk = qk / math.sqrt(np.shape(x)[-1])
   for x in range(len(qk)):
     for y in range(len(qk[0])):
@@ -36,13 +36,13 @@ def scaled_dot_product_attention(x, key, value):
         if z > y: qk[x][y][z] -= np.inf
       qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
       qk[x][y] = qk[x][y] / qk[x][y].sum()
-  qk = np.array(openclk.matmul_t_3d(np.copy(qk),np.copy(value)))
+  qk = np.array(openclk.matmul_t_3d(qk,value))
   return qk
 
 def scaled_dot_product_attention_b(x, key, value):
-  qk = openclk.matvec4(np.copy(x),np.copy(key))
+  qk = openclk.matvec4(x,key)
   qk = qk / math.sqrt(np.shape(x)[-1])
-  qk = np.array(openclk.matmul_t(np.copy(qk),np.copy(value)))
+  qk = np.array(openclk.matmul_t(qk,value))
   return qk
 
 class Linear():
@@ -62,6 +62,7 @@ class LayerNorm:
 
   def __call__(self, x):
     for i in range(len(x)):
+      exit()
       x[i] = openclk.kernel_0(np.copy(x[i]),self.weight, self.bias)
     return x
 
@@ -248,20 +249,21 @@ class Transformer:
         keys = self.h[i].attn.cache_kv[0]
         values = self.h[i].attn.cache_kv[1]
         keys = np.resize(keys,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        xq,xv,keys = openclk.kernel_2(np.copy(h),self.h[i].ln_1.weight,\
+        xq,xv,keys = openclk.kernel_2(h,self.h[i].ln_1.weight,\
         self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
-        np.copy(self.h[i].attn.c_attn.bias),self.h[i].attn.dim,np.copy(keys),start_pos)
+        np.copy(self.h[i].attn.c_attn.bias),self.h[i].attn.dim,keys,start_pos)
         self.h[i].attn.cache_kv[0] = keys
 
         xv = xv.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         values[start_pos] = xv
         values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
         h = openclk.kernel_3(xq,keys,values,self.h[i].attn.c_proj.weight,\
-        np.copy(self.h[i].attn.c_proj.bias),h)
-        h = openclk.kernel_1(h,self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,np.copy(self.h[i].mlp.c_fc.bias)\
-        ,self.h[i].mlp.c_proj.weight,np.copy(self.h[i].mlp.c_proj.bias))
+        self.h[i].attn.c_proj.bias,h)
+
+        h = openclk.kernel_1(h,self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias\
+        ,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
       
-      h = openclk.kernel_0(np.copy(h),self.ln_f.weight, self.ln_f.bias)
+      h = openclk.kernel_0(h,self.ln_f.weight, self.ln_f.bias)
       logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
     else:
       tok_emb = self.wte(tokens)
@@ -271,12 +273,12 @@ class Transformer:
       for i in range(len(self.h)-1):
         h = np.copy(x) #todo
         for j in range(len(x)): #todo, kernel instead of loop
-          x[j] = openclk.kernel_0(np.copy(x[j]),self.h[i].ln_1.weight, self.h[i].ln_1.bias)
+          x[j] = openclk.kernel_0(x[j],self.h[i].ln_1.weight, self.h[i].ln_1.bias)
         attn = self.h[i].attn(x,start_pos)
         h += attn
         x = np.copy(h)
         for j in range(len(x)):
-          x[j] = openclk.kernel_0(np.copy(x[j]),self.h[i].ln_2.weight, self.h[i].ln_2.bias)
+          x[j] = openclk.kernel_0(x[j],self.h[i].ln_2.weight, self.h[i].ln_2.bias)
         x = openclk.matmul_t(x,self.h[i].mlp.c_fc.weight)
         x += self.h[i].mlp.c_fc.bias
         for j in range(len(x)):
@@ -287,18 +289,18 @@ class Transformer:
         ############
       h = np.copy(x[-1]) #todo
       for j in range(len(x)): #todo, kernel instead of loop
-        x[j] = openclk.kernel_0(np.copy(x[j]),self.h[-1].ln_1.weight, self.h[-1].ln_1.bias)
+        x[j] = openclk.kernel_0(x[j],self.h[-1].ln_1.weight, self.h[-1].ln_1.bias)
       attn = self.h[-1].attn(x,start_pos,od_out=True)    
       h += attn
       x = np.copy(h)
-      x = openclk.kernel_0(np.copy(x),self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
+      x = openclk.kernel_0(x,self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
       x = openclk.matmul_t_c(x,self.h[-1].mlp.c_fc.weight)
       x += self.h[-1].mlp.c_fc.bias
       x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
       x = openclk.matmul_t_c(x,self.h[-1].mlp.c_proj.weight)
       x += self.h[-1].mlp.c_proj.bias
       x += h
-      x = openclk.kernel_0(np.copy(x),self.ln_f.weight, self.ln_f.bias)
+      x = openclk.kernel_0(x,self.ln_f.weight, self.ln_f.bias)
       logits = openclk.matmul_t_c(x,self.lm_head.weight)
     if temperature < 1e-6:
       ret = logits.argmax(-1)
@@ -376,11 +378,13 @@ class GPT2:
         tokens = np.array(toks)
       tok = self.model(tokens, start_pos, temperature).tolist()
       start_pos = len(toks)
+      
       if tg_rand:
         if default_prompt == "What is the answer to life, the universe, and everything?":
           np.testing.assert_equal(tok,excepted_tokens[start_pos-13])
         else:
           np.testing.assert_equal(tok,excepted_tokens_b[start_pos-5])
+      
       toks.append(tok)
     return decode(toks)
 
