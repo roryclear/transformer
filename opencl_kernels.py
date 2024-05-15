@@ -436,16 +436,18 @@ def kernel_3(a,keys,values):
             }}
         }}
     barrier(CLK_LOCAL_MEM_FENCE);
-    for(int z = 0; z < 12; z++) {{
-        for(int k = 0; k < {s*s}; k+={ls}) {{
-            int x = (k + z*{s*s} + lidx0) % {s};
-            int y = (k + z*{s*s} + lidx0) / {s};
-            float acc0 = 0.0f;
-            for(int i = 0; i < 64; i++) {{
-                acc0 += a[i + 64*y] * keyst[z*{s*s} + x + i*{s} + y*{s}*64];
-            }}                  
-            xq[x + y*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
-        }}
+    if(lidx0<1){{
+    for(int z = 0; z < {12*s*s}; z++) {{
+        int x = z % {s};
+        int k = z / {s};
+        float acc0 = 0.0f;
+        for(int i = 0; i < 64; i++) {{
+            //acc0 += a[i + 64*y] * keyst[z*{s*s} + x + i*{s} + y*{s}*64];
+            acc0 += a[i + 64*k] * keyst[x+i*{s} + {s}*64*k];
+        }}                  
+        //xq[x + y*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
+        xq[x + k*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
+    }}
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
     if(lidx0 < 12){{
