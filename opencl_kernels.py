@@ -432,7 +432,6 @@ def kernel_3(a,keys,values):
                 int x = (lidx0*{seg2} + i) % 12;
                 for(int k = 0; k < 64; k++) {{
                     if((y*12*64 + x*64 + k) < {np.shape(keys)[0]}) {{
-                        //at[x*64*64 + y*64 + k] = a[y*12*64 + x*64 + k];
                         keyst[x*64*{s2} + y + k*{s2}] = keys[y*12*64 + x*64 + k];
                     }}
                 }}
@@ -693,18 +692,20 @@ def matvec(a,b,c):
     cl.enqueue_copy(queue, d, d_g)
     return d
 
-def matvec_b(a,b,c):
+def matvec_b(a,b,c,h):
     ls = 256
     a = a.flatten()
     b = b.flatten()
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     s = np.shape(a)[0]
     seg = int(np.shape(a)[0] / ls)
     prg = cl.Program(ctx, f"""
     __kernel void matvec(
-        __global const float *a, __global const float *b, __global float *c)
+        __global const float *a, __global const float *b, __global const float *c,
+        __global float *h)
     {{
         int lidx0 = get_local_id(0);
         for(int i = 0; i < {seg}; i++) {{
@@ -712,14 +713,14 @@ def matvec_b(a,b,c):
             for(int x = 0; x < {s}; x++) {{
                 acc += a[x] * b[x*{s} + lidx0*{seg} + i];
             }}
-            c[lidx0*{seg} + i] = acc + c[lidx0*{seg} + i];
+            h[lidx0*{seg} + i] += acc + c[lidx0*{seg} + i];
         }}
     }}
     """).build()
     knl = prg.matvec
-    knl(queue, (ls,1), (ls,1), a_g, b_g,c_g)
-    cl.enqueue_copy(queue, c, c_g)
-    return c
+    knl(queue, (ls,1), (ls,1), a_g, b_g,c_g,h_g)
+    cl.enqueue_copy(queue, h, h_g)
+    return h
 
 def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kernels
     rows = np.shape(b)[0]
