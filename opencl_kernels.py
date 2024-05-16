@@ -272,9 +272,7 @@ def kernel_1(h_in,h_temp,e,f,g,h_out):
     f_len = np.shape(f)[0]
     e_rows = np.shape(e)[0] #f also same
     e_cols = np.shape(e)[1]
-    size = np.shape(h_in)[0]
     ls = 256
-    seg = int(size / ls)
     g_rows = np.shape(g)[0]
     g_cols = np.shape(g)[1]
     g = g.flatten()
@@ -412,7 +410,8 @@ def matmul2(a,b,s=112):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def kernel_3(xq,keys,values,weight,bias,h,c,d):
+def kernel_3(xq,keys,values,weight,bias,h,c,d,\
+    e,f,g,h_out):
     s = np.shape(keys)[0]
     s2 = np.shape(keys)[0]
     keyst = np.zeros_like(keys).astype(np.float32)
@@ -446,12 +445,27 @@ def kernel_3(xq,keys,values,weight,bias,h,c,d):
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
 
+    f_len = np.shape(f)[0]
+    e_rows = np.shape(e)[0] #f also same
+    e_cols = np.shape(e)[1]
+    ls = 256
+    g_rows = np.shape(g)[0]
+    g_cols = np.shape(g)[1]
+    g = g.flatten()
+    h_out = h_out.flatten()
+    e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
+    f_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
+    g_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=g)
+    h_out_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h_out)
+
     prg = cl.Program(ctx, f"""
     __kernel void k(
         __global float *xq, __global const float *keys, __global float *keyst, __global const float *values,
         __global float *valuest, __global float *temp3, __global const float *weight,
         __global const float *bias, __global float *h, __global float *h_temp,
-        __global const float *c, __global const float *d)
+        __global const float *c, __global const float *d,
+        __global const float *e, __global float *f, __global const float *g,
+        __global float *h_out)
     {{
     __attribute__ ((aligned (16))) __local float temp[{seg5}];
     __attribute__ ((aligned (16))) __local float mean;
@@ -565,15 +579,35 @@ def kernel_3(xq,keys,values,weight,bias,h,c,d):
     for(int i = 0; i < {seg5}; i++) {{
         h[i + lidx0*{seg5}] = (h[i + lidx0*{seg5}] * c[i + lidx0*{seg5}]) / mean + d[i + lidx0*{seg5}];
     }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for(int i = 0; i < {int(e_cols / ls)}; i++) {{
+        for(int j = 0; j < {e_rows}; j++) {{
+            f[i + lidx0*{int(f_len / ls)}] += h[j] * e[(i + lidx0*{int(e_cols / ls)})*{e_rows} + j];
+        }}
+    }} 
+    barrier(CLK_LOCAL_MEM_FENCE);  
+    for(int i = 0; i < {int(e_cols / ls)}; i++) {{
+        f[i + lidx0*{int(f_len / ls)}] = 0.5 * f[i + lidx0*{int(f_len / ls)}]\
+        * (1 + tanh(f[i + lidx0*{int(f_len / ls)}] * 0.7978845608\
+        * (1 + 0.044715 * pow(f[i + lidx0*{int(f_len / ls)}],2))));
+    }}
+    barrier(CLK_LOCAL_MEM_FENCE);  //TODO this is probably slower than it should be
+    for(int i = 0; i < {int(np.shape(h_out)[0] / ls)}; i++) {{
+        for(int j = 0; j < {g_rows}; j++) {{
+            h_out[lidx0 + i*{ls}] += f[j] * g[lidx0 + i*{ls} + j*{g_cols}];
+        }}
+        h_out[lidx0 + i*{ls}] += h_temp[lidx0 + i*{ls}];
+    }}
 
     }}
     """).build()
     knl = prg.k
     knl(queue, (ls,1), (ls,1), xq_g, keys_g, keyst_g, values_g, valuest_g, temp_g,\
-    weight_g, bias_g,h_g,h_temp_g,c_g,d_g)
-    cl.enqueue_copy(queue, h, h_g)
-    cl.enqueue_copy(queue, h_temp, h_temp_g)
-    return h,h_temp
+    weight_g, bias_g,h_g,h_temp_g,c_g,d_g,\
+    e_g,f_g,\
+    g_g,h_out_g)
+    cl.enqueue_copy(queue, h_out, h_out_g)
+    return h_out
 
 def minus_max(a,s=112):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)

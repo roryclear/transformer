@@ -257,12 +257,15 @@ class Transformer:
         xv = xv.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         values[start_pos] = xv
         values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        h,h_temp = openclk.kernel_3(xq,keys,values,self.h[i].attn.c_proj.weight,\
+        h = openclk.kernel_3(xq,keys,values,self.h[i].attn.c_proj.weight,\
         self.h[i].attn.c_proj.bias,h,\
-        self.h[i].ln_2.weight, self.h[i].ln_2.bias)
-
-        h = openclk.kernel_1(h,h_temp,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias\
+        self.h[i].ln_2.weight, self.h[i].ln_2.bias,\
+        self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias\
         ,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
+
+        #h = openclk.kernel_1(h,h_temp,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias\
+        #,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
+        #h = h_out
       
       h = openclk.kernel_0(h,self.ln_f.weight, self.ln_f.bias)
       logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
