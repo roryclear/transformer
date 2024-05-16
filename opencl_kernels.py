@@ -292,10 +292,7 @@ def kernel_1(a,c,d,e,f,g,h):
             for(int j = 0; j < {g_rows}; j++) {{
                 h[lidx0 + i*{ls}] += f[j] * g[lidx0 + i*{ls} + j*{g_cols}];
             }}
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {int(np.shape(h)[0] / ls)}; i++) {{
-            h[i + lidx0*{int(np.shape(h)[0] / ls)}] += l[i + lidx0*{int(np.shape(h)[0] / ls)}];
+            h[lidx0 + i*{ls}] += l[lidx0 + i*{ls}];
         }}
     }}
     """).build()
