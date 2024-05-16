@@ -126,7 +126,7 @@ def kernel_0(a,c,d):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def kernel_2(a,c,d,e,f,g,keys,start_pos): #g = size
+def kernel_2(a,c,d,e,f,g,keys,values,start_pos): #g = size
     size = np.shape(a)[0]
     ls = 256
     seg_e = int(np.shape(e)[1] / ls)
@@ -145,10 +145,12 @@ def kernel_2(a,c,d,e,f,g,keys,start_pos): #g = size
     xk_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xk)
     xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
     keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
+    values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=values)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
-        __global const float *f, __global float *xq, __global float *xk, __global float *xv, __global float *keys)
+        __global const float *f, __global float *xq, __global const float *xk, __global const float *xv, __global float *keys,
+        __global float *values)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
@@ -196,19 +198,20 @@ def kernel_2(a,c,d,e,f,g,keys,start_pos): #g = size
             }}
         if((lidx0*{seg_e} + i) < {g}) {{xq[lidx0*{seg_e} + i] += total;}}
         if((lidx0*{seg_e} + i) >= {g} && (lidx0*{seg_e} + i) < {2*g}) {{
-            xk[lidx0*{seg_e} + i - {g}] += total; //TODO don't need this?
-            keys[{start_pos}*{keys_shape} + lidx0*{seg_e} + i - {g}] = xk[lidx0*{seg_e} + i - {g}];
+            keys[{start_pos}*{keys_shape} + lidx0*{seg_e} + i - {g}] = xk[lidx0*{seg_e} + i - {g}] + total;
         }}
-        if((lidx0*{seg_e} + i) >= {2*g}) {{xv[lidx0*{seg_e} + i - {2*g}] += total;}}
+        if((lidx0*{seg_e} + i) >= {2*g}) {{
+            values[{start_pos}*{keys_shape} + lidx0*{seg_e} + i - {2*g}] = xv[lidx0*{seg_e} + i - {2*g}] + total;
+            }}
         }}
     }}
     """).build()
     knl = prg.mm
-    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g,xq_g,xk_g,xv_g,keys_g)
+    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g,xq_g,xk_g,xv_g,keys_g,values_g)
     cl.enqueue_copy(queue, xq, xq_g)
-    cl.enqueue_copy(queue, xv, xv_g)
     cl.enqueue_copy(queue, keys, keys_g)
-    return xq,xv,keys
+    cl.enqueue_copy(queue, values, values_g)
+    return xq,keys,values
 
 def kernel_1b(h_in,c,d,f):
     size = np.shape(h_in)[0]
