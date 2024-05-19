@@ -138,7 +138,6 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     valuest = np.zeros_like(values).astype(np.float32)
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
-    keyst = np.zeros_like(keys)
     h_temp = np.copy(h)
     weight = weight.flatten()
     weight4 = weight4.flatten()
@@ -151,7 +150,6 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     xk_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xk)
     xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
     keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
-    keyst_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keyst)
     values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=values)
     temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=temp)
     valuest_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=valuest)
@@ -172,7 +170,7 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
         __global float *xq, __global const float *xk, __global const float *xv, __global float *keys,
-        __global float *keyst, __global float *values, __global float *valuest, __global float *temp3,
+        __global float *values, __global float *valuest, __global float *temp3,
         __global const float *weight,__global const float *bias, __global float *h, __global float *h_temp,
         __global const float *weight2, __global const float *bias2,
         __global const float *weight3, __global float *bias3,
@@ -231,24 +229,12 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
             }}
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {seg2}; i++) {{
-            if((lidx0*{seg2} + i) < {12*(start_pos+1)*(start_pos+1)}) {{
-                int y = (lidx0*{seg2} + i) / 12;
-                int x = (lidx0*{seg2} + i) % 12;
-                for(int k = 0; k < 64; k++) {{
-                    if((y*12*64 + x*64 + k) < {keys_len}) {{
-                        keyst[x*64*{start_pos+1} + y + k*{start_pos+1}] = keys[y*12*64 + x*64 + k];
-                    }}
-                }}
-            }}
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
         for(int z = 0; z < {seg3}; z++) {{
             int x = (z + lidx0*{seg3}) % {start_pos+1};
             int k = (z + lidx0*{seg3}) / {start_pos+1};
             float acc0 = 0;
             for(int i = 0; i < 64; i++) {{
-                acc0 += xq[i + 64*k] * keyst[x+i*{start_pos+1} + {start_pos+1}*64*k];
+                acc0 += xq[i + 64*k] * keys[x*12*64 + i + 64*k];
             }}                  
             temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
         }}
@@ -357,7 +343,7 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     """).build()
     knl = prg.mm
     knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,xq_g,xk_g,xv_g\
-    ,keys_g,keyst_g,values_g, valuest_g,temp_g,weight_g,bias_g,\
+    ,keys_g,values_g, valuest_g,temp_g,weight_g,bias_g,\
     h_g,h_temp_g,weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g)
     cl.enqueue_copy(queue, keys, keys_g)
     cl.enqueue_copy(queue, values, values_g)
