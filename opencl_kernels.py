@@ -159,7 +159,6 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
     e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
-    f_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
     xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
     xk_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xk)
     xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
@@ -184,7 +183,7 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
-        __global const float *f, __global float *xq, __global const float *xk, __global const float *xv, __global float *keys,
+        __global float *xq, __global const float *xk, __global const float *xv, __global float *keys,
         __global float *keyst, __global float *values, __global float *valuest, __global float *temp3,
         __global const float *weight,__global const float *bias, __global float *h, __global float *h_temp,
         __global const float *weight2, __global const float *bias2,
@@ -376,7 +375,7 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     }}
     """).build()
     knl = prg.mm
-    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g,xq_g,xk_g,xv_g\
+    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,xq_g,xk_g,xv_g\
     ,keys_g,keyst_g,values_g, valuest_g,temp_g,weight_g,bias_g,\
     h_g,h_temp_g,weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g)
     cl.enqueue_copy(queue, keys, keys_g)
