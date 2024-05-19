@@ -220,7 +220,9 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
             for(int k = 0; k < {dim}; k++) {{
                 total += a[k] * e[(lidx0*{int(dim*3 / ls)} + i)*{dim} + k]; 
             }}
-        if((lidx0*{int(dim*3 / ls)} + i) < {g}) {{xq[lidx0*{int(dim*3 / ls)} + i] += total;}}
+        if((lidx0*{int(dim*3 / ls)} + i) < {g}) {{
+            xq[lidx0*{int(dim*3 / ls)} + i] += total;
+            }}
         if((lidx0*{int(dim*3 / ls)} + i) >= {g} && (lidx0*{int(dim*3 / ls)} + i) < {2*g}) {{
             keys[{start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {g}] = xk[lidx0*{int(dim*3 / ls)} + i - {g}] + total;
         }}
@@ -301,7 +303,6 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
             h[lidx0*{seg} + i] += acc + bias[lidx0*{seg} + i];
             h_temp[lidx0*{seg} + i] = h[lidx0*{seg} + i];
         }}
-
         barrier(CLK_LOCAL_MEM_FENCE);
         total = 0;
         for(int i = 0; i < {seg}; i++) {{
@@ -317,14 +318,11 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
             mean = total / {dim};  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {seg}; i++) {{
-            h[i + lidx0*{seg}] -= mean;
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
         total = 0;
         for(int i = 0; i < {seg}; i++) {{
+            h[i + lidx0*{seg}] -= mean;
             total += pow(h[lidx0*{seg} + i],2);
-        }}
+        }}        
         temp[lidx0] = total;
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
