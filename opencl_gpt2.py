@@ -250,16 +250,18 @@ class Transformer:
         values = self.h[i].attn.cache_kv[1]
         keys = np.resize(keys,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
         values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        xq,keys,values = openclk.kernel_2(h,self.h[i].ln_1.weight,\
+        keys,values,h = openclk.kernel_2(h,self.h[i].ln_1.weight,\
         self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
-        np.copy(self.h[i].attn.c_attn.bias),self.h[i].attn.dim,keys,values,start_pos)
+        np.copy(self.h[i].attn.c_attn.bias),self.h[i].attn.dim,keys,values,start_pos,\
+        self.h[i].attn.c_proj.weight,self.h[i].attn.c_proj.bias,h,\
+        self.h[i].ln_2.weight, self.h[i].ln_2.bias,\
+        self.h[i].mlp.c_fc.weight,np.copy(self.h[i].mlp.c_fc.bias),\
+        self.h[i].mlp.c_proj.weight,np.copy(self.h[i].mlp.c_proj.bias))
+        
+        self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten() #todo why needed?
+        
         self.h[i].attn.cache_kv[0] = keys
         self.h[i].attn.cache_kv[1] = values
-        h = openclk.kernel_3(xq,keys,values,self.h[i].attn.c_proj.weight,\
-        self.h[i].attn.c_proj.bias,h,\
-        self.h[i].ln_2.weight, self.h[i].ln_2.bias,\
-        self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias\
-        ,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
 
         #h = openclk.kernel_1(h,h_temp,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias\
         #,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
