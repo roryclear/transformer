@@ -205,14 +205,10 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
             mean = pow(total / {dim} + 1e-5,0.5);
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {seg}; i++) {{
-            a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * c[i + lidx0*{seg}]) / mean + d[i + lidx0*{seg}];
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {int(dim*3 / ls)}; i++) {{
             float total = 0;
             for(int k = 0; k < {dim}; k++) {{
-                total += a[k] * e[(lidx0*{int(dim*3 / ls)} + i)*{dim} + k]; 
+                total += ((a[k] * c[k]) / mean + d[k]) * e[(lidx0*{int(dim*3 / ls)} + i)*{dim} + k];
             }}
             if((lidx0*{int(dim*3 / ls)} + i) < {g}) {{
                 xq[lidx0*{int(dim*3 / ls)} + i] += total;
