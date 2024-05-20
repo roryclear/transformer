@@ -760,9 +760,10 @@ def matvec_b(a,b,c,h):
     cl.enqueue_copy(queue, h, h_g)
     return h
 
-def matvec2(h,bias2,res): #pass bias in instead of adding to zero, todo for other kernels
+def matvec2(h,bias2): #pass bias in instead of adding to zero, todo for other kernels
     rows = np.shape(bias2)[0]
     cols = np.shape(bias2)[1]
+    res = np.zeros(cols).astype(np.float32)
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     bias2 = bias2.flatten()
     bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias2)
@@ -785,33 +786,28 @@ def matvec2(h,bias2,res): #pass bias in instead of adding to zero, todo for othe
     cl.enqueue_copy(queue, res, res_g)
     return res
 
-def matvec2_b(a,b,c): #pass bias in instead of adding to zero, todo for other kernels
-    ls = 256
-    rows = np.shape(b)[0]
-    cols = np.shape(b)[1]
-    print("rows cols =",rows,cols)
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b = b.flatten()
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = c.flatten()
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+def matvec2_b(h,weight2): #pass bias in instead of adding to zero, todo for other kernels
+    rows = 768
+    cols = 50257
+    res = np.zeros(cols).astype(np.float32)
+    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
+    bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
+    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     prg = cl.Program(ctx, f"""
     __kernel void matvec(
-        __global const float *a, __global const float *b , __global float *res)
+        __global const float *h, __global const float *weight2 , __global float *res)
     {{
-        int lidx0 = get_local_id(0);
-        for(int i = 0; i < 3; i++) {{
-            for(int j = 0; j < 3072; j++) {{
-                res[lidx0 + i*256] += a[j] * b[lidx0 + i*256 + j*768];
-            }}
+        int gidx0 = get_global_id(0);
+        for(int j = 0; j < {rows}; j++) {{
+            res[gidx0] += h[j] * weight2[gidx0 + j*{cols}];
         }}
     }}
     """).build()
     knl = prg.matvec
-    knl(queue, (256,1), (256,1), a_g, b_g,c_g)
-    cl.enqueue_copy(queue, c, c_g)
-    return c
+    gidx = math.ceil(cols / 16) * 16
+    knl(queue, (gidx,1), (16,1), h_g, bias2_g,res_g)
+    cl.enqueue_copy(queue, res, res_g)
+    return res
 
 def matmul_t(a,b):
     a_rows = np.shape(a)[0]
@@ -1012,12 +1008,12 @@ def transpose(a):
     cl.enqueue_copy(queue, at, at_g)
     return at.reshape(12,64,s)
 
-def time_it(func,a,i=100):
+def time_it(func,a,b,i=100):
     f = None
     total_time = 0
     for _ in range(i):
         st = time.perf_counter()
-        ret = func(a)
+        ret = func(a,b)
         t = time.perf_counter() - st
         total_time += t
         if f is None or t < f:
@@ -1025,14 +1021,14 @@ def time_it(func,a,i=100):
     return ret,f
 
 #12,15,64
+#50257
 '''
-i = 15
-for i in range(14,130):
-    a = np.random.rand(i,12,64).astype(np.float32)
-    b_np = a.transpose(1,2,0)
-    bf,tf = time_it(transpose_f,a,100)
-    b,t = time_it(transpose,a,1)
-    np.testing.assert_allclose(b,b_np,rtol=1e-5)
-    np.testing.assert_allclose(bf,b_np,rtol=1e-5)
-    print(i,"times =\t",t,"\t",tf)
+a = np.random.rand(768).astype(np.float32)
+b = np.random.rand(768,50257).astype(np.float32)
+n,t = time_it(matvec2,a,b,20)
+nb,tb = time_it(matvec2_b,a,b,20)
+n_np = np.matmul(a,b)
+np.testing.assert_allclose(n,n_np,rtol=1e-5)
+np.testing.assert_allclose(nb,n_np,rtol=1e-5)
+print("times:\t",t,"\t",tb)
 '''
