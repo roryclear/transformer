@@ -241,14 +241,9 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
             float val = temp3[i + lidx0*{start_pos+1}];
             m = max(m,val);
         }}
-        for(int i = 0; i < {start_pos+1}; i++) {{
-            temp3[i + lidx0*{start_pos+1}] = exp(temp3[i + lidx0*{start_pos+1}] - m);
-        }}
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
-        if(lidx0 < 12) {{
         float t = 0;
         for(int i = 0; i < {start_pos+1}; i++) {{
+            temp3[i + lidx0*{start_pos+1}] = exp(temp3[i + lidx0*{start_pos+1}] - m);
             float val = temp3[i + lidx0*{start_pos+1}];
             t = t+val;
         }}
