@@ -268,7 +268,7 @@ class Transformer:
         #h = h_out
       h = openclk.kernel_3(h,self.ln_f.weight, self.ln_f.bias)
       self.lm_head.weight = self.lm_head.weight.flatten()
-      logits = openclk.matvec2_b(h,self.lm_head.weight)
+      logits = openclk.matvec2(h,self.lm_head.weight)
     else:
       tok_emb = self.wte(tokens)
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,self.dim))
