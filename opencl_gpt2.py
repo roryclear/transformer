@@ -267,7 +267,7 @@ class Transformer:
         #,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
         #h = h_out
       
-      h = openclk.kernel_0(h,self.ln_f.weight, self.ln_f.bias)
+      h = openclk.kernel_3(h,self.ln_f.weight, self.ln_f.bias)
       logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
     else:
       tok_emb = self.wte(tokens)

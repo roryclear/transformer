@@ -72,6 +72,62 @@ def minus_mean_multi(a):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
+def kernel_3(h,weight,bias):
+    size = np.shape(h)[0]
+    ls = 256
+    seg = int(size / ls) #todo
+    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
+    weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
+    bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
+    prg = cl.Program(ctx, f"""
+    __kernel void mm(
+        __global float *h, __global const float *weight, __global const float *bias)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{seg}];
+        __attribute__ ((aligned (16))) __local float mean;
+        int lidx0 = get_local_id(0);
+        float total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += h[lidx0*{seg} + i];
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = total / {size};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            h[i + lidx0*{seg}] -= mean;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += pow(h[lidx0*{seg} + i],2);
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = pow(total / {size} + 1e-5,0.5);
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            h[i + lidx0*{seg}] = (h[i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / mean + bias[i + lidx0*{seg}];
+        }}
+    }}
+    """).build()
+    knl = prg.mm
+    knl(queue, (ls,1), (ls,1), h_g, weight_g, bias_g) #rory to test large stuff
+    cl.enqueue_copy(queue, h, h_g)
+    return h
+
 def kernel_0(a,c,d):
     size = np.shape(a)[0]
     ls = 256
@@ -704,30 +760,30 @@ def matvec_b(a,b,c,h):
     cl.enqueue_copy(queue, h, h_g)
     return h
 
-def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kernels
-    rows = np.shape(b)[0]
-    cols = np.shape(b)[1]
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b = b.flatten()
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = c.flatten()
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+def matvec2(h,bias2,res): #pass bias in instead of adding to zero, todo for other kernels
+    rows = np.shape(bias2)[0]
+    cols = np.shape(bias2)[1]
+    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
+    bias2 = bias2.flatten()
+    bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias2)
+    res = res.flatten()
+    res = np.float32(res)
+    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     prg = cl.Program(ctx, f"""
     __kernel void matvec(
-        __global const float *a, __global const float *b , __global float *res)
+        __global const float *h, __global const float *bias2 , __global float *res)
     {{
         int gidx0 = get_global_id(0);
         for(int j = 0; j < {rows}; j++) {{
-            res[gidx0] += a[j] * b[gidx0 + j*{cols}];
+            res[gidx0] += h[j] * bias2[gidx0 + j*{cols}];
         }}
     }}
     """).build()
     knl = prg.matvec
     gidx = math.ceil(cols / 16) * 16
-    knl(queue, (gidx,1), (16,1), a_g, b_g,c_g)
-    cl.enqueue_copy(queue, c, c_g)
-    return c
+    knl(queue, (gidx,1), (16,1), h_g, bias2_g,res_g)
+    cl.enqueue_copy(queue, res, res_g)
+    return res
 
 def matvec2_b(a,b,c): #pass bias in instead of adding to zero, todo for other kernels
     ls = 256
