@@ -289,7 +289,6 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
         for(int i = 0; i < {seg}; i++) {{
             h[i + lidx0*{seg}] = h[i + lidx0*{seg}] - mean;
             total += pow(h[lidx0*{seg} + i],2);
-            h[i + lidx0*{seg}] = h[i + lidx0*{seg}] * weight2[i + lidx0*{seg}];
         }}        
         temp[lidx0] = total;
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -301,13 +300,9 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
             mean = pow(total / {dim} + 1e-5,0.5);
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {seg}; i++) {{
-            h[i + lidx0*{seg}] = (h[i + lidx0*{seg}]) / mean + bias2[i + lidx0*{seg}];
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {int(dim*4 / ls)}; i++) {{
             for(int j = 0; j < {dim}; j++) {{
-                bias3[i + lidx0*{int(dim*4 / ls)}] += h[j] * weight3[(i + lidx0*{int(dim*4 / ls)})*{dim} + j];
+                bias3[i + lidx0*{int(dim*4 / ls)}] += ((h[j] * weight2[j]) / mean + bias2[j]) * weight3[(i + lidx0*{int(dim*4 / ls)})*{dim} + j];
             }}
             bias3[i + lidx0*{int(dim*4 / ls)}] = 0.5 * bias3[i + lidx0*{int(dim*4 / ls)}]\
             * (1 + tanh(bias3[i + lidx0*{int(dim*4 / ls)}] * 0.7978845608\
