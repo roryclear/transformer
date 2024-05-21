@@ -188,6 +188,7 @@ def kernel_2(h,c,d,e,f,g,keys,values,start_pos,weight,bias,\
     weight2,bias2,weight3,bias3,weight4,bias4): #g = size
     ls = 256
     temp = np.zeros(12*(start_pos+1)).astype(np.float32)
+    zeros = np.zeros(np.shape(bias4)[0])
     xq = f[0:g]
     xk = f[g:2*g]
     xv = f[2*g:]
@@ -206,8 +207,8 @@ def kernel_2(h,c,d,e,f,g,keys,values,start_pos,weight,bias,\
     temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=temp)
     weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
     bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
-    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
+    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
+    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
     weight2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
     bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias2)
     weight3_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight3)
@@ -315,7 +316,7 @@ def kernel_2(h,c,d,e,f,g,keys,values,start_pos,weight,bias,\
             for(int x = 0; x < {dim}; x++) {{
                 acc += xq[x] * weight[x*{dim} + lidx0*{seg} + i];
             }}
-            h[lidx0*{seg} + i] += acc + bias[lidx0*{seg} + i];
+            h[lidx0*{seg} + i] = a[lidx0*{seg} + i] + acc + bias[lidx0*{seg} + i];
             h_temp[lidx0*{seg} + i] = h[lidx0*{seg} + i];
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -361,7 +362,7 @@ def kernel_2(h,c,d,e,f,g,keys,values,start_pos,weight,bias,\
             for(int j = 0; j < {dim*4}; j++) {{
                 bias4[lidx0 + i*{ls}] += bias3[j] * weight4[lidx0 + i*{ls} + j*{dim}];
             }}
-            bias4[lidx0 + i*{ls}] += h_temp[lidx0 + i*{ls}];
+            a[lidx0 + i*{ls}] = bias4[lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
         }}
     }}
     """).build()
@@ -371,8 +372,8 @@ def kernel_2(h,c,d,e,f,g,keys,values,start_pos,weight,bias,\
     h_g,h_temp_g,weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g)
     cl.enqueue_copy(queue, keys, keys_g)
     cl.enqueue_copy(queue, values, values_g)
-    cl.enqueue_copy(queue, bias4, bias4_g)
-    return bias4
+    cl.enqueue_copy(queue, h, a_g)
+    return h
 
 def kernel_1b(h_in,c,d,f):
     size = np.shape(h_in)[0]
