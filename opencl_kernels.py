@@ -372,7 +372,7 @@ def kernel_2(h,c,d,e,f,g,keys,values,start_pos,weight,bias,\
     cl.enqueue_copy(queue, keys, keys_g)
     cl.enqueue_copy(queue, values, values_g)
     cl.enqueue_copy(queue, bias4, bias4_g)
-    return keys,values,bias4
+    return bias4
 
 def kernel_1b(h_in,c,d,f):
     size = np.shape(h_in)[0]

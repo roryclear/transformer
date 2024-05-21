@@ -250,7 +250,7 @@ class Transformer:
         self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten()
       for i in range(len(self.h)):
         #inlined attn
-        self.h[i].attn.cache_kv[0],self.h[i].attn.cache_kv[1],h = openclk.kernel_2(h,self.h[i].ln_1.weight,\
+        h = openclk.kernel_2(h,self.h[i].ln_1.weight,\
         self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
         self.h[i].attn.c_attn.bias,self.h[i].attn.dim,\
         self.h[i].attn.cache_kv[0],self.h[i].attn.cache_kv[1],start_pos,\
