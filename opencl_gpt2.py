@@ -248,6 +248,8 @@ class Transformer:
         #inlined attn
         keys = self.h[i].attn.cache_kv[0]
         values = self.h[i].attn.cache_kv[1]
+        self.h[i].attn.c_proj.weight = self.h[i].attn.c_proj.weight.flatten()
+        self.h[i].mlp.c_proj.weight = self.h[i].mlp.c_proj.weight.flatten()
         keys = np.resize(keys,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
         values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
         keys,values,h = openclk.kernel_2(h,self.h[i].ln_1.weight,\
