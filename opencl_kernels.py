@@ -194,7 +194,7 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
     h_temp = np.copy(h)
-    bias4 = bias4.flatten()
+    bias4 = bias4.flatten() #todo why is this needed?
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
@@ -215,7 +215,6 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     bias3_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias3)
     weight4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight4)
     bias4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias4)
-    values = values.flatten()
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
