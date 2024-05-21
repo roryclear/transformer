@@ -187,8 +187,8 @@ def kernel_0(a,c,d):
 def kernel_2(h,c,d,e,f,g,keys,values,start_pos,weight,bias,\
     weight2,bias2,weight3,bias3,weight4,bias4): #g = size
     ls = 256
-    temp = np.zeros(12*(start_pos+1)).astype(np.float32)
-    zeros = np.zeros(np.shape(bias4)[0])
+    zeros = np.zeros(np.shape(bias4)[0]).astype(np.float32)
+    zeros2 = np.zeros(12*(start_pos+1)).astype(np.float32)
     xq = f[0:g]
     xk = f[g:2*g]
     xv = f[2*g:]
@@ -204,27 +204,28 @@ def kernel_2(h,c,d,e,f,g,keys,values,start_pos,weight,bias,\
     xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
     keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
     values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=values)
-    temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=temp)
     weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
     bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
-    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
     weight2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
     bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias2)
     weight3_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight3)
     bias3_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias3)
     weight4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight4)
     bias4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias4)
+    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
+    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
+    temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros2)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
         __global float *xq, __global const float *xk, __global const float *xv, __global float *keys,
-        __global float *values, __global float *temp3,
-        __global const float *weight,__global const float *bias, __global float *h, __global float *h_temp,
+        __global float *values,
+        __global const float *weight,__global const float *bias,
         __global const float *weight2, __global const float *bias2,
         __global const float *weight3, __global float *bias3,
         __global const float *weight4,
-        __global float *bias4)
+        __global float *bias4, __global float *h_temp, __global float *h,
+        __global float *temp3)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
@@ -367,9 +368,9 @@ def kernel_2(h,c,d,e,f,g,keys,values,start_pos,weight,bias,\
     }}
     """).build()
     knl = prg.mm
-    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,xq_g,xk_g,xv_g\
-    ,keys_g,values_g,temp_g,weight_g,bias_g,\
-    h_g,h_temp_g,weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g)
+    knl(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xq_g,xk_g,xv_g\
+    ,keys_g,values_g,weight_g,bias_g,\
+    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,h_g,h_temp_g,temp_g)
     cl.enqueue_copy(queue, keys, keys_g)
     cl.enqueue_copy(queue, values, values_g)
     cl.enqueue_copy(queue, h, a_g)
