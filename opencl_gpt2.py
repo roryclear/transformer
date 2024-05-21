@@ -254,7 +254,7 @@ class Transformer:
         self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
         self.h[i].attn.c_attn.bias,self.h[i].attn.dim,\
         self.h[i].attn.cache_kv[0],self.h[i].attn.cache_kv[1],start_pos,\
-        self.h[i].attn.c_proj.weight,self.h[i].attn.c_proj.bias,h,\
+        self.h[i].attn.c_proj.weight,self.h[i].attn.c_proj.bias,\
         self.h[i].ln_2.weight, self.h[i].ln_2.bias,\
         self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias,\
         self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
