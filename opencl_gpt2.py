@@ -239,8 +239,55 @@ class Transformer:
     self.ln_f = LayerNorm(dim,norm_eps)
     self.lm_head = Linear(dim, vocab_size, bias=False)
     self.dim = dim
+    #self.ln_1_weights = None
 
   def forward(self, tokens, start_pos, temperature:float=0.0):
+    if hasattr(self, 'ln_1_weights') == False:
+      print("FFFFFFSSSS ln_1_weights")
+      self.ln_1_weights = np.concatenate((self.h[0].ln_1.weight,self.h[1].ln_1.weight))
+    if hasattr(self, 'ln_1_bias') == False:
+      print("FFFFFFSSSS ln_1_bias")
+      self.ln_1_bias = np.concatenate((self.h[0].ln_1.bias,self.h[1].ln_1.bias))
+    if hasattr(self, 'attn_c_attn_bias') == False: #2304,
+      print("FFFFFFSSSS attn_c_attn_bias")
+      self.attn_c_attn_bias = np.concatenate((self.h[0].attn.c_attn.bias,self.h[1].attn.c_attn.bias))
+    if hasattr(self, 'attn_c_proj_bias') == False:
+      print("FFFFFFSSSS attn_c_proj_bias")
+      self.attn_c_proj_bias = np.concatenate((self.h[0].attn.c_proj.bias,self.h[1].attn.c_proj.bias))
+    if hasattr(self, 'ln_2_weight') == False: #768,
+      print("FFFFFFSSSS ln_2_weight")
+      self.ln_2_weight = np.concatenate((self.h[0].ln_2.weight,self.h[1].ln_2.weight))
+    if hasattr(self, 'ln_2_bias') == False: #768,
+      print("FFFFFFSSSS ln_2_bias")
+      self.ln_2_bias = np.concatenate((self.h[0].ln_2.bias,self.h[1].ln_2.bias))
+    if hasattr(self, 'mlp_c_fc_bias') == False: #768,
+      print("FFFFFFSSSS mlp_c_fc_bias")
+      self.mlp_c_fc_bias = np.concatenate((self.h[0].mlp.c_fc.bias,self.h[1].mlp.c_fc.bias))
+    if hasattr(self, 'attn_c_attn_weight') == False: #768*2304
+      print("FFFFFFSSSS attn_c_attn_weight")
+      self.attn_c_attn_weight = np.concatenate((self.h[0].attn.c_attn.weight.transpose(1,0).flatten(),\
+      self.h[1].attn.c_attn.weight.transpose(1,0).flatten()))
+    if hasattr(self, 'attn_c_proj_weight') == False: #768*2304
+      print("FFFFFFSSSS attn_c_proj_weight")
+      self.attn_c_proj_weight = np.concatenate((self.h[0].attn.c_proj.weight.flatten(),\
+      self.h[1].attn.c_proj.weight.flatten()))
+    if hasattr(self, 'mlp_c_fc_weight') == False: #768*2304
+      print("FFFFFFSSSS mlp_c_fc_weight")
+      self.mlp_c_fc_weight = np.concatenate((self.h[0].mlp.c_fc.weight.transpose(1,0).flatten(),\
+      self.h[1].mlp.c_fc.weight.transpose(1,0).flatten()))
+    if hasattr(self, 'mlp_c_proj_weight') == False: #768*2304
+      print("FFFFFFSSSS mlp.c_proj.weight")
+      self.mlp_c_proj_weight = np.concatenate((self.h[0].mlp.c_proj.weight.flatten(),\
+      self.h[1].mlp.c_proj.weight.flatten()))
+    if hasattr(self, 'mlp_c_proj_bias') == False: #768
+      print("FFFFFFSSSS mlp_c_proj_bias")
+      self.mlp_c_proj_bias = np.concatenate((self.h[0].mlp.c_proj.bias,\
+      self.h[1].mlp.c_proj.bias))
+      print(np.shape(self.mlp_c_proj_bias))
+    # 2D !
+    #if hasattr(self, 'attn_c_attn_weight') == False:
+      #print("FFFFFFSSSS attn_c_attn_weight")
+      #self.attn_c_attn_weight = np.concatenate((self.h[0].attn.c_attn.weight.flatten(),self.h[1].attn.c_attn.weight.flatten()))
     seqlen = len(tokens)
     if start_pos > 0:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
@@ -248,7 +295,22 @@ class Transformer:
         self.h[i].attn.c_proj.weight = self.h[i].attn.c_proj.weight.flatten()
         self.h[i].mlp.c_proj.weight = self.h[i].mlp.c_proj.weight.flatten()
         self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten()
-      for i in range(len(self.h)):
+
+      h = openclk.kernel_4(h,self.ln_1_weights,\
+      self.ln_1_bias,\
+      self.attn_c_attn_bias,self.h[0].attn.dim,\
+      start_pos,\
+      self.attn_c_proj_bias,\
+      self.ln_2_weight, self.ln_2_bias,\
+      self.mlp_c_fc_bias,\
+      self.attn_c_attn_weight,\
+      self.h[0].attn.cache_kv[0],self.h[0].attn.cache_kv[1],
+      self.attn_c_proj_weight,
+      self.mlp_c_fc_weight,
+      self.mlp_c_proj_weight,self.mlp_c_proj_bias,\
+      self.h[1].attn.cache_kv[0],self.h[1].attn.cache_kv[1])
+
+      for i in range(2,len(self.h)):
         #inlined attn
         h = openclk.kernel_2(h,self.h[i].ln_1.weight,\
         self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
