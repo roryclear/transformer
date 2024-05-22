@@ -246,90 +246,68 @@ class Transformer:
     if hasattr(self, 'ln_1_weights') == False:
       print("copying ln_1_weights")
       self.ln_1_weights = self.h[0].ln_1.weight
-      self.ln_1_weights = np.concatenate((self.ln_1_weights,self.h[1].ln_1.weight))
-      self.ln_1_weights = np.concatenate((self.ln_1_weights,self.h[2].ln_1.weight))
-      self.ln_1_weights = np.concatenate((self.ln_1_weights,self.h[3].ln_1.weight))
+      for i in range(1,12):
+        self.ln_1_weights = np.concatenate((self.ln_1_weights,self.h[i].ln_1.weight))
     if hasattr(self, 'ln_1_bias') == False:
       print("copying ln_1_bias")
       self.ln_1_bias = self.h[0].ln_1.bias
-      self.ln_1_bias = np.concatenate((self.ln_1_bias,self.h[1].ln_1.bias))
-      self.ln_1_bias = np.concatenate((self.ln_1_bias,self.h[2].ln_1.bias))
-      self.ln_1_bias = np.concatenate((self.ln_1_bias,self.h[3].ln_1.bias))
+      for i in range(1,12):
+        self.ln_1_bias = np.concatenate((self.ln_1_bias,self.h[i].ln_1.bias))
     if hasattr(self, 'attn_c_attn_bias') == False: #2304,
       print("copying attn_c_attn_bias")
       self.attn_c_attn_bias = self.h[0].attn.c_attn.bias
-      self.attn_c_attn_bias = np.concatenate((self.attn_c_attn_bias,self.h[1].attn.c_attn.bias))
-      self.attn_c_attn_bias = np.concatenate((self.attn_c_attn_bias,self.h[2].attn.c_attn.bias))
-      self.attn_c_attn_bias = np.concatenate((self.attn_c_attn_bias,self.h[3].attn.c_attn.bias))
+      for i in range(1,12):
+        self.attn_c_attn_bias = np.concatenate((self.attn_c_attn_bias,self.h[i].attn.c_attn.bias))
     if hasattr(self, 'attn_c_proj_bias') == False:
       print("copying attn_c_proj_bias")
       self.attn_c_proj_bias = self.h[0].attn.c_proj.bias
-      self.attn_c_proj_bias = np.concatenate((self.attn_c_proj_bias,self.h[1].attn.c_proj.bias))
-      self.attn_c_proj_bias = np.concatenate((self.attn_c_proj_bias,self.h[2].attn.c_proj.bias))
-      self.attn_c_proj_bias = np.concatenate((self.attn_c_proj_bias,self.h[3].attn.c_proj.bias))
+      for i in range(1,12):
+        self.attn_c_proj_bias = np.concatenate((self.attn_c_proj_bias,self.h[i].attn.c_proj.bias))
     if hasattr(self, 'ln_2_weight') == False: #768,
       print("copying ln_2_weight")
       self.ln_2_weight = self.h[0].ln_2.weight
-      self.ln_2_weight = np.concatenate((self.ln_2_weight,self.h[1].ln_2.weight))
-      self.ln_2_weight = np.concatenate((self.ln_2_weight,self.h[2].ln_2.weight))
-      self.ln_2_weight = np.concatenate((self.ln_2_weight,self.h[3].ln_2.weight))
+      for i in range(1,12):
+        self.ln_2_weight = np.concatenate((self.ln_2_weight,self.h[i].ln_2.weight))
     if hasattr(self, 'ln_2_bias') == False: #768,
       print("copying ln_2_bias")
       self.ln_2_bias = self.h[0].ln_2.bias
-      self.ln_2_bias = np.concatenate((self.ln_2_bias,self.h[1].ln_2.bias))
-      self.ln_2_bias = np.concatenate((self.ln_2_bias,self.h[2].ln_2.bias))
-      self.ln_2_bias = np.concatenate((self.ln_2_bias,self.h[3].ln_2.bias))
+      for i in range(1,12):
+        self.ln_2_bias = np.concatenate((self.ln_2_bias,self.h[i].ln_2.bias))
     if hasattr(self, 'mlp_c_fc_bias') == False: #768,
       print("copying mlp_c_fc_bias")
       self.mlp_c_fc_bias = self.h[0].mlp.c_fc.bias
-      self.mlp_c_fc_bias = np.concatenate((self.mlp_c_fc_bias,self.h[1].mlp.c_fc.bias))
-      self.mlp_c_fc_bias = np.concatenate((self.mlp_c_fc_bias,self.h[2].mlp.c_fc.bias))
-      self.mlp_c_fc_bias = np.concatenate((self.mlp_c_fc_bias,self.h[3].mlp.c_fc.bias))
+      for i in range(1,12):
+        self.mlp_c_fc_bias = np.concatenate((self.mlp_c_fc_bias,self.h[i].mlp.c_fc.bias))
     if hasattr(self, 'attn_c_attn_weight') == False: #768*2304
       print("copying attn_c_attn_weight")
       self.attn_c_attn_weight = self.h[0].attn.c_attn.weight.transpose(1,0).flatten()
-      self.attn_c_attn_weight = np.concatenate((self.attn_c_attn_weight,\
-      self.h[1].attn.c_attn.weight.transpose(1,0).flatten()))
-      self.attn_c_attn_weight = np.concatenate((self.attn_c_attn_weight,\
-      self.h[2].attn.c_attn.weight.transpose(1,0).flatten()))
-      self.attn_c_attn_weight = np.concatenate((self.attn_c_attn_weight,\
-      self.h[3].attn.c_attn.weight.transpose(1,0).flatten()))
+      for i in range(1,12):
+        self.attn_c_attn_weight = np.concatenate((self.attn_c_attn_weight,\
+        self.h[i].attn.c_attn.weight.transpose(1,0).flatten()))
     if hasattr(self, 'attn_c_proj_weight') == False: #768*2304
       print("copying attn_c_proj_weight")
       self.attn_c_proj_weight = self.h[0].attn.c_proj.weight.flatten()
-      self.attn_c_proj_weight = np.concatenate((self.attn_c_proj_weight,\
-      self.h[1].attn.c_proj.weight.flatten()))
-      self.attn_c_proj_weight = np.concatenate((self.attn_c_proj_weight,\
-      self.h[2].attn.c_proj.weight.flatten()))
-      self.attn_c_proj_weight = np.concatenate((self.attn_c_proj_weight,\
-      self.h[3].attn.c_proj.weight.flatten()))
+      for i in range(1,12):
+        self.attn_c_proj_weight = np.concatenate((self.attn_c_proj_weight,\
+        self.h[i].attn.c_proj.weight.flatten()))
     if hasattr(self, 'mlp_c_fc_weight') == False: #768*2304
       print("copying mlp_c_fc_weight")
       self.mlp_c_fc_weight = self.h[0].mlp.c_fc.weight.transpose(1,0).flatten()
-      self.mlp_c_fc_weight = np.concatenate((self.mlp_c_fc_weight,\
-      self.h[1].mlp.c_fc.weight.transpose(1,0).flatten()))
-      self.mlp_c_fc_weight = np.concatenate((self.mlp_c_fc_weight,\
-      self.h[2].mlp.c_fc.weight.transpose(1,0).flatten()))
-      self.mlp_c_fc_weight = np.concatenate((self.mlp_c_fc_weight,\
-      self.h[3].mlp.c_fc.weight.transpose(1,0).flatten()))
+      for i in range(1,12):
+        self.mlp_c_fc_weight = np.concatenate((self.mlp_c_fc_weight,\
+        self.h[i].mlp.c_fc.weight.transpose(1,0).flatten()))
     if hasattr(self, 'mlp_c_proj_weight') == False: #768*2304
       print("copying mlp.c_proj.weight")
       self.mlp_c_proj_weight = self.h[0].mlp.c_proj.weight.flatten()
-      self.mlp_c_proj_weight = np.concatenate((self.mlp_c_proj_weight,\
-      self.h[1].mlp.c_proj.weight.flatten()))
-      self.mlp_c_proj_weight = np.concatenate((self.mlp_c_proj_weight,\
-      self.h[2].mlp.c_proj.weight.flatten()))
-      self.mlp_c_proj_weight = np.concatenate((self.mlp_c_proj_weight,\
-      self.h[3].mlp.c_proj.weight.flatten()))
+      for i in range(1,12):
+        self.mlp_c_proj_weight = np.concatenate((self.mlp_c_proj_weight,\
+        self.h[i].mlp.c_proj.weight.flatten()))
     if hasattr(self, 'mlp_c_proj_bias') == False: #768
       print("copying mlp_c_proj_bias")
       self.mlp_c_proj_bias = self.h[0].mlp.c_proj.bias
-      self.mlp_c_proj_bias = np.concatenate((self.mlp_c_proj_bias,\
-      self.h[1].mlp.c_proj.bias))
-      self.mlp_c_proj_bias = np.concatenate((self.mlp_c_proj_bias,\
-      self.h[2].mlp.c_proj.bias))
-      self.mlp_c_proj_bias = np.concatenate((self.mlp_c_proj_bias,\
-      self.h[3].mlp.c_proj.bias))
+      for i in range(1,12):
+        self.mlp_c_proj_bias = np.concatenate((self.mlp_c_proj_bias,\
+        self.h[i].mlp.c_proj.bias))
     # 2D !
     #if hasattr(self, 'attn_c_attn_weight') == False:
       #print("FFFFFFSSSS attn_c_attn_weight")
@@ -344,12 +322,9 @@ class Transformer:
 
       if hasattr(self, 'attn_cache_kv') == False: #128, 12, 64 -> 
         self.attn_cache_kv = np.concatenate((self.h[0].attn.cache_kv[0].flatten(),self.h[0].attn.cache_kv[1].flatten()))
-        self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[1].attn.cache_kv[0].flatten()))
-        self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[1].attn.cache_kv[1].flatten()))
-        self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[2].attn.cache_kv[0].flatten()))
-        self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[2].attn.cache_kv[1].flatten()))
-        self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[3].attn.cache_kv[0].flatten()))
-        self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[3].attn.cache_kv[1].flatten()))
+        for i in range(1,12):
+          self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[i].attn.cache_kv[0].flatten()))
+          self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[i].attn.cache_kv[1].flatten()))
 
       h = openclk.kernel_4(h,self.ln_1_weights,\
       self.ln_1_bias,\
@@ -364,17 +339,6 @@ class Transformer:
       self.mlp_c_fc_weight,
       self.mlp_c_proj_weight,self.mlp_c_proj_bias)
 
-      
-      for i in range(4,len(self.h)):
-        #inlined attn
-        h = openclk.kernel_2(h,self.h[i].ln_1.weight,\
-        self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
-        self.h[i].attn.c_attn.bias,self.h[i].attn.dim,\
-        self.h[i].attn.cache_kv[0],self.h[i].attn.cache_kv[1],start_pos,\
-        self.h[i].attn.c_proj.weight,self.h[i].attn.c_proj.bias,\
-        self.h[i].ln_2.weight, self.h[i].ln_2.bias,\
-        self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias,\
-        self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
       h = openclk.kernel_3(h,self.ln_f.weight, self.ln_f.bias)
       self.lm_head.weight = self.lm_head.weight.flatten()
       logits = openclk.matvec2(h,self.lm_head.weight)
