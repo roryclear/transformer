@@ -243,47 +243,46 @@ class Transformer:
 
   def forward(self, tokens, start_pos, temperature:float=0.0):
     if hasattr(self, 'ln_1_weights') == False:
-      print("FFFFFFSSSS ln_1_weights")
+      print("copying ln_1_weights")
       self.ln_1_weights = np.concatenate((self.h[0].ln_1.weight,self.h[1].ln_1.weight))
     if hasattr(self, 'ln_1_bias') == False:
-      print("FFFFFFSSSS ln_1_bias")
+      print("copying ln_1_bias")
       self.ln_1_bias = np.concatenate((self.h[0].ln_1.bias,self.h[1].ln_1.bias))
     if hasattr(self, 'attn_c_attn_bias') == False: #2304,
-      print("FFFFFFSSSS attn_c_attn_bias")
+      print("copying attn_c_attn_bias")
       self.attn_c_attn_bias = np.concatenate((self.h[0].attn.c_attn.bias,self.h[1].attn.c_attn.bias))
     if hasattr(self, 'attn_c_proj_bias') == False:
-      print("FFFFFFSSSS attn_c_proj_bias")
+      print("copying attn_c_proj_bias")
       self.attn_c_proj_bias = np.concatenate((self.h[0].attn.c_proj.bias,self.h[1].attn.c_proj.bias))
     if hasattr(self, 'ln_2_weight') == False: #768,
-      print("FFFFFFSSSS ln_2_weight")
+      print("copying ln_2_weight")
       self.ln_2_weight = np.concatenate((self.h[0].ln_2.weight,self.h[1].ln_2.weight))
     if hasattr(self, 'ln_2_bias') == False: #768,
-      print("FFFFFFSSSS ln_2_bias")
+      print("copying ln_2_bias")
       self.ln_2_bias = np.concatenate((self.h[0].ln_2.bias,self.h[1].ln_2.bias))
     if hasattr(self, 'mlp_c_fc_bias') == False: #768,
-      print("FFFFFFSSSS mlp_c_fc_bias")
+      print("copying mlp_c_fc_bias")
       self.mlp_c_fc_bias = np.concatenate((self.h[0].mlp.c_fc.bias,self.h[1].mlp.c_fc.bias))
     if hasattr(self, 'attn_c_attn_weight') == False: #768*2304
-      print("FFFFFFSSSS attn_c_attn_weight")
+      print("copying attn_c_attn_weight")
       self.attn_c_attn_weight = np.concatenate((self.h[0].attn.c_attn.weight.transpose(1,0).flatten(),\
       self.h[1].attn.c_attn.weight.transpose(1,0).flatten()))
     if hasattr(self, 'attn_c_proj_weight') == False: #768*2304
-      print("FFFFFFSSSS attn_c_proj_weight")
+      print("copying attn_c_proj_weight")
       self.attn_c_proj_weight = np.concatenate((self.h[0].attn.c_proj.weight.flatten(),\
       self.h[1].attn.c_proj.weight.flatten()))
     if hasattr(self, 'mlp_c_fc_weight') == False: #768*2304
-      print("FFFFFFSSSS mlp_c_fc_weight")
+      print("copying mlp_c_fc_weight")
       self.mlp_c_fc_weight = np.concatenate((self.h[0].mlp.c_fc.weight.transpose(1,0).flatten(),\
       self.h[1].mlp.c_fc.weight.transpose(1,0).flatten()))
     if hasattr(self, 'mlp_c_proj_weight') == False: #768*2304
-      print("FFFFFFSSSS mlp.c_proj.weight")
+      print("copying mlp.c_proj.weight")
       self.mlp_c_proj_weight = np.concatenate((self.h[0].mlp.c_proj.weight.flatten(),\
       self.h[1].mlp.c_proj.weight.flatten()))
     if hasattr(self, 'mlp_c_proj_bias') == False: #768
-      print("FFFFFFSSSS mlp_c_proj_bias")
+      print("copying mlp_c_proj_bias")
       self.mlp_c_proj_bias = np.concatenate((self.h[0].mlp.c_proj.bias,\
       self.h[1].mlp.c_proj.bias))
-      print(np.shape(self.mlp_c_proj_bias))
     # 2D !
     #if hasattr(self, 'attn_c_attn_weight') == False:
       #print("FFFFFFSSSS attn_c_attn_weight")
