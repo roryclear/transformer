@@ -185,7 +185,7 @@ def kernel_0(a,c,d):
     return a
 
 def kernel_4(h,c_g,d_g,f,g,start_pos,bias_g,\
-    weight2_g,bias2_g,bias3,\
+    weight2_g,bias2_g,bias3_g,\
     e_g,keys_values,weight_g,weight3_g,weight4_g,bias4): #g = size
     ls = 256
     zeros = np.zeros(np.shape(bias4)[0]).astype(np.float32)
@@ -193,8 +193,7 @@ def kernel_4(h,c_g,d_g,f,g,start_pos,bias_g,\
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
-    keys_values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys_values) #AND VALUES NOW
-    bias3_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias3)
+    keys_values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys_values)
     bias4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias4)
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
     h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
@@ -206,13 +205,14 @@ def kernel_4(h,c_g,d_g,f,g,start_pos,bias_g,\
         __global float *xqkv, __global float *keys_values,
         __global const float *weight,__global const float *bias,
         __global const float *weight2, __global const float *bias2,
-        __global const float *weight3, __global float *bias3,
+        __global const float *weight3, __global const float *bias3,
         __global const float *weight4,
         __global float *bias4, __global float *h_temp, __global float *h,
         __global float *temp3)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
+        __attribute__ ((aligned (16))) __local float tempb3[3072];
         int lidx0 = get_local_id(0);
         for(int r = 0; r < 12; r++) {{
         barrier(CLK_LOCAL_MEM_FENCE);  
@@ -337,17 +337,18 @@ def kernel_4(h,c_g,d_g,f,g,start_pos,bias_g,\
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {int(dim*4 / ls)}; i++) {{
+            tempb3[i + lidx0*{int(dim*4 / ls)}] = bias3[3072*r + i + lidx0*{int(dim*4 / ls)}];
             for(int j = 0; j < {dim}; j++) {{
-                bias3[3072*r + i + lidx0*{int(dim*4 / ls)}] += ((h[j] * weight2[768*r + j]) / mean + bias2[768*r + j]) * weight3[768*3072*r + (i + lidx0*{int(dim*4 / ls)})*{dim} + j];
+                tempb3[i + lidx0*{int(dim*4 / ls)}] += ((h[j] * weight2[768*r + j]) / mean + bias2[768*r + j]) * weight3[768*3072*r + (i + lidx0*{int(dim*4 / ls)})*{dim} + j];
             }}
-            bias3[3072*r + i + lidx0*{int(dim*4 / ls)}] = 0.5 * bias3[3072*r + i + lidx0*{int(dim*4 / ls)}]\
-            * (1 + tanh(bias3[3072*r + i + lidx0*{int(dim*4 / ls)}] * 0.7978845608\
-            * (1 + 0.044715 * pow(bias3[3072*r + i + lidx0*{int(dim*4 / ls)}],2))));
+            tempb3[i + lidx0*{int(dim*4 / ls)}] = 0.5 * tempb3[i + lidx0*{int(dim*4 / ls)}]\
+            * (1 + tanh(tempb3[i + lidx0*{int(dim*4 / ls)}] * 0.7978845608\
+            * (1 + 0.044715 * pow(tempb3[i + lidx0*{int(dim*4 / ls)}],2))));
         }}
         barrier(CLK_LOCAL_MEM_FENCE);  
         for(int i = 0; i < {math.ceil(np.shape(bias4)[0] / 12 / ls)}; i++) {{ //todo because there's 2 now...now 12
             for(int j = 0; j < {dim*4}; j++) {{
-                bias4[768*r + lidx0 + i*{ls}] += bias3[3072*r + j] * weight4[3072*768*r + lidx0 + i*{ls} + j*{dim}];
+                bias4[768*r + lidx0 + i*{ls}] += tempb3[j] * weight4[3072*768*r + lidx0 + i*{ls} + j*{dim}];
             }}
             a[lidx0 + i*{ls}] = bias4[768*r + lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
         }}

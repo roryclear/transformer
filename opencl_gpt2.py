@@ -294,6 +294,7 @@ class Transformer:
       self.mlp_c_fc_bias = self.h[0].mlp.c_fc.bias
       for i in range(1,12):
         self.mlp_c_fc_bias = np.concatenate((self.mlp_c_fc_bias,self.h[i].mlp.c_fc.bias))
+      self.mlp_c_fc_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_fc_bias)
 
     if hasattr(self, 'attn_c_attn_weight') == False: #768*2304 NOT CONST
       print("copying attn_c_attn_weight")
