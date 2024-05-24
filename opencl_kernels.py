@@ -188,15 +188,12 @@ def kernel_4(h,c_g,d_g,f,g,start_pos,bias_g,\
     weight2_g,bias2_g,bias3_g,\
     e_g,keys_values,weight_g,weight3_g,weight4_g,bias4_g): #g = size
     ls = 256
-    zeros = np.zeros(768*12).astype(np.float32) #todo shrink
-    zeros2 = np.zeros(12*(start_pos+1)).astype(np.float32)
+    zeros = np.zeros(12*(start_pos+1)).astype(np.float32)
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     keys_values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys_values)
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
-    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
-    temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros2)
+    temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
     xqkv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
@@ -206,13 +203,15 @@ def kernel_4(h,c_g,d_g,f,g,start_pos,bias_g,\
         __global const float *weight2, __global const float *bias2,
         __global const float *weight3, __global const float *bias3,
         __global const float *weight4,
-        __global float const *bias4, __global float *h_temp, __global float *h,
+        __global const float *bias4,
         __global float *temp3)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
         __attribute__ ((aligned (16))) __local float tempb3[3072];
         __attribute__ ((aligned (16))) __local float tempb4[768];
+        __attribute__ ((aligned (16))) __local float h_temp[768];
+        __attribute__ ((aligned (16))) __local float h[768];
         int lidx0 = get_local_id(0);
         for(int r = 0; r < 12; r++) {{
         barrier(CLK_LOCAL_MEM_FENCE);  
@@ -360,7 +359,7 @@ def kernel_4(h,c_g,d_g,f,g,start_pos,bias_g,\
     knl = prg.mm
     knl(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
     ,keys_values_g,weight_g,bias_g,\
-    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,h_g,h_temp_g,temp_g)
+    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g)
     cl.enqueue_copy(queue, keys_values, keys_values_g)
     cl.enqueue_copy(queue, h, a_g)
     return h
