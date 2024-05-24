@@ -335,13 +335,20 @@ class Transformer:
         self.mlp_c_proj_bias = np.concatenate((self.mlp_c_proj_bias,\
         self.h[i].mlp.c_proj.bias))
       self.mlp_c_proj_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_bias)
+
+    if hasattr(self, 'wte_weight') == False: #768 NOT CONST
+      print("copying wte_weight")
+      self.wte_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wte.weight)
+
+    if hasattr(self, 'wpe_weight') == False: #768 NOT CONST
+      print("copying wpe_weight")
+      self.wpe_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wpe.weight)
     # 2D !
     #if hasattr(self, 'attn_c_attn_weight') == False:
       #print("FFFFFFSSSS attn_c_attn_weight")
       #self.attn_c_attn_weight = np.concatenate((self.h[0].attn.c_attn.weight.flatten(),self.h[1].attn.c_attn.weight.flatten()))
     seqlen = len(tokens)
     if start_pos > 0:
-      h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
         self.h[i].attn.c_proj.weight = self.h[i].attn.c_proj.weight.flatten()
         self.h[i].mlp.c_proj.weight = self.h[i].mlp.c_proj.weight.flatten()
@@ -352,6 +359,8 @@ class Transformer:
         for i in range(1,12):
           self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[i].attn.cache_kv[0].flatten()))
           self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[i].attn.cache_kv[1].flatten()))
+
+      h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
 
       h = openclk.kernel_4(h,self.ln_1_weights,\
       self.ln_1_bias,\

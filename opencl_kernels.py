@@ -12,24 +12,22 @@ mf = cl.mem_flags
 dim = 768
 n_heads = 12
 
-def add(a,b,b_s=0,a_s=0):
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-
-    res_np = np.zeros(768).astype(np.float32).flatten()
+def add(a_g,b_g,b_s=0,start_pos=0):
+    ls = 256
+    res_np = np.zeros(768).astype(np.float32)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res_np)
-    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
-
     prg = cl.Program(ctx, f"""
     __kernel void add(
         __global const float *a, __global const float *b, __global float *res)
     {{
     int gidx0 = get_global_id(0);
-        res[gidx0] = a[{a_s*768} + gidx0] + b[gidx0 + {b_s}*768];   
+        for(int i = 0; i < 3; i++) {{
+            res[gidx0*3 + i] = a[{start_pos*768} + gidx0*3 + i] + b[gidx0*3 + i + {b_s*768}];   
+        }}
     }}
     """).build()
     knl = prg.add
-    knl(queue, (768,1), (256,1), a_g, b_g,res_g) #todo check shape
+    knl(queue, (ls,1), (ls,1), a_g, b_g,res_g) #todo check shape
     cl.enqueue_copy(queue, res_np, res_g)
     return res_np
 
