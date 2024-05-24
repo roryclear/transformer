@@ -76,14 +76,14 @@ def kernel_3(h,weight_g,bias_g):
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
-        __global float *h, __global const float *weight, __global const float *bias)
+        __global float *a, __global const float *weight5, __global const float *bias5)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
         int lidx0 = get_local_id(0);
         float total = 0;
         for(int i = 0; i < {seg}; i++) {{
-            total += h[lidx0*{seg} + i];
+            total += a[lidx0*{seg} + i];
         }}
         temp[lidx0] = total;
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -96,12 +96,12 @@ def kernel_3(h,weight_g,bias_g):
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
-            h[i + lidx0*{seg}] -= mean;
+            a[i + lidx0*{seg}] -= mean;
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         total = 0;
         for(int i = 0; i < {seg}; i++) {{
-            total += pow(h[lidx0*{seg} + i],2);
+            total += pow(a[lidx0*{seg} + i],2);
         }}
         temp[lidx0] = total;
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -114,7 +114,7 @@ def kernel_3(h,weight_g,bias_g):
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
-            h[i + lidx0*{seg}] = (h[i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / mean + bias[i + lidx0*{seg}];
+            a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * weight5[i + lidx0*{seg}]) / mean + bias5[i + lidx0*{seg}];
         }}
     }}
     """).build()
@@ -181,7 +181,7 @@ def kernel_0(a,c,d):
 
 def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     weight2_g,bias2_g,bias3_g,\
-    e_g,keys_values,weight_g,weight3_g,weight4_g,bias4_g): #g = size
+    e_g,keys_values,weight_g,weight3_g,weight4_g,bias4_g,weight5_g,bias5_g): #g = size
     ls = 256
     zeros = np.zeros(12*(start_pos+1)).astype(np.float32)
     seg = int(dim / ls) #todo
@@ -200,7 +200,8 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         __global const float *weight3, __global const float *bias3,
         __global const float *weight4,
         __global const float *bias4,
-        __global float *temp3, __global const float *a2, __global const float *b2)
+        __global float *temp3, __global const float *a2, __global const float *b2,
+        __global const float *weight5, __global const float *bias5)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
@@ -353,12 +354,49 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         }}
         barrier(CLK_LOCAL_MEM_FENCE);  
         }}
+
+
+        float total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += a[lidx0*{seg} + i];
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = total / {dim};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] -= mean;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += pow(a[lidx0*{seg} + i],2);
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = pow(total / {dim} + 1e-5,0.5);
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * weight5[i + lidx0*{seg}]) / mean + bias5[i + lidx0*{seg}];
+        }}
     }}
     """).build()
     knl = prg.mm
     knl(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
     ,keys_values_g,weight_g,bias_g,\
-    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g,a_g_2,b_g_2)
+    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g,a_g_2,b_g_2,weight5_g,bias5_g)
     cl.enqueue_copy(queue, keys_values, keys_values_g)
     cl.enqueue_copy(queue, h, a_g)
     return h

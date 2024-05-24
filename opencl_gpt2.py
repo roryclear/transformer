@@ -381,8 +381,8 @@ class Transformer:
       self.attn_cache_kv,
       self.attn_c_proj_weight,
       self.mlp_c_fc_weight,
-      self.mlp_c_proj_weight,self.mlp_c_proj_bias)
-      h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
+      self.mlp_c_proj_weight,self.mlp_c_proj_bias,
+      self.ln_f_weight, self.ln_f_bias)
       self.lm_head.weight = self.lm_head.weight.flatten()
       logits = openclk.matvec2(h,self.lm_head.weight)
     else:
