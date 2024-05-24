@@ -12,7 +12,7 @@ mf = cl.mem_flags
 dim = 768
 n_heads = 12
 
-def add(a_g,b_g,b_s=0,start_pos=0):
+def add(a_g,b_g,start_pos=0,b_s=0):
     ls = 256
     res_np = np.zeros(768).astype(np.float32)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res_np)
@@ -22,7 +22,7 @@ def add(a_g,b_g,b_s=0,start_pos=0):
     {{
     int gidx0 = get_global_id(0);
         for(int i = 0; i < 3; i++) {{
-            res[gidx0*3 + i] = a[{start_pos*768} + gidx0*3 + i] + b[gidx0*3 + i + {b_s*768}];   
+            res[gidx0*3 + i] = a[{b_s*768} + gidx0*3 + i] + b[gidx0*3 + i + {start_pos*768}];   
         }}
     }}
     """).build()
