@@ -70,13 +70,10 @@ def minus_mean_multi(a):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def kernel_3(h,weight,bias):
-    size = np.shape(h)[0]
+def kernel_3(h,weight_g,bias_g):
     ls = 256
-    seg = int(size / ls) #todo
+    seg = int(dim / ls) #todo
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
-    weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
-    bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *h, __global const float *weight, __global const float *bias)
@@ -95,7 +92,7 @@ def kernel_3(h,weight,bias):
             for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
-            mean = total / {size};  
+            mean = total / {dim};  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
@@ -113,7 +110,7 @@ def kernel_3(h,weight,bias):
             for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
-            mean = pow(total / {size} + 1e-5,0.5);
+            mean = pow(total / {dim} + 1e-5,0.5);
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{

@@ -343,6 +343,14 @@ class Transformer:
     if hasattr(self, 'wpe_weight') == False: #768 NOT CONST
       print("copying wpe_weight")
       self.wpe_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wpe.weight)
+
+    if hasattr(self, 'ln_f_weight') == False: #768 NOT CONST
+      print("copying ln_f_weight")
+      self.ln_f_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f.weight)
+
+    if hasattr(self, 'ln_f_bias') == False: #768 NOT CONST
+      print("copying ln_f_bias")
+      self.ln_f_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f.bias)
     # 2D !
     #if hasattr(self, 'attn_c_attn_weight') == False:
       #print("FFFFFFSSSS attn_c_attn_weight")
@@ -374,8 +382,7 @@ class Transformer:
       self.attn_c_proj_weight,
       self.mlp_c_fc_weight,
       self.mlp_c_proj_weight,self.mlp_c_proj_bias)
-
-      h = openclk.kernel_3(h,self.ln_f.weight, self.ln_f.bias)
+      h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
       self.lm_head.weight = self.lm_head.weight.flatten()
       logits = openclk.matvec2(h,self.lm_head.weight)
     else:
