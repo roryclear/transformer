@@ -334,6 +334,7 @@ class Transformer:
       for i in range(1,12):
         self.mlp_c_proj_bias = np.concatenate((self.mlp_c_proj_bias,\
         self.h[i].mlp.c_proj.bias))
+      self.mlp_c_proj_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_bias)
     # 2D !
     #if hasattr(self, 'attn_c_attn_weight') == False:
       #print("FFFFFFSSSS attn_c_attn_weight")
