@@ -398,8 +398,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     ,keys_values_g,weight_g,bias_g,\
     weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g,a_g_2,b_g_2,weight5_g,bias5_g)
     cl.enqueue_copy(queue, keys_values, keys_values_g)
-    cl.enqueue_copy(queue, h, a_g)
-    return h
+    return a_g
 
 def kernel_1b(h_in,c,d,f):
     size = np.shape(h_in)[0]
@@ -783,11 +782,10 @@ def matvec_b(a,b,c,h):
     cl.enqueue_copy(queue, h, h_g)
     return h
 
-def matvec2(h,weight2_g): #pass bias in instead of adding to zero, todo for other kernels
+def matvec2(h_g,weight2_g): #pass bias in instead of adding to zero, todo for other kernels
     rows = 768
     cols = 50257
     res = np.zeros(cols).astype(np.float32)
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     #weight2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     prg = cl.Program(ctx, f"""
