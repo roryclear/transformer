@@ -783,12 +783,12 @@ def matvec_b(a,b,c,h):
     cl.enqueue_copy(queue, h, h_g)
     return h
 
-def matvec2(h,weight2): #pass bias in instead of adding to zero, todo for other kernels
+def matvec2(h,weight2_g): #pass bias in instead of adding to zero, todo for other kernels
     rows = 768
     cols = 50257
     res = np.zeros(cols).astype(np.float32)
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
-    bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
+    #weight2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     prg = cl.Program(ctx, f"""
     __kernel void matvec(
@@ -802,7 +802,7 @@ def matvec2(h,weight2): #pass bias in instead of adding to zero, todo for other 
     """).build()
     knl = prg.matvec
     gidx = math.ceil(cols / 16) * 16
-    knl(queue, (gidx,1), (16,1), h_g, bias2_g,res_g)
+    knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
     cl.enqueue_copy(queue, res, res_g)
     return res
 

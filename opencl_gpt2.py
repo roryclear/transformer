@@ -351,6 +351,7 @@ class Transformer:
     if hasattr(self, 'ln_f_bias') == False: #768 NOT CONST
       print("copying ln_f_bias")
       self.ln_f_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f.bias)
+
     # 2D !
     #if hasattr(self, 'attn_c_attn_weight') == False:
       #print("FFFFFFSSSS attn_c_attn_weight")
@@ -368,6 +369,11 @@ class Transformer:
           self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[i].attn.cache_kv[0].flatten()))
           self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[i].attn.cache_kv[1].flatten()))
 
+      self.lm_head.weight = self.lm_head.weight.flatten()
+      if hasattr(self, 'lm_head_weight') == False:
+        self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head.weight)
+
+
       #h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
 
       h = openclk.kernel_4(self.wte_weight,self.wpe_weight,tokens[0],self.ln_1_weights,\
@@ -383,8 +389,7 @@ class Transformer:
       self.mlp_c_fc_weight,
       self.mlp_c_proj_weight,self.mlp_c_proj_bias,
       self.ln_f_weight, self.ln_f_bias)
-      self.lm_head.weight = self.lm_head.weight.flatten()
-      logits = openclk.matvec2(h,self.lm_head.weight)
+      logits = openclk.matvec2(h,self.lm_head_weight)
     else:
       tok_emb = self.wte(tokens)
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,self.dim))
