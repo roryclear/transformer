@@ -408,7 +408,6 @@ class Transformer:
         self.ln_f_weight, self.ln_f_bias)
         logits = openclk.matvec3(h,self.lm_head_weight,temperature)
         logits = openclk.kernel_5(logits)
-        logits = logits / logits[-1]
         if use_tg_rand:
           unif_samples = tg_rand.rand()
         else:
@@ -550,8 +549,8 @@ class GPT2:
 if __name__ == "__main__":
   #bc tinygrad doesnt work in windows, and opencl doesnt work on WSL
   use_tg_rand = True #mocks tg random function by just reading from a file
-  default_prompt = "What is the answer to life, the universe, and everything?"
-  #default_prompt = "What happened in 1939?"
+  #default_prompt = "What is the answer to life, the universe, and everything?"
+  default_prompt = "What happened in 1939?"
   # should output:
   # .... The Jewish people rejected
 

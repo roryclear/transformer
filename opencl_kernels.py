@@ -126,10 +126,42 @@ def kernel_5(a):
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0 == 0){{
-        for(int i = 1; i < {size}; i++) {{
-            a[i] = a[i] + a[i - 1];
+            for(int i = 1; i < {size}; i++) {{
+                a[i] = a[i] + a[i - 1];
+            }}
         }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            if(i + lidx0*{seg} < {size-1}) {{
+                a[i + lidx0*{seg}] = a[i + lidx0*{seg}] / a[{size} - 1];
+            }}
         }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        a[{size-1}] = 1; //no idea why it breaks without this
+    }}
+    """).build()
+    knl = prg.mm
+    knl(queue, (ls,1), (ls,1), a_g)
+    cl.enqueue_copy(queue, a, a_g)
+    return a
+
+def kernel_6(a):
+    size = np.shape(a)[0]
+    ls = 256
+    seg = int(math.ceil(size / ls)) #todo
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    prg = cl.Program(ctx, f"""
+    __kernel void mm(
+        __global float *a)
+    {{
+    int lidx0 = get_local_id(0);
+    for(int i = 0; i < {seg}; i++) {{
+        if(i + lidx0*{seg} < {size-1}) {{
+            a[i + lidx0*{seg}] = a[i + lidx0*{seg}] / a[{size} - 1];
+        }}
+    }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+    a[{size-1}] = 1;
     }}
     """).build()
     knl = prg.mm
