@@ -408,8 +408,6 @@ class Transformer:
         self.ln_f_weight, self.ln_f_bias)
         logits = openclk.matvec3(h,self.lm_head_weight,temperature)
         logits = openclk.kernel_5(logits)
-        logits = logits / logits.sum()
-        logits = logits.cumsum(0)
         logits = logits / logits[-1]
         if use_tg_rand:
           unif_samples = tg_rand.rand()

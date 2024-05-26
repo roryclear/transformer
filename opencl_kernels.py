@@ -85,7 +85,7 @@ def kernel_5(a):
         int lidx0 = get_local_id(0);
         float t = -INFINITY;
         for(int i = 0; i < {seg}; i++) {{
-            if(lidx0*{seg} + i < 50257) {{
+            if(lidx0*{seg} + i < {size}) {{
                 t = max(t,a[lidx0*{seg} + i]);
             }}
         }}
@@ -101,6 +101,34 @@ def kernel_5(a):
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
             a[i + lidx0*{seg}] = exp(a[i + lidx0*{seg}] - mx);
+        }}
+
+
+        barrier(CLK_LOCAL_MEM_FENCE);
+        t = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            if(lidx0*{seg} + i < {size}) {{
+                t = t + a[lidx0*{seg} + i];
+            }}
+        }}
+        temp[lidx0] = t;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            t = 0;
+            for(int i = 0; i < {ls}; i++) {{ //rory todo 32
+                t = t + temp[i];
+            }}
+            mx = t;  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] = a[i + lidx0*{seg}] / mx;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0 == 0){{
+        for(int i = 1; i < {size}; i++) {{
+            a[i] = a[i] + a[i - 1];
+        }}
         }}
     }}
     """).build()
