@@ -372,6 +372,10 @@ class Transformer:
       self.lm_head.weight = self.lm_head.weight.flatten()
       if hasattr(self, 'lm_head_weight') == False:
         self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head.weight)
+      
+      if hasattr(self,'logits') == False:
+        self.logits = np.zeros(50257).astype(np.float32)
+        self.logits = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.logits)
 
 
       #h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
@@ -406,7 +410,7 @@ class Transformer:
         self.mlp_c_fc_weight,
         self.mlp_c_proj_weight,self.mlp_c_proj_bias,
         self.ln_f_weight, self.ln_f_bias)
-        logits = openclk.matvec3(h,self.lm_head_weight,temperature)
+        logits = openclk.matvec3(h,self.lm_head_weight,temperature,self.logits)
         logits = openclk.kernel_5(logits)
         if use_tg_rand:
           unif_samples = tg_rand.rand()

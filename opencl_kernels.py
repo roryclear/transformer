@@ -71,11 +71,10 @@ def minus_mean_multi(a):
     return a
 
 
-def kernel_5(a):
-    size = np.shape(a)[0]
+def kernel_5(a_g):
+    size = 50257 #todo hardcoded cos buffer
     ls = 256
-    seg = int(math.ceil(size / ls)) #todo
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    seg = int(math.ceil(size / ls))
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a)
@@ -142,6 +141,7 @@ def kernel_5(a):
     """).build()
     knl = prg.mm
     knl(queue, (ls,1), (ls,1), a_g)
+    a = np.zeros(size).astype(np.float32)
     cl.enqueue_copy(queue, a, a_g)
     return a
 
@@ -904,17 +904,16 @@ def matvec2(h_g,weight2_g): #pass bias in instead of adding to zero, todo for ot
     cl.enqueue_copy(queue, res, res_g)
     return res
 
-def matvec3(h_g,weight2_g,temperature): #pass bias in instead of adding to zero, todo for other kernels
+def matvec3(h_g,weight2_g,temperature,res_g): #pass bias in instead of adding to zero, todo for other kernels
     rows = 768
     cols = 50257
-    res = np.zeros(cols).astype(np.float32)
     #weight2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
-    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     prg = cl.Program(ctx, f"""
     __kernel void matvec(
         __global const float *h, __global const float *weight2 , __global float *res)
     {{
         int gidx0 = get_global_id(0);
+        res[gidx0] = 0;
         for(int j = 0; j < {rows}; j++) {{
             res[gidx0] += h[j] * weight2[gidx0 + j*{cols}];
         }}
@@ -924,8 +923,7 @@ def matvec3(h_g,weight2_g,temperature): #pass bias in instead of adding to zero,
     knl = prg.matvec
     gidx = math.ceil(cols / 16) * 16
     knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
-    cl.enqueue_copy(queue, res, res_g)
-    return res
+    return res_g
 
 def matvec2_b(h,weight2): #pass bias in instead of adding to zero, todo for other kernels
     rows = 768
