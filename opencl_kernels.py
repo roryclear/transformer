@@ -70,6 +70,46 @@ def minus_mean_multi(a):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
+
+def kernel_5(a):
+    size = np.shape(a)[0]
+    ls = 256
+    seg = int(math.ceil(size / ls)) #todo
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    prg = cl.Program(ctx, f"""
+    __kernel void mm(
+        __global float *a)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{ls}];
+        __attribute__ ((aligned (16))) __local float mx;
+        int lidx0 = get_local_id(0);
+        float t = -INFINITY;
+        for(int i = 0; i < {seg}; i++) {{
+            if(lidx0*{seg} + i < 50257) {{
+                t = max(t,a[lidx0*{seg} + i]);
+            }}
+        }}
+        temp[lidx0] = t;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            t = -INFINITY;
+            for(int i = 0; i < {ls}; i++) {{ //rory todo 32
+                t = max(temp[i],t);
+            }}
+            mx = t;  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] = exp(a[i + lidx0*{seg}] - mx);
+        }}
+    }}
+    """).build()
+    knl = prg.mm
+    knl(queue, (ls,1), (ls,1), a_g)
+    cl.enqueue_copy(queue, a, a_g)
+    return a
+
+
 def kernel_3(h,weight_g,bias_g):
     ls = 256
     seg = int(dim / ls) #todo
@@ -1053,29 +1093,6 @@ def transpose(a):
     cl.enqueue_copy(queue, at, at_g)
     return at.reshape(12,64,s)
 
-def kernel_5(a):
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    ls = 1
-    seg = {np.shape(a)[0] / ls}
-    prg = cl.Program(ctx, f"""
-    __kernel void matmul(
-        __global float *a)
-    {{
-        int lidx0 = get_local_id(0);
-        float 
-        float m = -INFINITY;
-        for(int i = 0; i < {seg}; i++) {{
-            m = max(m,a[i]);
-        }}
-        for(int i = 0; i < {seg}; i++) {{
-            a[i] = a[i] - m;
-        }}
-    }}
-    """).build()
-    knl = prg.matmul
-    knl(queue, (1,1), (1,1), a_g)
-    cl.enqueue_copy(queue, a, a_g)
-    return a
 
 def time_it(func,a,b,i=100):
     f = None
@@ -1088,9 +1105,3 @@ def time_it(func,a,b,i=100):
         if f is None or t < f:
             f = t
     return ret,f
-'''
-a = np.random.rand(50257).astype(np.float32)
-n_np = a - a.max()
-n = kernel_5(a)
-np.testing.assert_allclose(n,n_np,rtol=1e-5)
-'''
