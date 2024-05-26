@@ -203,7 +203,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         __global float *temp3, __global const float *a2, __global const float *b2,
         __global const float *weight5, __global const float *bias5)
     {{
-        __attribute__ ((aligned (16))) __local float temp[{seg}];
+        __attribute__ ((aligned (16))) __local float temp[{ls}];
         __attribute__ ((aligned (16))) __local float mean;
         __attribute__ ((aligned (16))) __local float tempb3[3072];
         __attribute__ ((aligned (16))) __local float tempb4[768];
@@ -804,6 +804,29 @@ def matvec2(h_g,weight2_g): #pass bias in instead of adding to zero, todo for ot
     cl.enqueue_copy(queue, res, res_g)
     return res
 
+def matvec3(h_g,weight2_g,temperature): #pass bias in instead of adding to zero, todo for other kernels
+    rows = 768
+    cols = 50257
+    res = np.zeros(cols).astype(np.float32)
+    #weight2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
+    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
+    prg = cl.Program(ctx, f"""
+    __kernel void matvec(
+        __global const float *h, __global const float *weight2 , __global float *res)
+    {{
+        int gidx0 = get_global_id(0);
+        for(int j = 0; j < {rows}; j++) {{
+            res[gidx0] += h[j] * weight2[gidx0 + j*{cols}];
+        }}
+        res[gidx0] = res[gidx0] / {temperature};
+    }}
+    """).build()
+    knl = prg.matvec
+    gidx = math.ceil(cols / 16) * 16
+    knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
+    cl.enqueue_copy(queue, res, res_g)
+    return res
+
 def matvec2_b(h,weight2): #pass bias in instead of adding to zero, todo for other kernels
     rows = 768
     cols = 50257
@@ -1030,6 +1053,30 @@ def transpose(a):
     cl.enqueue_copy(queue, at, at_g)
     return at.reshape(12,64,s)
 
+def kernel_5(a):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    ls = 1
+    seg = {np.shape(a)[0] / ls}
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global float *a)
+    {{
+        int lidx0 = get_local_id(0);
+        float 
+        float m = -INFINITY;
+        for(int i = 0; i < {seg}; i++) {{
+            m = max(m,a[i]);
+        }}
+        for(int i = 0; i < {seg}; i++) {{
+            a[i] = a[i] - m;
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    knl(queue, (1,1), (1,1), a_g)
+    cl.enqueue_copy(queue, a, a_g)
+    return a
+
 def time_it(func,a,b,i=100):
     f = None
     total_time = 0
@@ -1041,16 +1088,9 @@ def time_it(func,a,b,i=100):
         if f is None or t < f:
             f = t
     return ret,f
-
-#12,15,64
-#50257
 '''
-a = np.random.rand(768).astype(np.float32)
-b = np.random.rand(768,50257).astype(np.float32)
-n,t = time_it(matvec2,a,b,20)
-nb,tb = time_it(matvec2_b,a,b,20)
-n_np = np.matmul(a,b)
+a = np.random.rand(50257).astype(np.float32)
+n_np = a - a.max()
+n = kernel_5(a)
 np.testing.assert_allclose(n,n_np,rtol=1e-5)
-np.testing.assert_allclose(nb,n_np,rtol=1e-5)
-print("times:\t",t,"\t",tb)
 '''

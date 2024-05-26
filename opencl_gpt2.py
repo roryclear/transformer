@@ -406,8 +406,7 @@ class Transformer:
         self.mlp_c_fc_weight,
         self.mlp_c_proj_weight,self.mlp_c_proj_bias,
         self.ln_f_weight, self.ln_f_bias)
-        logits = openclk.matvec2(h,self.lm_head_weight)
-        logits = np.array(logits) / temperature
+        logits = openclk.matvec3(h,self.lm_head_weight,temperature)
         logits = np.exp(logits - np.max(logits))
         logits = logits / logits.sum()
         logits = logits.cumsum(0)
