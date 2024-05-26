@@ -549,8 +549,8 @@ class GPT2:
 if __name__ == "__main__":
   #bc tinygrad doesnt work in windows, and opencl doesnt work on WSL
   use_tg_rand = True #mocks tg random function by just reading from a file
-  #default_prompt = "What is the answer to life, the universe, and everything?"
-  default_prompt = "What happened in 1939?"
+  default_prompt = "What is the answer to life, the universe, and everything?"
+  #default_prompt = "What happened in 1939?"
   # should output:
   # .... The Jewish people rejected
 
