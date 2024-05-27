@@ -208,7 +208,7 @@ def kernel_0(a,c,d):
 def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     weight2_g,bias2_g,bias3_g,\
     e_g,keys_values,weight_g,weight3_g,weight4_g,bias4_g,weight5_g,bias5_g,
-    weight6_g,temperature,res_g): #g = size
+    weight6_g,temperature,res_g,unif_samples): #g = size
     ls = 256
     rows = 768
     cols = 50257
@@ -482,10 +482,15 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         for(int i = 0; i < {seg2}; i++) {{
             if(i + lidx0*{seg2} < {size-1}) {{
                 res[i + lidx0*{seg2}] = res[i + lidx0*{seg2}] / res[{size} - 1];
+                if(res[i + lidx0*{seg2}] <= {unif_samples}) {{
+                    res[i + lidx0*{seg2}] = 1;
+                }} else{{
+                    res[i + lidx0*{seg2}] = 0;
+                }}
             }}
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        res[{size-1}] = 1; //no idea why it breaks without this
+        res[{size-1}] = 0;
     }}
     """).build()
     knl = prg.mm

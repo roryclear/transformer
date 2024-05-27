@@ -396,6 +396,7 @@ class Transformer:
         ret = logits.argmax(-1)
         return ret
       else: #temp
+        unif_samples = tg_rand.rand()
         logits = openclk.kernel_4(self.wte_weight,self.wpe_weight,tokens[0],self.ln_1_weights,\
         self.ln_1_bias,\
         self.attn_c_attn_bias,self.h[0].attn.dim,\
@@ -409,19 +410,8 @@ class Transformer:
         self.mlp_c_fc_weight,
         self.mlp_c_proj_weight,self.mlp_c_proj_bias,
         self.ln_f_weight, self.ln_f_bias,
-        self.lm_head_weight,temperature,self.logits)
-        if use_tg_rand:
-          unif_samples = tg_rand.rand()
-        else:
-          unif_samples = np.random.rand().astype(np.float32)
-        b = np.empty_like(logits,dtype=bool)
-        for i in range(len(logits)):
-          if unif_samples >= logits[i]:
-            b[i] = True
-          else:
-            b[i] = False
-        b = b.sum()
-        ret = np.array(b)
+        self.lm_head_weight,temperature,self.logits,unif_samples)
+        ret = np.array(int(logits.sum()))
         return ret
     else:
       tok_emb = self.wte(tokens)
