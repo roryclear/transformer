@@ -925,6 +925,31 @@ def matvec3(h_g,weight2_g,temperature,res_g): #pass bias in instead of adding to
     knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
     return res_g
 
+def matvec3_256(h_g,weight2_g,temperature,res_g): #pass bias in instead of adding to zero, todo for other kernels
+    rows = 768
+    cols = 50257
+    #weight2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
+    ls = 256
+    seg2 = math.ceil(cols / 256)
+    prg = cl.Program(ctx, f"""
+    __kernel void matvec(
+        __global const float *h, __global const float *weight2 , __global float *res)
+    {{
+        //int gidx0 = get_global_id(0);
+        int lidx0 = get_local_id(0);
+        for(int i = 0; i < {seg2}; i++) {{
+            res[lidx0*{seg2} + i] = 0;
+            for(int j = 0; j < {rows}; j++) {{
+                res[lidx0*{seg2} + i] += h[j] * weight2[lidx0*{seg2} + i + j*{cols}];
+            }}
+            res[lidx0*{seg2} + i] = res[lidx0*{seg2} + i] / {temperature};
+        }}
+    }}
+    """).build()
+    knl = prg.matvec
+    knl(queue, (ls,1), (ls,1), h_g, weight2_g,res_g)
+    return res_g
+
 def matvec2_b(h,weight2): #pass bias in instead of adding to zero, todo for other kernels
     rows = 768
     cols = 50257
