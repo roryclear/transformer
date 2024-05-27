@@ -397,7 +397,7 @@ class Transformer:
         ret = logits.argmax(-1)
         return ret
       else: #temp
-        h = openclk.kernel_4(self.wte_weight,self.wpe_weight,tokens[0],self.ln_1_weights,\
+        logits = openclk.kernel_4(self.wte_weight,self.wpe_weight,tokens[0],self.ln_1_weights,\
         self.ln_1_bias,\
         self.attn_c_attn_bias,self.h[0].attn.dim,\
         start_pos,\
@@ -409,8 +409,9 @@ class Transformer:
         self.attn_c_proj_weight,
         self.mlp_c_fc_weight,
         self.mlp_c_proj_weight,self.mlp_c_proj_bias,
-        self.ln_f_weight, self.ln_f_bias)
-        logits = openclk.matvec3(h,self.lm_head_weight,temperature,self.logits)
+        self.ln_f_weight, self.ln_f_bias,
+        self.lm_head_weight,temperature,self.logits)
+        #logits = openclk.matvec3(h,self.lm_head_weight,temperature,self.logits,)
         #logits = openclk.matvec3_256(h,self.lm_head_weight,temperature,self.logits)
         logits = openclk.kernel_5(logits)
         if use_tg_rand:

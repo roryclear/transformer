@@ -281,8 +281,12 @@ def kernel_0(a,c,d):
 
 def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     weight2_g,bias2_g,bias3_g,\
-    e_g,keys_values,weight_g,weight3_g,weight4_g,bias4_g,weight5_g,bias5_g): #g = size
+    e_g,keys_values,weight_g,weight3_g,weight4_g,bias4_g,weight5_g,bias5_g,
+    weight6_g,temperature,res_g): #g = size
     ls = 256
+    rows = 768
+    cols = 50257
+    seg2 = math.ceil(cols / ls)
     zeros = np.zeros(12*(start_pos+1)).astype(np.float32)
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
@@ -301,7 +305,8 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         __global const float *weight4,
         __global const float *bias4,
         __global float *temp3, __global const float *a2, __global const float *b2,
-        __global const float *weight5, __global const float *bias5)
+        __global const float *weight5, __global const float *bias5,
+        __global const float *weight6, __global float *res)
     {{
         __attribute__ ((aligned (16))) __local float temp[{ls}];
         __attribute__ ((aligned (16))) __local float mean;
@@ -491,14 +496,24 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         for(int i = 0; i < {seg}; i++) {{
             a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * weight5[i + lidx0*{seg}]) / mean + bias5[i + lidx0*{seg}];
         }}
+
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg2}; i++) {{
+            res[lidx0*{seg2} + i] = 0;
+            for(int j = 0; j < {rows}; j++) {{
+                res[lidx0*{seg2} + i] += a[j] * weight6[lidx0*{seg2} + i + j*{cols}];
+            }}
+            res[lidx0*{seg2} + i] = res[lidx0*{seg2} + i] / {temperature};
+        }}
     }}
     """).build()
     knl = prg.mm
     knl(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
     ,keys_values_g,weight_g,bias_g,\
-    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g,a_g_2,b_g_2,weight5_g,bias5_g)
+    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g,a_g_2,b_g_2,weight5_g,bias5_g,
+    weight6_g,res_g)
     cl.enqueue_copy(queue, keys_values, keys_values_g)
-    return a_g
+    return res_g
 
 def kernel_1b(h_in,c,d,f):
     size = np.shape(h_in)[0]
