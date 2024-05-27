@@ -411,9 +411,6 @@ class Transformer:
         self.mlp_c_proj_weight,self.mlp_c_proj_bias,
         self.ln_f_weight, self.ln_f_bias,
         self.lm_head_weight,temperature,self.logits)
-        #logits = openclk.matvec3(h,self.lm_head_weight,temperature,self.logits,)
-        #logits = openclk.matvec3_256(h,self.lm_head_weight,temperature,self.logits)
-        logits = openclk.kernel_5(logits)
         if use_tg_rand:
           unif_samples = tg_rand.rand()
         else:

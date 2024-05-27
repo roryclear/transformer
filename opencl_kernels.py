@@ -286,6 +286,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     ls = 256
     rows = 768
     cols = 50257
+    size = cols
     seg2 = math.ceil(cols / ls)
     zeros = np.zeros(12*(start_pos+1)).astype(np.float32)
     seg = int(dim / ls) #todo
@@ -314,6 +315,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         __attribute__ ((aligned (16))) __local float tempb4[768];
         __attribute__ ((aligned (16))) __local float h_temp[768];
         __attribute__ ((aligned (16))) __local float h[768];
+        __attribute__ ((aligned (16))) __local float mx;
         int lidx0 = get_local_id(0);
         for(int i = 0; i < {seg}; i++) {{
             a[lidx0*{seg} + i] = a2[{b_s*768} + lidx0*{seg} + i] + b2[lidx0*{seg} + i + {start_pos*768}];   
@@ -505,6 +507,63 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
             }}
             res[lidx0*{seg2} + i] = res[lidx0*{seg2} + i] / {temperature};
         }}
+
+        ///KERNEL_5
+        float t = -INFINITY;
+        for(int i = 0; i < {seg2}; i++) {{
+            if(lidx0*{seg2} + i < {size}) {{
+                t = max(t,res[lidx0*{seg2} + i]);
+            }}
+        }}
+        temp[lidx0] = t;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            t = -INFINITY;
+            for(int i = 0; i < {ls}; i++) {{ //rory todo 32
+                t = max(temp[i],t);
+            }}
+            mx = t;  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg2}; i++) {{
+            res[i + lidx0*{seg2}] = exp(res[i + lidx0*{seg2}] - mx);
+        }}
+
+
+        barrier(CLK_LOCAL_MEM_FENCE);
+        t = 0;
+        for(int i = 0; i < {seg2}; i++) {{
+            if(lidx0*{seg2} + i < {size}) {{
+                t = t + res[lidx0*{seg2} + i];
+            }}
+        }}
+        temp[lidx0] = t;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            t = 0;
+            for(int i = 0; i < {ls}; i++) {{ //rory todo 32
+                t = t + temp[i];
+            }}
+            mx = t;  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg2}; i++) {{
+            res[i + lidx0*{seg2}] = res[i + lidx0*{seg2}] / mx;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0 == 0){{
+            for(int i = 1; i < {size}; i++) {{
+                res[i] = res[i] + res[i - 1];
+            }}
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg2}; i++) {{
+            if(i + lidx0*{seg2} < {size-1}) {{
+                res[i + lidx0*{seg2}] = res[i + lidx0*{seg2}] / res[{size} - 1];
+            }}
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        res[{size-1}] = 1; //no idea why it breaks without this
     }}
     """).build()
     knl = prg.mm
@@ -513,7 +572,9 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g,a_g_2,b_g_2,weight5_g,bias5_g,
     weight6_g,res_g)
     cl.enqueue_copy(queue, keys_values, keys_values_g)
-    return res_g
+    res = np.zeros(size).astype(np.float32)
+    cl.enqueue_copy(queue, res, res_g)
+    return res
 
 def kernel_1b(h_in,c,d,f):
     size = np.shape(h_in)[0]
