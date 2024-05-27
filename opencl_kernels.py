@@ -71,80 +71,6 @@ def minus_mean_multi(a):
     return a
 
 
-def kernel_5(a_g):
-    size = 50257 #todo hardcoded cos buffer
-    ls = 256
-    seg = int(math.ceil(size / ls))
-    prg = cl.Program(ctx, f"""
-    __kernel void mm(
-        __global float *a)
-    {{
-        __attribute__ ((aligned (16))) __local float temp[{ls}];
-        __attribute__ ((aligned (16))) __local float mx;
-        int lidx0 = get_local_id(0);
-        float t = -INFINITY;
-        for(int i = 0; i < {seg}; i++) {{
-            if(lidx0*{seg} + i < {size}) {{
-                t = max(t,a[lidx0*{seg} + i]);
-            }}
-        }}
-        temp[lidx0] = t;
-        barrier(CLK_LOCAL_MEM_FENCE);
-        if(lidx0==0) {{
-            t = -INFINITY;
-            for(int i = 0; i < {ls}; i++) {{ //rory todo 32
-                t = max(temp[i],t);
-            }}
-            mx = t;  
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {seg}; i++) {{
-            a[i + lidx0*{seg}] = exp(a[i + lidx0*{seg}] - mx);
-        }}
-
-
-        barrier(CLK_LOCAL_MEM_FENCE);
-        t = 0;
-        for(int i = 0; i < {seg}; i++) {{
-            if(lidx0*{seg} + i < {size}) {{
-                t = t + a[lidx0*{seg} + i];
-            }}
-        }}
-        temp[lidx0] = t;
-        barrier(CLK_LOCAL_MEM_FENCE);
-        if(lidx0==0) {{
-            t = 0;
-            for(int i = 0; i < {ls}; i++) {{ //rory todo 32
-                t = t + temp[i];
-            }}
-            mx = t;  
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {seg}; i++) {{
-            a[i + lidx0*{seg}] = a[i + lidx0*{seg}] / mx;
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
-        if(lidx0 == 0){{
-            for(int i = 1; i < {size}; i++) {{
-                a[i] = a[i] + a[i - 1];
-            }}
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {seg}; i++) {{
-            if(i + lidx0*{seg} < {size-1}) {{
-                a[i + lidx0*{seg}] = a[i + lidx0*{seg}] / a[{size} - 1];
-            }}
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
-        a[{size-1}] = 1; //no idea why it breaks without this
-    }}
-    """).build()
-    knl = prg.mm
-    knl(queue, (ls,1), (ls,1), a_g)
-    a = np.zeros(size).astype(np.float32)
-    cl.enqueue_copy(queue, a, a_g)
-    return a
-
 def kernel_6(a):
     size = np.shape(a)[0]
     ls = 256
@@ -315,55 +241,55 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         __attribute__ ((aligned (16))) __local float tempb4[768];
         __attribute__ ((aligned (16))) __local float h_temp[768];
         __attribute__ ((aligned (16))) __local float h[768];
-        __attribute__ ((aligned (16))) __local float mx;
+        __attribute__ ((aligned (16))) __local float t;
         int lidx0 = get_local_id(0);
         for(int i = 0; i < {seg}; i++) {{
             a[lidx0*{seg} + i] = a2[{b_s*768} + lidx0*{seg} + i] + b2[lidx0*{seg} + i + {start_pos*768}];   
         }}
         for(int r = 0; r < 12; r++) {{
         barrier(CLK_LOCAL_MEM_FENCE);  
-        float total = 0;
+        t = 0;
         for(int i = 0; i < {seg}; i++) {{
-            total += a[lidx0*{seg} + i];
+            t += a[lidx0*{seg} + i];
         }}
-        temp[lidx0] = total;
+        temp[lidx0] = t;
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
-            total = 0;
+            t = 0;
             for(int i = 0; i < {ls}; i++) {{
-                total += temp[i];
+                t += temp[i];
             }}
-            mean = total / {dim};  
+            mean = t / {dim};  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        total = 0;
+        t = 0;
         for(int i = 0; i < {seg}; i++) {{
             a[i + lidx0*{seg}] -= mean;
-            total += pow(a[lidx0*{seg} + i],2);
+            t += pow(a[lidx0*{seg} + i],2);
         }}
-        temp[lidx0] = total;
+        temp[lidx0] = t;
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
-            total = 0;
+            t = 0;
             for(int i = 0; i < {ls}; i++) {{
-                total += temp[i];
+                t += temp[i];
             }}
-            mean = pow(total / {dim} + 1e-5,0.5);
+            mean = pow(t / {dim} + 1e-5,0.5);
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {int(dim*3 / ls)}; i++) {{
-            float total = 0;
+            t = 0;
             for(int k = 0; k < {dim}; k++) {{
-                total += ((a[k] * c[768*r + k]) / mean + d[768*r + k]) * e[768*2304*r + (lidx0*{int(dim*3 / ls)} + i)*{dim} + k];
+                t += ((a[k] * c[768*r + k]) / mean + d[768*r + k]) * e[768*2304*r + (lidx0*{int(dim*3 / ls)} + i)*{dim} + k];
             }}
             if((lidx0*{int(dim*3 / ls)} + i) < {g}) {{
-                xqkv[2304*r + lidx0*{int(dim*3 / ls)} + i] += total;
+                xqkv[2304*r + lidx0*{int(dim*3 / ls)} + i] += t;
                 }}
             if((lidx0*{int(dim*3 / ls)} + i) >= {g} && (lidx0*{int(dim*3 / ls)} + i) < {2*g}) {{
-                keys_values[128*12*64*2*r + {start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {g}] = xqkv[2304*r+768 + lidx0*{int(dim*3 / ls)} + i - {g}] + total;
+                keys_values[128*12*64*2*r + {start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {g}] = xqkv[2304*r+768 + lidx0*{int(dim*3 / ls)} + i - {g}] + t;
             }}
             if((lidx0*{int(dim*3 / ls)} + i) >= {2*g}) {{
-                keys_values[128*12*64*2*r + 128*12*64 + {start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {2*g}] = xqkv[2304*r+768*2 + lidx0*{int(dim*3 / ls)} + i - {2*g}] + total;
+                keys_values[128*12*64*2*r + 128*12*64 + {start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {2*g}] = xqkv[2304*r+768*2 + lidx0*{int(dim*3 / ls)} + i - {2*g}] + t;
             }}
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -383,7 +309,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
             float val = temp3[i + lidx0*{start_pos+1}];
             m = max(m,val);
         }}
-        float t = 0;
+        t = 0;
         for(int i = 0; i < {start_pos+1}; i++) {{
             temp3[i + lidx0*{start_pos+1}] = exp(temp3[i + lidx0*{start_pos+1}] - m);
             float val = temp3[i + lidx0*{start_pos+1}];
@@ -413,33 +339,33 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
             h_temp[lidx0*{seg} + i] = h[lidx0*{seg} + i];
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        total = 0;
+        t = 0;
         for(int i = 0; i < {seg}; i++) {{
-            total += h[lidx0*{seg} + i];
+            t += h[lidx0*{seg} + i];
         }}
-        temp[lidx0] = total;
+        temp[lidx0] = t;
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
-            total = 0;
+            t = 0;
             for(int i = 0; i < {ls}; i++) {{
-                total += temp[i];
+                t += temp[i];
             }}
-            mean = total / {dim};  
+            mean = t / {dim};  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        total = 0;
+        t = 0;
         for(int i = 0; i < {seg}; i++) {{
             h[i + lidx0*{seg}] = h[i + lidx0*{seg}] - mean;
-            total += pow(h[lidx0*{seg} + i],2);
+            t += pow(h[lidx0*{seg} + i],2);
         }}        
-        temp[lidx0] = total;
+        temp[lidx0] = t;
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
-            total = 0;
+            t = 0;
             for(int i = 0; i < {ls}; i++) {{
-                total += temp[i];
+                t += temp[i];
             }}
-            mean = pow(total / {dim} + 1e-5,0.5);
+            mean = pow(t / {dim} + 1e-5,0.5);
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {int(dim*4 / ls)}; i++) {{
@@ -463,36 +389,36 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         }}
 
 
-        float total = 0;
+        t = 0;
         for(int i = 0; i < {seg}; i++) {{
-            total += a[lidx0*{seg} + i];
+            t += a[lidx0*{seg} + i];
         }}
-        temp[lidx0] = total;
+        temp[lidx0] = t;
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
-            total = 0;
+            t = 0;
             for(int i = 0; i < {ls}; i++) {{
-                total += temp[i];
+                t += temp[i];
             }}
-            mean = total / {dim};  
+            mean = t / {dim};  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
             a[i + lidx0*{seg}] -= mean;
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        total = 0;
+        t = 0;
         for(int i = 0; i < {seg}; i++) {{
-            total += pow(a[lidx0*{seg} + i],2);
+            t += pow(a[lidx0*{seg} + i],2);
         }}
-        temp[lidx0] = total;
+        temp[lidx0] = t;
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
-            total = 0;
+            t = 0;
             for(int i = 0; i < {ls}; i++) {{
-                total += temp[i];
+                t += temp[i];
             }}
-            mean = pow(total / {dim} + 1e-5,0.5);
+            mean = pow(t / {dim} + 1e-5,0.5);
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
@@ -509,7 +435,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         }}
 
         ///KERNEL_5
-        float t = -INFINITY;
+        t = -INFINITY;
         for(int i = 0; i < {seg2}; i++) {{
             if(lidx0*{seg2} + i < {size}) {{
                 t = max(t,res[lidx0*{seg2} + i]);
@@ -522,14 +448,11 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
             for(int i = 0; i < {ls}; i++) {{ //rory todo 32
                 t = max(temp[i],t);
             }}
-            mx = t;  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg2}; i++) {{
-            res[i + lidx0*{seg2}] = exp(res[i + lidx0*{seg2}] - mx);
+            res[i + lidx0*{seg2}] = exp(res[i + lidx0*{seg2}] - t);
         }}
-
-
         barrier(CLK_LOCAL_MEM_FENCE);
         t = 0;
         for(int i = 0; i < {seg2}; i++) {{
@@ -544,11 +467,10 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
             for(int i = 0; i < {ls}; i++) {{ //rory todo 32
                 t = t + temp[i];
             }}
-            mx = t;  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg2}; i++) {{
-            res[i + lidx0*{seg2}] = res[i + lidx0*{seg2}] / mx;
+            res[i + lidx0*{seg2}] = res[i + lidx0*{seg2}] / t;
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0 == 0){{
