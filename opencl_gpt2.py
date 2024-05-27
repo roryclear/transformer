@@ -380,7 +380,7 @@ class Transformer:
 
       #h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
       if temperature < 1e-6:
-        h = openclk.kernel_4(self.wte_weight,self.wpe_weight,tokens[0],self.ln_1_weights,\
+        h = openclk.kernel_4_notemp(self.wte_weight,self.wpe_weight,tokens[0],self.ln_1_weights,\
         self.ln_1_bias,\
         self.attn_c_attn_bias,self.h[0].attn.dim,\
         start_pos,\
