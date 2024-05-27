@@ -217,14 +217,13 @@ class Embedding_2: #todo crutch
 
 class Mock_tg_rand:
   def __init__(self):
-    self.index = 0
-    file1 = open('random_nums.txt', 'r')
-    self.lines = file1.readlines()
+    self.seed = 420
 
   def rand(self):
-    ret = np.float32(self.lines[self.index])
-    self.index+=1
-    return ret
+    self.seed += 1
+    rng = np.random.default_rng(self.seed)
+    rng_np_buffer = rng.random(size=1, dtype=np.float32).astype(dtype=np.float32, copy=False)
+    return rng_np_buffer[0]
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
