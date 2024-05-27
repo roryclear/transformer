@@ -933,14 +933,13 @@ def matvec3_256(h_g,weight2_g,temperature,res_g): #pass bias in instead of addin
     seg2 = math.ceil(cols / 256)
     prg = cl.Program(ctx, f"""
     __kernel void matvec(
-        __global const float *h, __global const float *weight2 , __global float *res)
+        __global const float *a, __global const float *weight6 , __global float *res)
     {{
-        //int gidx0 = get_global_id(0);
         int lidx0 = get_local_id(0);
         for(int i = 0; i < {seg2}; i++) {{
             res[lidx0*{seg2} + i] = 0;
             for(int j = 0; j < {rows}; j++) {{
-                res[lidx0*{seg2} + i] += h[j] * weight2[lidx0*{seg2} + i + j*{cols}];
+                res[lidx0*{seg2} + i] += a[j] * weight6[lidx0*{seg2} + i + j*{cols}];
             }}
             res[lidx0*{seg2} + i] = res[lidx0*{seg2} + i] / {temperature};
         }}
