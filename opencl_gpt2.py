@@ -215,9 +215,9 @@ class Embedding_2: #todo crutch
         ret[i][j] = self.weight[idx[i]][j]
     return ret
 
-class Mock_tg_rand:
-  def __init__(self):
-    self.seed = 420
+class Mock_tg_rand():
+  def __init__(self,seed):
+    self.seed = seed
 
   def rand(self):
     self.seed += 1
@@ -396,7 +396,6 @@ class Transformer:
         ret = logits.argmax(-1)
         return ret
       else: #temp
-        unif_samples = tg_rand.rand()
         logits = openclk.kernel_4(self.wte_weight,self.wpe_weight,tokens[0],self.ln_1_weights,\
         self.ln_1_bias,\
         self.attn_c_attn_bias,self.h[0].attn.dim,\
@@ -410,7 +409,7 @@ class Transformer:
         self.mlp_c_fc_weight,
         self.mlp_c_proj_weight,self.mlp_c_proj_bias,
         self.ln_f_weight, self.ln_f_bias,
-        self.lm_head_weight,temperature,self.logits,unif_samples)
+        self.lm_head_weight,temperature,self.logits)
         return logits
     else:
       tok_emb = self.wte(tokens)
@@ -556,7 +555,7 @@ if __name__ == "__main__":
   filehandler = open("weights.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   if use_tg_rand:
-    tg_rand = Mock_tg_rand()
+    tg_rand = Mock_tg_rand(420)
   print(type(gpt2))
 
 

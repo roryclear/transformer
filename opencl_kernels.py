@@ -3,6 +3,7 @@ import numpy as np
 import pyopencl as cl
 import time
 import math
+import opencl_gpt2
 
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
@@ -11,6 +12,7 @@ queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
 dim = 768
 n_heads = 12
+tg_rand = opencl_gpt2.Mock_tg_rand(421) #start_pos = 0 adds to it!
 
 def add(a_g,b_g,start_pos=0,b_s=0):
     ls = 256
@@ -208,7 +210,7 @@ def kernel_0(a,c,d):
 def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     weight2_g,bias2_g,bias3_g,\
     e_g,keys_values,weight_g,weight3_g,weight4_g,bias4_g,weight5_g,bias5_g,
-    weight6_g,temperature,res_g,unif_samples): #g = size
+    weight6_g,temperature,res_g): #g = size
     ls = 256
     rows = 768
     cols = 50257
@@ -481,7 +483,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         temp[lidx0] = 0;
         for(int i = 0; i < {seg2}; i++) {{
             if(i + lidx0*{seg2} < {size-1}) {{
-                if((res[i + lidx0*{seg2}] / res[{size} - 1]) <= {unif_samples}) {{
+                if((res[i + lidx0*{seg2}] / res[{size} - 1]) <= {tg_rand.rand()}) {{
                     temp[lidx0] += 1;
                 }}
             }}
