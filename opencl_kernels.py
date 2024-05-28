@@ -478,23 +478,14 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
             }}
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
+        temp[lidx0] = 0;
         for(int i = 0; i < {seg2}; i++) {{
             if(i + lidx0*{seg2} < {size-1}) {{
-                res[i + lidx0*{seg2}] = res[i + lidx0*{seg2}] / res[{size} - 1];
-                if(res[i + lidx0*{seg2}] <= {unif_samples}) {{
-                    res[i + lidx0*{seg2}] = 1;
-                }} else{{
-                    res[i + lidx0*{seg2}] = 0;
+                if((res[i + lidx0*{seg2}] / res[{size} - 1]) <= {unif_samples}) {{
+                    temp[lidx0] += 1;
                 }}
             }}
         }}
-        barrier(CLK_LOCAL_MEM_FENCE);
-        res[{size-1}] = 0;
-        t = 0;
-        for(int i = 0; i < {seg2}; i++) {{
-            t += res[lidx0*{seg2} + i];
-        }}
-        temp[lidx0] = t;
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
             t = 0;
