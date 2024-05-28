@@ -220,10 +220,12 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
     h = np.zeros(768).astype(np.float32)
+    token = np.zeros(1).astype(np.float32)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     keys_values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys_values)
     temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
     xqkv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
+    token_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=token)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
@@ -235,7 +237,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         __global const float *bias4,
         __global float *temp3, __global const float *a2, __global const float *b2,
         __global const float *weight5, __global const float *bias5,
-        __global const float *weight6, __global float *res)
+        __global const float *weight6, __global float *res, __global float *token)
     {{
         __attribute__ ((aligned (16))) __local float temp[{ls}];
         __attribute__ ((aligned (16))) __local float mean;
@@ -446,7 +448,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
             t = -INFINITY;
-            for(int i = 0; i < {ls}; i++) {{ //rory todo 32
+            for(int i = 0; i < {ls}; i++) {{
                 t = max(temp[i],t);
             }}
         }}
@@ -465,7 +467,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
             t = 0;
-            for(int i = 0; i < {ls}; i++) {{ //rory todo 32
+            for(int i = 0; i < {ls}; i++) {{
                 t = t + temp[i];
             }}
         }}
@@ -494,7 +496,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
             for(int i = 0; i < {ls}; i++) {{
                 t += temp[i];
             }}
-            res[0] = t;
+            token[0] = t;
         }}
     }}
     """).build()
@@ -502,11 +504,10 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     knl(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
     ,keys_values_g,weight_g,bias_g,\
     weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g,a_g_2,b_g_2,weight5_g,bias5_g,
-    weight6_g,res_g)
+    weight6_g,res_g,token_g)
     cl.enqueue_copy(queue, keys_values, keys_values_g)
-    res = np.zeros(size).astype(np.float32)
-    cl.enqueue_copy(queue, res, res_g)
-    return res[0].astype(np.int32)
+    cl.enqueue_copy(queue, token, token_g)
+    return token[0].astype(np.int32)
 
 def kernel_4_notemp(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     weight2_g,bias2_g,bias3_g,\
