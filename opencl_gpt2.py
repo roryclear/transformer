@@ -295,21 +295,7 @@ class Transformer:
         self.h[i].mlp.c_proj.weight = self.h[i].mlp.c_proj.weight.flatten()
         self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten()
 
-      h = openclk.kernel_4(h,self.ln_1_weights,\
-      self.ln_1_bias,\
-      self.attn_c_attn_bias,self.h[0].attn.dim,\
-      start_pos,\
-      self.attn_c_proj_bias,\
-      self.ln_2_weight, self.ln_2_bias,\
-      self.mlp_c_fc_bias,\
-      self.attn_c_attn_weight,\
-      self.h[0].attn.cache_kv[0],self.h[0].attn.cache_kv[1],
-      self.attn_c_proj_weight,
-      self.mlp_c_fc_weight,
-      self.mlp_c_proj_weight,self.mlp_c_proj_bias,\
-      self.h[1].attn.cache_kv[0],self.h[1].attn.cache_kv[1])
-
-      for i in range(2,len(self.h)):
+      for i in range(0,len(self.h)):
         #inlined attn
         h = openclk.kernel_2(h,self.h[i].ln_1.weight,\
         self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
@@ -451,7 +437,7 @@ if __name__ == "__main__":
   #bc tinygrad doesnt work in windows, and opencl doesnt work on WSL
   use_tg_rand = True #mocks tg random function by just reading from a file
   default_prompt = "What is the answer to life, the universe, and everything?"
-  #default_prompt = "What happened in 1939?"
+  default_prompt = "What happened in 1939?"
   # should output:
   # .... The Jewish people rejected
 
