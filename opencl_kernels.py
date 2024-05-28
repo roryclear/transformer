@@ -433,7 +433,6 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
             }}
             res[lidx0*{seg2} + i] = res[lidx0*{seg2} + i] / {temperature};
         }}
-
         ///KERNEL_5
         t = -INFINITY;
         for(int i = 0; i < {seg2}; i++) {{
@@ -491,6 +490,19 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         res[{size-1}] = 0;
+        t = 0;
+        for(int i = 0; i < {seg2}; i++) {{
+            t += res[lidx0*{seg2} + i];
+        }}
+        temp[lidx0] = t;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            t = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                t += temp[i];
+            }}
+            res[0] = t;
+        }}
     }}
     """).build()
     knl = prg.mm
@@ -501,7 +513,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     cl.enqueue_copy(queue, keys_values, keys_values_g)
     res = np.zeros(size).astype(np.float32)
     cl.enqueue_copy(queue, res, res_g)
-    return res
+    return res[0].astype(np.int32)
 
 def kernel_4_notemp(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     weight2_g,bias2_g,bias3_g,\

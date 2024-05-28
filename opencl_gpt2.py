@@ -411,8 +411,7 @@ class Transformer:
         self.mlp_c_proj_weight,self.mlp_c_proj_bias,
         self.ln_f_weight, self.ln_f_bias,
         self.lm_head_weight,temperature,self.logits,unif_samples)
-        ret = np.array(int(logits.sum()))
-        return ret
+        return logits
     else:
       tok_emb = self.wte(tokens)
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,self.dim))
