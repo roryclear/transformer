@@ -279,7 +279,7 @@ def kernel_0(a,c,d):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
+def kernel_4(a_g_2,b_g_2,token,c_g,d_g,f,g,start_pos,bias_g,\
     weight2_g,bias2_g,bias3_g,\
     e_g,keys_values,weight_g,weight3_g,weight4_g,bias4_g,weight5_g,bias5_g): #g = size
     ls = 256
@@ -311,7 +311,7 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         __attribute__ ((aligned (16))) __local float h[768];
         int lidx0 = get_local_id(0);
         for(int i = 0; i < {seg}; i++) {{
-            a[lidx0*{seg} + i] = a2[{b_s*768} + lidx0*{seg} + i] + b2[lidx0*{seg} + i + {start_pos*768}];   
+            a[lidx0*{seg} + i] = a2[{token*768} + lidx0*{seg} + i] + b2[lidx0*{seg} + i + {start_pos*768}];   
         }}
         for(int r = 0; r < 12; r++) {{
         barrier(CLK_LOCAL_MEM_FENCE);  
