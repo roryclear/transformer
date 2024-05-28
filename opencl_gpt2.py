@@ -8,7 +8,13 @@ import math
 import os
 import pickle
 import opencl_kernels as openclk
+import pyopencl as cl
 opencl = True
+
+platform = cl.get_platforms()
+my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
+ctx = cl.Context(devices=my_gpu_devices)
+mf = cl.mem_flags
 
 MAX_CONTEXT = 128
 
@@ -242,51 +248,80 @@ class Transformer:
     #self.ln_1_weights = None
 
   def forward(self, tokens, start_pos, temperature:float=0.0):
-    if hasattr(self, 'ln_1_weights') == False:
-      print("copying ln_1_weights")
-      self.ln_1_weights = np.concatenate((self.h[0].ln_1.weight,self.h[1].ln_1.weight))
+    if hasattr(self, 'ln_1_weight') == False:
+      print("copying ln_1_weight")
+      self.ln_1_weight = []
+      for i in range(len(self.h)):
+        self.ln_1_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].ln_1.weight))
+
     if hasattr(self, 'ln_1_bias') == False:
       print("copying ln_1_bias")
-      self.ln_1_bias = np.concatenate((self.h[0].ln_1.bias,self.h[1].ln_1.bias))
-    if hasattr(self, 'attn_c_attn_bias') == False: #2304,
+      self.ln_1_bias = []
+      for i in range(len(self.h)):
+        self.ln_1_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].ln_1.bias))
+
+    if hasattr(self, 'attn_c_attn_weight') == False:
+      print("copying attn_c_attn_weight")
+      self.attn_c_attn_weight = []
+      for i in range(len(self.h)):
+        self.attn_c_attn_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].attn.c_attn.weight.transpose(1,0).flatten()))
+
+    if hasattr(self, 'attn_c_attn_bias') == False: #dont use yet
       print("copying attn_c_attn_bias")
-      self.attn_c_attn_bias = np.concatenate((self.h[0].attn.c_attn.bias,self.h[1].attn.c_attn.bias))
+      self.attn_c_attn_bias = []
+      for i in range(len(self.h)):
+        self.attn_c_attn_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].attn.c_attn.bias))
+
+    if hasattr(self, 'attn_c_proj_weight') == False:
+      print("copying attn_c_proj_weight")
+      self.attn_c_proj_weight = []
+      for i in range(len(self.h)):
+        self.attn_c_proj_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].attn.c_proj.weight.flatten()))
+
     if hasattr(self, 'attn_c_proj_bias') == False:
       print("copying attn_c_proj_bias")
-      self.attn_c_proj_bias = np.concatenate((self.h[0].attn.c_proj.bias,self.h[1].attn.c_proj.bias))
-    if hasattr(self, 'ln_2_weight') == False: #768,
+      self.attn_c_proj_bias = []
+      for i in range(len(self.h)):
+        self.attn_c_proj_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].attn.c_proj.bias))
+
+    if hasattr(self, 'ln_2_weight') == False:
       print("copying ln_2_weight")
-      self.ln_2_weight = np.concatenate((self.h[0].ln_2.weight,self.h[1].ln_2.weight))
-    if hasattr(self, 'ln_2_bias') == False: #768,
+      self.ln_2_weight = []
+      for i in range(len(self.h)):
+        self.ln_2_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].ln_2.weight))
+
+    if hasattr(self, 'ln_2_bias') == False:
       print("copying ln_2_bias")
-      self.ln_2_bias = np.concatenate((self.h[0].ln_2.bias,self.h[1].ln_2.bias))
-    if hasattr(self, 'mlp_c_fc_bias') == False: #768,
-      print("copying mlp_c_fc_bias")
-      self.mlp_c_fc_bias = np.concatenate((self.h[0].mlp.c_fc.bias,self.h[1].mlp.c_fc.bias))
-    if hasattr(self, 'attn_c_attn_weight') == False: #768*2304
-      print("copying attn_c_attn_weight")
-      self.attn_c_attn_weight = np.concatenate((self.h[0].attn.c_attn.weight.transpose(1,0).flatten(),\
-      self.h[1].attn.c_attn.weight.transpose(1,0).flatten()))
-    if hasattr(self, 'attn_c_proj_weight') == False: #768*2304
-      print("copying attn_c_proj_weight")
-      self.attn_c_proj_weight = np.concatenate((self.h[0].attn.c_proj.weight.flatten(),\
-      self.h[1].attn.c_proj.weight.flatten()))
-    if hasattr(self, 'mlp_c_fc_weight') == False: #768*2304
+      self.ln_2_bias = []
+      for i in range(len(self.h)):
+        self.ln_2_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].ln_2.bias))
+
+    if hasattr(self, 'mlp_c_fc_weight') == False:
       print("copying mlp_c_fc_weight")
-      self.mlp_c_fc_weight = np.concatenate((self.h[0].mlp.c_fc.weight.transpose(1,0).flatten(),\
-      self.h[1].mlp.c_fc.weight.transpose(1,0).flatten()))
-    if hasattr(self, 'mlp_c_proj_weight') == False: #768*2304
-      print("copying mlp.c_proj.weight")
-      self.mlp_c_proj_weight = np.concatenate((self.h[0].mlp.c_proj.weight.flatten(),\
-      self.h[1].mlp.c_proj.weight.flatten()))
-    if hasattr(self, 'mlp_c_proj_bias') == False: #768
-      print("copying mlp_c_proj_bias")
-      self.mlp_c_proj_bias = np.concatenate((self.h[0].mlp.c_proj.bias,\
-      self.h[1].mlp.c_proj.bias))
-    # 2D !
-    #if hasattr(self, 'attn_c_attn_weight') == False:
-      #print("FFFFFFSSSS attn_c_attn_weight")
-      #self.attn_c_attn_weight = np.concatenate((self.h[0].attn.c_attn.weight.flatten(),self.h[1].attn.c_attn.weight.flatten()))
+      self.mlp_c_fc_weight = []
+      for i in range(len(self.h)):
+        self.mlp_c_fc_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].mlp.c_fc.weight.transpose(1,0).flatten()))
+
+    if hasattr(self, 'mlp_c_fc_bias') == False:
+      print("copying mlp_c_fc_bias")
+      self.mlp_c_fc_bias = []
+      for i in range(len(self.h)):
+        self.mlp_c_fc_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].mlp.c_fc.bias))
+
+    if hasattr(self, 'mlp_c_proj_weight') == False:
+      print("copying mlp_c_proj_weight")
+      self.mlp_c_proj_weight = []
+      for i in range(len(self.h)):
+        self.mlp_c_proj_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].mlp.c_proj.weight.flatten()))
+
+    if hasattr(self, 'ln_f_weight') == False:
+      print("copying ln_f_weight")
+      self.ln_f_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f.weight)
+
+    if hasattr(self, 'ln_f_bias') == False:
+      print("copying ln_f_bias")
+      self.ln_f_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f.bias)
+
     seqlen = len(tokens)
     if start_pos > 0:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
@@ -297,15 +332,15 @@ class Transformer:
 
       for i in range(0,len(self.h)):
         #inlined attn
-        h = openclk.kernel_2(h,self.h[i].ln_1.weight,\
-        self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
+        h = openclk.kernel_2(h,self.ln_1_weight[i],\
+        self.ln_1_bias[i],self.attn_c_attn_weight[i],\
         self.h[i].attn.c_attn.bias,self.h[i].attn.dim,\
         self.h[i].attn.cache_kv[0],self.h[i].attn.cache_kv[1],start_pos,\
-        self.h[i].attn.c_proj.weight,self.h[i].attn.c_proj.bias,\
-        self.h[i].ln_2.weight, self.h[i].ln_2.bias,\
-        self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias,\
-        self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
-      h = openclk.kernel_3(h,self.ln_f.weight, self.ln_f.bias)
+        self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
+        self.ln_2_weight[i], self.ln_2_bias[i],\
+        self.mlp_c_fc_weight[i],self.h[i].mlp.c_fc.bias,\
+        self.mlp_c_proj_weight[i],self.h[i].mlp.c_proj.bias)
+      h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
       self.lm_head.weight = self.lm_head.weight.flatten()
       logits = openclk.matvec2(h,self.lm_head.weight)
     else:
@@ -437,7 +472,7 @@ if __name__ == "__main__":
   #bc tinygrad doesnt work in windows, and opencl doesnt work on WSL
   use_tg_rand = True #mocks tg random function by just reading from a file
   default_prompt = "What is the answer to life, the universe, and everything?"
-  default_prompt = "What happened in 1939?"
+  #default_prompt = "What happened in 1939?"
   # should output:
   # .... The Jewish people rejected
 
