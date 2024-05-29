@@ -30,8 +30,7 @@ def add(a,b,b_s=0,a_s=0):
     """).build()
     knl = prg.add
     knl(queue, (768,1), (256,1), a_g, b_g,res_g) #todo check shape
-    cl.enqueue_copy(queue, res_np, res_g)
-    return res_np
+    return res_g
 
 len = 768
 loop_size = int(len / 256)
@@ -72,11 +71,10 @@ def minus_mean_multi(a):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def kernel_3(h,weight_g,bias_g):
-    size = np.shape(h)[0]
+def kernel_3(h_g,weight_g,bias_g):
+    size = 768 #todo
     ls = 256
     seg = int(size / ls) #todo
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *h, __global const float *weight, __global const float *bias)
@@ -123,8 +121,7 @@ def kernel_3(h,weight_g,bias_g):
     """).build()
     knl = prg.mm
     knl(queue, (ls,1), (ls,1), h_g, weight_g, bias_g) #rory to test large stuff
-    cl.enqueue_copy(queue, h, h_g)
-    return h
+    return h_g
 
 def kernel_0(a,c,d):
     size = np.shape(a)[0]
@@ -182,7 +179,7 @@ def kernel_0(a,c,d):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def kernel_2(h,c_g,d_g,e_g,f,g,keys,values,start_pos,weight_g,bias_g,\
+def kernel_2(a_g,c_g,d_g,e_g,f,g,keys,values,start_pos,weight_g,bias_g,\
     weight2_g,bias2_g,weight3_g,bias3,weight4_g,bias4): #g = size
     ls = 256
     zeros = np.zeros(np.shape(bias4)[0]).astype(np.float32)
@@ -192,7 +189,6 @@ def kernel_2(h,c_g,d_g,e_g,f,g,keys,values,start_pos,weight_g,bias_g,\
     xv = f[2*g:]
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
     xk_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xk)
     xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
@@ -363,8 +359,7 @@ def kernel_2(h,c_g,d_g,e_g,f,g,keys,values,start_pos,weight_g,bias_g,\
     weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,h_g,h_temp_g,temp_g)
     cl.enqueue_copy(queue, keys, keys_g)
     cl.enqueue_copy(queue, values, values_g)
-    cl.enqueue_copy(queue, h, a_g)
-    return h
+    return a_g
 
 def kernel_4(h,c,d,f,g,start_pos,bias,\
     weight2,bias2,bias3,\
@@ -1083,11 +1078,10 @@ def matvec_b(a,b,c,h):
     cl.enqueue_copy(queue, h, h_g)
     return h
 
-def matvec2(h,weight2): #pass bias in instead of adding to zero, todo for other kernels
+def matvec2(h_g,weight2): #pass bias in instead of adding to zero, todo for other kernels
     rows = 768
     cols = 50257
     res = np.zeros(cols).astype(np.float32)
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     prg = cl.Program(ctx, f"""
