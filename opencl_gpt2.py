@@ -365,7 +365,8 @@ class Transformer:
         ret = logits.argmax(-1)
       else:
         logits = openclk.matvec2(h,self.lm_head_weight,temperature)
-        logits = np.exp(logits - np.max(logits))
+        logits = openclk.kernel_6(logits)
+        #logits = np.exp(logits)
         logits = logits / logits.sum()
         logits = logits.cumsum(0)
         logits = logits / logits[-1]
