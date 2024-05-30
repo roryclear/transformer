@@ -366,8 +366,8 @@ class Transformer:
       else:
         logits = openclk.matvec2(h,self.lm_head_weight,temperature)
         logits = openclk.kernel_6(logits)
-        #logits = np.exp(logits)
-        logits = logits / logits.sum()
+        logits = openclk.kernel_7(logits)
+        #logits = logits / sum
         logits = logits.cumsum(0)
         logits = logits / logits[-1]
         if use_tg_rand:
