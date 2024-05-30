@@ -366,7 +366,6 @@ class Transformer:
       else:
         logits = openclk.matvec2(h,self.lm_head_weight,temperature)
         logits = openclk.kernel_5(logits)
-        logits = logits / logits.sum()
         logits = logits.cumsum(0)
         unif_samples = tg_rand.rand()
         b = np.empty_like(logits,dtype=bool)

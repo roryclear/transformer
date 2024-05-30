@@ -128,7 +128,7 @@ def kernel_5(a):
     m = np.zeros(1).astype(np.float32)
     m_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=m)
     ls = 256
-    seg = int(50257 / ls) #todo vocab size
+    seg = math.ceil(50257 / ls) #todo vocab size
     prg = cl.Program(ctx, f"""
     __kernel void five(
         __global const float *a, __global float *mx)
@@ -137,7 +137,9 @@ def kernel_5(a):
        int lidx0 = get_local_id(0);
        float m = -INFINITY;
        for(int i = 0; i < {seg}; i++) {{
+       if((lidx0*{seg} + i) < 50257) {{
         m = max(m,a[lidx0*{seg} + i]);
+        }}
        }}
        temp[lidx0] = m;
        barrier(CLK_LOCAL_MEM_FENCE);
@@ -159,12 +161,91 @@ def kernel_5(a):
        }}
     }}
 
+    __kernel void five_c(
+        __global const float *a, __global float *mx)
+    {{
+       __attribute__ ((aligned (16))) __local float temp[{ls}];
+       int lidx0 = get_local_id(0);
+       float t = 0;
+       for(int i = 0; i < {seg}; i++) {{
+            t += a[i + lidx0*{seg}];
+       }}
+       temp[lidx0] = t;
+       barrier(CLK_LOCAL_MEM_FENCE);
+       if(lidx0 == 0) {{
+        t = 0;
+        for(int i = 0; i < {ls}; i++) {{
+            t += temp[i];
+        }}
+        mx[0] = t;
+       }}
+    }}
+
+    __kernel void five_d(
+        __global float *a, __global float *mx)
+    {{
+       __attribute__ ((aligned (16))) __local float temp[{ls}];
+       int gidx0 = get_global_id(0);
+       if(gidx0 < 50257) {{
+        a[gidx0] = a[gidx0] / mx[0];
+       }}
+    }}
+
     """).build()
     knl = prg.five
     knl(queue, (ls,1), (ls,1), a_g,m_g)
     #math.ceil(50257 / ls) * ls
     knl2 = prg.five_b
     knl2(queue, (math.ceil(50257 / ls) * ls,1), (ls,1), a_g,m_g)
+    knl3 = prg.five_c
+    knl3(queue, (ls,1), (ls,1), a_g,m_g)
+    knl4 = prg.five_d
+    knl4(queue, (math.ceil(50257 / ls) * ls,1), (ls,1), a_g,m_g)
+    cl.enqueue_copy(queue, a, a_g)
+    return a
+
+def kernel_6(a):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    m = np.zeros(1).astype(np.float32)
+    m_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=m)
+    ls = 256
+    seg = math.ceil(50257 / ls) #todo vocab size
+    prg = cl.Program(ctx, f"""
+    __kernel void five_c(
+        __global const float *a, __global float *mx)
+    {{
+       __attribute__ ((aligned (16))) __local float temp[{ls}];
+       int lidx0 = get_local_id(0);
+       float t = 0;
+       for(int i = 0; i < {seg}; i++) {{
+            t += a[i + lidx0*{seg}];
+       }}
+       temp[lidx0] = t;
+       barrier(CLK_LOCAL_MEM_FENCE);
+       if(lidx0 == 0) {{
+        t = 0;
+        for(int i = 0; i < {ls}; i++) {{
+            t += temp[i];
+        }}
+        mx[0] = t;
+       }}
+    }}
+
+    __kernel void five_d(
+        __global float *a, __global float *mx)
+    {{
+       __attribute__ ((aligned (16))) __local float temp[{ls}];
+       int gidx0 = get_global_id(0);
+       if(gidx0 < 50257) {{
+        a[gidx0] = a[gidx0] / mx[0];
+       }}
+    }}
+    """).build()
+    knl = prg.five_c
+    knl(queue, (ls,1), (ls,1), a_g,m_g)
+    knl2 = prg.five_d
+    knl2(queue, (math.ceil(50257 / ls) * ls,1), (ls,1), a_g,m_g)
+    #cl.enqueue_copy(queue, m, m_g)
     cl.enqueue_copy(queue, a, a_g)
     return a
 
@@ -1425,4 +1506,4 @@ n_np = np.matmul(a,b)
 np.testing.assert_allclose(n,n_np,rtol=1e-5)
 np.testing.assert_allclose(nb,n_np,rtol=1e-5)
 print("times:\t",t,"\t",tb)
-'''
+'''	
