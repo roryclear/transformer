@@ -345,7 +345,7 @@ class Transformer:
         self.attn_cache_kv[i],start_pos,\
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
-        self.mlp_c_fc_weight[i],self.h[i].mlp.c_fc.bias,\
+        self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.h[i].mlp.c_proj.bias)
       h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
       self.lm_head.weight = self.lm_head.weight.flatten()
