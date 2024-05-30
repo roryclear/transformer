@@ -182,13 +182,9 @@ def kernel_0(a,c,d):
 def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
     weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g): #g = size
     ls = 256
-    zeros = np.zeros(dim).astype(np.float32)
     zeros2 = np.zeros(12*(start_pos+1)).astype(np.float32)
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
-    #bias4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias4)
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
-    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
     temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros2)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
@@ -198,7 +194,7 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         __global const float *weight2, __global const float *bias2,
         __global const float *weight3, __global const float *bias3,
         __global const float *weight4,
-        __global float *bias4, __global float *h_temp, __global float *h,
+        __global float *bias4,
         __global float *temp3)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
@@ -206,6 +202,8 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         __attribute__ ((aligned (16))) __local float xq_temp[768];
         __attribute__ ((aligned (16))) __local float bias3_temp[3072];
         __attribute__ ((aligned (16))) __local float bias4_temp[2304];
+        __attribute__ ((aligned (16))) __local float h_temp[768];
+        __attribute__ ((aligned (16))) __local float h[768];
         int lidx0 = get_local_id(0);
         float total = 0;
         for(int i = 0; i < {seg}; i++) {{
@@ -350,7 +348,7 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
     knl = prg.mm
     knl(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
     ,keys_values_g,weight_g,bias_g,\
-    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,h_g,h_temp_g,temp_g)
+    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g)
     return a_g
 
 def kernel_4(h,c,d,f,g,start_pos,bias,\
