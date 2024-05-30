@@ -328,7 +328,8 @@ class Transformer:
         print("copying attn_cache_kv")
         self.attn_cache_kv = []
         for i in range(len(self.h)):
-          self.attn_cache_kv.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].attn.cache_kv[0].flatten()))
+          self.attn_cache_kv.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.concatenate((\
+          self.h[i].attn.cache_kv[0].flatten(),self.h[i].attn.cache_kv[1].flatten()))))
 
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
@@ -341,7 +342,7 @@ class Transformer:
         h = openclk.kernel_2(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
         self.h[i].attn.c_attn.bias,self.h[i].attn.dim,\
-        self.attn_cache_kv[i],self.h[i].attn.cache_kv[1],start_pos,\
+        self.attn_cache_kv[i],start_pos,\
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.h[i].mlp.c_fc.bias,\
