@@ -324,6 +324,12 @@ class Transformer:
 
     seqlen = len(tokens)
     if start_pos > 0:
+      if hasattr(self, 'attn_cache_kv') == False:
+        print("copying attn_cache_kv")
+        self.attn_cache_kv = []
+        for i in range(len(self.h)):
+          self.attn_cache_kv.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].attn.cache_kv[0].flatten()))
+
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
         self.h[i].attn.c_proj.weight = self.h[i].attn.c_proj.weight.flatten()
@@ -335,7 +341,7 @@ class Transformer:
         h = openclk.kernel_2(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
         self.h[i].attn.c_attn.bias,self.h[i].attn.dim,\
-        self.h[i].attn.cache_kv[0],self.h[i].attn.cache_kv[1],start_pos,\
+        self.attn_cache_kv[i],self.h[i].attn.cache_kv[1],start_pos,\
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.h[i].mlp.c_fc.bias,\
