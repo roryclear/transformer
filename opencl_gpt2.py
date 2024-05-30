@@ -341,7 +341,7 @@ class Transformer:
         #inlined attn
         h = openclk.kernel_2(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
-        self.h[i].attn.c_attn.bias,self.h[i].attn.dim,\
+        self.attn_c_attn_bias[i],self.h[i].attn.dim,\
         self.attn_cache_kv[i],start_pos,\
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
