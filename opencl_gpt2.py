@@ -366,8 +366,6 @@ class Transformer:
       else:
         logits = openclk.matvec2(h,self.lm_head_weight,temperature)
         logits = openclk.kernel_6(logits)
-        logits = openclk.kernel_7(logits)
-        #logits = logits / sum
         logits = logits.cumsum(0)
         logits = logits / logits[-1]
         if use_tg_rand:
@@ -513,7 +511,7 @@ if __name__ == "__main__":
   #bc tinygrad doesnt work in windows, and opencl doesnt work on WSL
   use_tg_rand = True #mocks tg random function by just reading from a file
   default_prompt = "What is the answer to life, the universe, and everything?"
-  #default_prompt = "What happened in 1939?"
+  default_prompt = "What happened in 1939?"
   # should output:
   # .... The Jewish people rejected
 
