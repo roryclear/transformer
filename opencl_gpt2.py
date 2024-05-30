@@ -328,6 +328,11 @@ class Transformer:
       print("copying ln_f_bias")
       self.ln_f_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f.bias)
 
+    if hasattr(self, 'lm_head_weight') == False:
+      print("copying lm_head_weight")
+      self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head.weight.flatten())
+
+
     seqlen = len(tokens)
     if start_pos > 0:
       if hasattr(self, 'attn_cache_kv') == False:
@@ -343,19 +348,19 @@ class Transformer:
         self.h[i].mlp.c_proj.weight = self.h[i].mlp.c_proj.weight.flatten()
         self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten()
 
+      attn_dim = 768
       for i in range(0,len(self.h)):
         #inlined attn
         h = openclk.kernel_2(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
-        self.attn_c_attn_bias[i],self.h[i].attn.dim,\
+        self.attn_c_attn_bias[i],attn_dim,\
         self.attn_cache_kv[i],start_pos,\
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
       h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
-      self.lm_head.weight = self.lm_head.weight.flatten()
-      logits = openclk.matvec2(h,self.lm_head.weight)
+      logits = openclk.matvec2(h,self.lm_head_weight)
     else:
       tok_emb = self.wte(tokens)
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,self.dim))
