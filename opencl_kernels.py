@@ -10,6 +10,7 @@ ctx = cl.Context(devices=my_gpu_devices)
 queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
 dim = 768
+prg = None
 n_heads = 12
 
 def add(a,b,b_s=0,a_s=0):
@@ -72,11 +73,10 @@ def minus_mean_multi(a):
     return a
 
 def kernel_3(h_g,weight_g,bias_g):
-    size = 768 #todo
     ls = 256
-    seg = int(size / ls) #todo
+    seg = int(dim / ls) #todo
     prg = cl.Program(ctx, f"""
-    __kernel void mm(
+    __kernel void mm4(
         __global float *h, __global const float *weight, __global const float *bias)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
@@ -93,7 +93,7 @@ def kernel_3(h_g,weight_g,bias_g):
             for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
-            mean = total / {size};  
+            mean = total / {dim};  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
@@ -111,7 +111,7 @@ def kernel_3(h_g,weight_g,bias_g):
             for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
-            mean = pow(total / {size} + 1e-5,0.5);
+            mean = pow(total / {dim} + 1e-5,0.5);
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
@@ -119,7 +119,7 @@ def kernel_3(h_g,weight_g,bias_g):
         }}
     }}
     """).build()
-    knl = prg.mm
+    knl = prg.mm4
     knl(queue, (ls,1), (ls,1), h_g, weight_g, bias_g) #rory to test large stuff
     return h_g
 
@@ -244,7 +244,6 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         }}
     }}
 
-
     __kernel void mm2(
         __global float *keys_values,
         __global float *temp3, __global float *xq_temp)
@@ -258,7 +257,6 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
             }}                  
             temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
     }}
-
         __kernel void mm3(
         __global float *a,
         __global float *keys_values,
@@ -1090,7 +1088,29 @@ def matvec_b(a,b,c,h):
     cl.enqueue_copy(queue, h, h_g)
     return h
 
-def matvec2(h_g,weight2_g): #pass bias in instead of adding to zero, todo for other kernels
+def matvec2(h_g,weight2_g,temperatue): #pass bias in instead of adding to zero, todo for other kernels
+    rows = 768
+    cols = 50257
+    res = np.zeros(cols).astype(np.float32)
+    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
+    prg = cl.Program(ctx, f"""
+    __kernel void matvec(
+        __global const float *h, __global const float *weight2 , __global float *res)
+    {{
+        int gidx0 = get_global_id(0);
+        for(int j = 0; j < {rows}; j++) {{
+            res[gidx0] += h[j] * weight2[gidx0 + j*{cols}];
+        }}
+        res[gidx0] /= {temperatue};
+    }}
+    """).build()
+    knl = prg.matvec
+    gidx = math.ceil(cols / 16) * 16
+    knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
+    cl.enqueue_copy(queue, res, res_g)
+    return res
+
+def matvec2_notemp(h_g,weight2_g): #pass bias in instead of adding to zero, todo for other kernels
     rows = 768
     cols = 50257
     res = np.zeros(cols).astype(np.float32)

@@ -217,14 +217,13 @@ class Embedding_2: #todo crutch
 
 class Mock_tg_rand:
   def __init__(self):
-    self.index = 0
-    file1 = open('random_nums.txt', 'r')
-    self.lines = file1.readlines()
+    self.seed = 420
 
   def rand(self):
-    ret = np.float32(self.lines[self.index])
-    self.index+=1
-    return ret
+    self.seed += 1
+    rng = np.random.default_rng(self.seed)
+    rng_np_buffer = rng.random(size=1, dtype=np.float32).astype(dtype=np.float32, copy=False)
+    return rng_np_buffer[0]
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
@@ -360,7 +359,30 @@ class Transformer:
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
       h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
-      logits = openclk.matvec2(h,self.lm_head_weight)
+
+      if temperature < 1e-6:
+        logits = openclk.matvec2(h,self.lm_head_weight)
+        ret = logits.argmax(-1)
+      else:
+        logits = openclk.matvec2(h,self.lm_head_weight,temperature)
+        logits = np.exp(logits - np.max(logits))
+        logits = logits / logits.sum()
+        logits = logits.cumsum(0)
+        logits = logits / logits[-1]
+        if use_tg_rand:
+          unif_samples = tg_rand.rand()
+        else:
+          unif_samples = np.random.rand().astype(np.float32)
+        b = np.empty_like(logits,dtype=bool)
+        for i in range(len(logits)):
+          if unif_samples >= logits[i]:
+            b[i] = True
+          else:
+            b[i] = False
+        b = b.sum()
+        ret = np.array(b)
+        return ret
+
     else:
       tok_emb = self.wte(tokens)
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,self.dim))
