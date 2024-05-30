@@ -180,13 +180,13 @@ def kernel_0(a,c,d):
     return a
 
 def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
-    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4): #g = size
+    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g): #g = size
     ls = 256
-    zeros = np.zeros(np.shape(bias4)[0]).astype(np.float32)
+    zeros = np.zeros(dim).astype(np.float32)
     zeros2 = np.zeros(12*(start_pos+1)).astype(np.float32)
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
-    bias4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias4)
+    #bias4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias4)
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
     h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
     temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros2)
@@ -205,6 +205,7 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         __attribute__ ((aligned (16))) __local float mean;
         __attribute__ ((aligned (16))) __local float xq_temp[768];
         __attribute__ ((aligned (16))) __local float bias3_temp[3072];
+        __attribute__ ((aligned (16))) __local float bias4_temp[2304];
         int lidx0 = get_local_id(0);
         float total = 0;
         for(int i = 0; i < {seg}; i++) {{
@@ -337,11 +338,12 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
             * (1 + 0.044715 * pow(bias3_temp[i + lidx0*{int(dim*4 / ls)}],2))));
         }}
         barrier(CLK_LOCAL_MEM_FENCE);  
-        for(int i = 0; i < {int(np.shape(bias4)[0] / ls)}; i++) {{
+        for(int i = 0; i < {int(dim / ls)}; i++) {{
+            bias4_temp[lidx0 + i*{ls}] = bias4[lidx0 + i*{ls}];
             for(int j = 0; j < {dim*4}; j++) {{
-                bias4[lidx0 + i*{ls}] += bias3_temp[j] * weight4[lidx0 + i*{ls} + j*{dim}];
+                bias4_temp[lidx0 + i*{ls}] += bias3_temp[j] * weight4[lidx0 + i*{ls} + j*{dim}];
             }}
-            a[lidx0 + i*{ls}] = bias4[lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
+            a[lidx0 + i*{ls}] = bias4_temp[lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
         }}
     }}
     """).build()

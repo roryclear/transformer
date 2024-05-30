@@ -308,6 +308,12 @@ class Transformer:
       for i in range(len(self.h)):
         self.mlp_c_fc_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].mlp.c_fc.bias))
 
+    if hasattr(self, 'mlp_c_proj_bias') == False:
+      print("copying mlp_c_proj_bias")
+      self.mlp_c_proj_bias = []
+      for i in range(len(self.h)):
+        self.mlp_c_proj_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].mlp.c_proj.bias))
+
     if hasattr(self, 'mlp_c_proj_weight') == False:
       print("copying mlp_c_proj_weight")
       self.mlp_c_proj_weight = []
@@ -346,7 +352,7 @@ class Transformer:
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
-        self.mlp_c_proj_weight[i],self.h[i].mlp.c_proj.bias)
+        self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
       h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
       self.lm_head.weight = self.lm_head.weight.flatten()
       logits = openclk.matvec2(h,self.lm_head.weight)
