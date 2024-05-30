@@ -123,6 +123,51 @@ def kernel_3(h_g,weight_g,bias_g):
     knl(queue, (ls,1), (ls,1), h_g, weight_g, bias_g) #rory to test large stuff
     return h_g
 
+def kernel_5(a):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    m = np.zeros(1).astype(np.float32)
+    m_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=m)
+    ls = 256
+    seg = int(50257 / ls) #todo vocab size
+    prg = cl.Program(ctx, f"""
+    __kernel void five(
+        __global const float *a, __global float *mx)
+    {{
+       __attribute__ ((aligned (16))) __local float temp[{ls}];
+       int lidx0 = get_local_id(0);
+       float m = -INFINITY;
+       for(int i = 0; i < {seg}; i++) {{
+        m = max(m,a[lidx0*{seg} + i]);
+       }}
+       temp[lidx0] = m;
+       barrier(CLK_LOCAL_MEM_FENCE);
+       if(lidx0 == 0){{
+       for(int i = 0; i < {ls}; i++) {{
+        m = max(m,temp[i]);
+       }}
+        mx[0] = m;
+       }}
+    }}
+
+    __kernel void five_b(
+        __global float *a, __global float *mx)
+    {{
+       __attribute__ ((aligned (16))) __local float temp[{ls}];
+       int gidx0 = get_global_id(0);
+       if(gidx0 < 50257) {{
+        a[gidx0] = exp(a[gidx0] - mx[0]);
+       }}
+    }}
+
+    """).build()
+    knl = prg.five
+    knl(queue, (ls,1), (ls,1), a_g,m_g)
+    #math.ceil(50257 / ls) * ls
+    knl2 = prg.five_b
+    knl2(queue, (math.ceil(50257 / ls) * ls,1), (ls,1), a_g,m_g)
+    cl.enqueue_copy(queue, a, a_g)
+    return a
+
 def kernel_0(a,c,d):
     size = np.shape(a)[0]
     ls = 256

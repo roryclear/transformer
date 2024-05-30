@@ -365,14 +365,10 @@ class Transformer:
         ret = logits.argmax(-1)
       else:
         logits = openclk.matvec2(h,self.lm_head_weight,temperature)
-        logits = np.exp(logits - np.max(logits))
+        logits = openclk.kernel_5(logits)
         logits = logits / logits.sum()
         logits = logits.cumsum(0)
-        logits = logits / logits[-1]
-        if use_tg_rand:
-          unif_samples = tg_rand.rand()
-        else:
-          unif_samples = np.random.rand().astype(np.float32)
+        unif_samples = tg_rand.rand()
         b = np.empty_like(logits,dtype=bool)
         for i in range(len(logits)):
           if unif_samples >= logits[i]:
