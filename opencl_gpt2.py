@@ -317,7 +317,7 @@ class Transformer:
         return ret
 
     else:
-      tok_emb = self.wte(tokens)
+      tok_emb = openclk.tok_emb(tokens,self.wte.weight)
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,self.dim))
       x = tok_emb + pos_emb
       #rory - h self.h is the 12 transformer blocks, so this is just forward through all
