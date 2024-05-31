@@ -365,21 +365,8 @@ class Transformer:
         ret = logits.argmax(-1)
       else:
         logits = openclk.matvec2(h,self.lm_head_weight,temperature)
-        logits = openclk.kernel_6(logits)
-        logits = logits.cumsum(0)
-        logits = logits / logits[-1]
-        if use_tg_rand:
-          unif_samples = tg_rand.rand()
-        else:
-          unif_samples = np.random.rand().astype(np.float32)
-        b = np.empty_like(logits,dtype=bool)
-        for i in range(len(logits)):
-          if unif_samples >= logits[i]:
-            b[i] = True
-          else:
-            b[i] = False
-        b = b.sum()
-        ret = np.array(b)
+        unif_samples = tg_rand.rand()
+        ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
         return ret
 
     else:
@@ -426,11 +413,7 @@ class Transformer:
       logits = np.exp(logits - np.max(logits))
       logits = logits / logits.sum()
       logits = logits.cumsum(0)
-      logits = logits / logits[-1]
-      if use_tg_rand:
-        unif_samples = tg_rand.rand()
-      else:
-        unif_samples = np.random.rand().astype(np.float32)
+      unif_samples = tg_rand.rand()
       b = np.empty_like(logits,dtype=bool)
       for i in range(len(logits)):
         if unif_samples >= logits[i]:
@@ -511,7 +494,7 @@ if __name__ == "__main__":
   #bc tinygrad doesnt work in windows, and opencl doesnt work on WSL
   use_tg_rand = True #mocks tg random function by just reading from a file
   default_prompt = "What is the answer to life, the universe, and everything?"
-  default_prompt = "What happened in 1939?"
+  #default_prompt = "What happened in 1939?"
   # should output:
   # .... The Jewish people rejected
 
