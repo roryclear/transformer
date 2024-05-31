@@ -37,8 +37,7 @@ len = 768
 loop_size = int(len / 256)
 len_short = 768
 
-def kernel_6(a,random_num):
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+def kernel_6(a_g,random_num):
     res = np.zeros(1).astype(np.float32)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     ls = 256
@@ -1251,8 +1250,7 @@ def matvec2(h_g,weight2_g,temperatue): #pass bias in instead of adding to zero, 
     knl = prg.matvec
     gidx = math.ceil(cols / 16) * 16
     knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
-    cl.enqueue_copy(queue, res, res_g)
-    return res
+    return res_g
 
 def matvec2_notemp(h_g,weight2_g): #pass bias in instead of adding to zero, todo for other kernels
     rows = 768
