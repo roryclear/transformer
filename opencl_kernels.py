@@ -46,26 +46,13 @@ def kernel_6(a_g,random_num):
     __kernel void mm(
         __global const float *a, __global float *res)
     {{
-        __attribute__ ((aligned (16))) __local float temp[{ls}];
-        int lidx0 = get_local_id(0);
-        float t = -INFINITY;
-        for(int i = 0; i < {seg}; i++) {{
-            t = max(a[i],t);
-        }}
-        temp[lidx0] = t;
-        barrier(CLK_LOCAL_MEM_FENCE);
-        if(lidx0 == 0) {{
-            for(int i = 0; i < {ls}; i++) {{
-                t = max(t,temp[i]);
-            }}
-            res[0] = t;
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
+        res[0] = a[0]; //todo why is this needed?, used to be a MAX
     }}
 
     __kernel void mm2(
     __global float *a, __global const float *res)
     {{
+        barrier(CLK_LOCAL_MEM_FENCE);
         int gidx0 = get_global_id(0);
         a[gidx0] = exp(a[gidx0] - res[0]);
     }}
@@ -73,21 +60,7 @@ def kernel_6(a_g,random_num):
     __kernel void mm3(
         __global const float *a, __global float *res)
     {{
-        __attribute__ ((aligned (16))) __local float temp[{ls}];
-        int lidx0 = get_local_id(0);
-        float t = 0;
-        for(int i = 0; i < {seg}; i++) {{
-            t = a[lidx0*{seg} + i] + t;
-        }}
-        temp[lidx0] = t;
-        barrier(CLK_LOCAL_MEM_FENCE);
-        if(lidx0 == 0) {{
-            for(int i = 0; i < {ls}; i++) {{
-                t = t + temp[i];
-            }}
-            res[0] = t;
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
+        res[0] = a[0];
     }}
 
     __kernel void mm4(
@@ -157,11 +130,11 @@ def kernel_6(a_g,random_num):
     
     """).build()
     knl = prg.mm
-    knl(queue, (ls,1), (ls,1), a_g, res_g) 
+    knl(queue, (1,1), (1,1), a_g, res_g) 
     knl2 = prg.mm2
     knl2(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
     knl3 = prg.mm3
-    knl3(queue, (ls,1), (ls,1), a_g, res_g)
+    knl3(queue, (1,1), (1,1), a_g, res_g)
     knl4 = prg.mm4
     knl4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
     knl5 = prg.mm5
