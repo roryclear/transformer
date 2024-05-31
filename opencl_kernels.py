@@ -77,13 +77,14 @@ def kernel_6(a_g,random_num):
         int lidx0 = get_local_id(0);
         float t = 0;
         for(int i = 0; i < {seg}; i++) {{
-            t = a[lidx0*{seg} + i] + t;
+            t += a[lidx0*{seg} + i];
         }}
         temp[lidx0] = t;
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0 == 0) {{
+            t = 0;
             for(int i = 0; i < {ls}; i++) {{
-                t = t + temp[i];
+                t += temp[i];
             }}
             res[0] = t;
         }}
@@ -106,28 +107,7 @@ def kernel_6(a_g,random_num):
         }} else {{
             a[gidx0] = 0;
         }}
-    }}
-
-    __kernel void mm8(
-    __global float *a, __global float *res)
-    {{
-        __attribute__ ((aligned (16))) __local float temp[{ls}];
-        int lidx0 = get_local_id(0);
-        float t = 0;
-        for(int i = 0; i < {seg}; i++) {{
-            t += a[lidx0*{seg} + i];
-        }}
-        temp[lidx0] = t;
-        barrier(CLK_LOCAL_MEM_FENCE);
-        if(lidx0 == 0) {{
-            t = 0;
-            for(int i = 0; i < {ls}; i++) {{
-               t += temp[i]; 
-            }}
-            res[0] = t;
-        }}
-    }}
-    
+    }}    
     """).build()
     knl = prg.mm
     knl(queue, (1,1), (1,1), a_g, res_g) 
@@ -144,9 +124,7 @@ def kernel_6(a_g,random_num):
     knl6(queue, (1,1), (1,1), a_g)
     knl7 = prg.mm7
     knl7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g)
-    ##
-    knl8 = prg.mm8
-    knl8(queue, (ls,1), (ls,1), a_g, res_g)
+    knl5(queue, (ls,1), (ls,1), a_g, res_g)
     cl.enqueue_copy(queue, res, res_g)
     #print(res)
     ##
