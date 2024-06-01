@@ -317,11 +317,14 @@ class Transformer:
         return ret
 
     else:
+      n_tokens = len(tokens)
       x = openclk.tok_emb(tokens,self.wte.weight,self.wpe.weight)
       for i in range(len(self.h)-1):
         h = np.copy(x) #todo
-        for j in range(len(x)): #todo, kernel instead of loop
-          x[j] = openclk.kernel_0(x[j],self.h[i].ln_1.weight, self.h[i].ln_1.bias)
+        ret = openclk.kernel_0_12_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
+        for j in range(n_tokens):
+          x[j] = ret[j*768:(j+1)*768]
+        #x[1] = openclk.kernel_0_12(x[1],self.h[i].ln_1.weight, self.h[i].ln_1.bias)
         #attn = self.h[i].attn(x,start_pos)
         #ATTN START
 
