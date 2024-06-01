@@ -321,7 +321,7 @@ class Transformer:
       x = openclk.tok_emb(tokens,self.wte.weight,self.wpe.weight)
       for i in range(len(self.h)-1):
         h = np.copy(x) #todo
-        ret = openclk.kernel_0_12_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
+        ret = openclk.kernel_0_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
         for j in range(n_tokens):
           x[j] = ret[j*768:(j+1)*768]
         #x[1] = openclk.kernel_0_12(x[1],self.h[i].ln_1.weight, self.h[i].ln_1.bias)
