@@ -1536,6 +1536,44 @@ def matmul_t_3d(a,b):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
+def matmul_t_3d_b(a,b,n_tokens):
+    a_rows = np.shape(a)[1]
+    a_cols = np.shape(a)[2]
+    b_cols = 64
+    b_rows = n_tokens
+    print(b_rows,b_cols)
+    c = np.zeros([np.shape(a)[0],a_rows,b_cols])
+    
+    a = a.flatten()
+    b = b.flatten()
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int x = get_global_id(0);
+        for(int z = 0; z < {np.shape(a)[0]}; z++) {{
+            if(x < {b_cols}) {{
+                for(int y = 0; y < {a_rows}; y++) {{
+                    float total = 0;
+                    for(int k = 0; k < {b_rows}; k++) {{
+                        total += a[y*{b_rows} + k + z*{a_rows}*{a_cols}] * b[x + k*{b_cols} + z*{b_rows}*{b_cols}]; 
+                    }}
+                    res[y*{b_cols} + x + z*{b_cols}*{a_rows}] = total;
+                }}  
+            }}
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    group_size = math.ceil(b_cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
 def matvec4(a,b):
     b_cols = np.shape(b)[1]
     b_rows = np.shape(b)[0]
@@ -1568,7 +1606,7 @@ def matvec4(a,b):
     return c
 
 def transpose(a):
-    s = np.shape(a)[0]    
+    s = np.shape(a)[1]    
     a = a.flatten()
     at = np.zeros_like(a)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -1577,11 +1615,10 @@ def transpose(a):
     __kernel void matmul(
         __global const float *a, __global float *at)
     {{
-        for(int i = 0; i < {s}; i++) {{
-            for(int j = 0; j < 12; j++) {{
+        for(int i = 0; i < 12; i++) {{
+            for(int j = 0; j < {s}; j++) {{
                 for(int k = 0; k < 64; k++) {{
-                    //at[j*64*{s} + i*64 + k] = a[i*12*64 + j*64 + k];
-                    at[j*64*{s} + i + k*{s}] = a[i*12*64 + j*64 + k];
+                    at[i*{s}*64 + j + k*{s}] = a[i*{s}*64 + j*64 + k];
                 }}
             }}
         }}
@@ -1590,7 +1627,7 @@ def transpose(a):
     knl = prg.matmul
     knl(queue, (1,1), (1,1), a_g, at_g)
     cl.enqueue_copy(queue, at, at_g)
-    return at.reshape(12,64,s)
+    return at
 
 def time_it(func,a,b,i=100):
     f = None
