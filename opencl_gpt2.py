@@ -322,8 +322,8 @@ class Transformer:
       for i in range(len(self.h)-1):
         h = np.copy(x) #todo
         x = openclk.kernel_0_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
-        xqkv = openclk.matmul_t_b(x,self.h[i].attn.c_attn.weight,n_tokens)
-        xqkv += self.h[i].attn.c_attn.bias
+        xqkv = openclk.matmul_t_b(x,self.h[i].attn.c_attn.weight,n_tokens,self.attn_c_attn_bias[i])
+        #xqkv += self.h[i].attn.c_attn.bias
         xq = xqkv[:,:self.dim]
         xk = xqkv[:,self.dim:2*self.dim]
         xv = xqkv[:,2*self.dim:]

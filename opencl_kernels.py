@@ -1430,26 +1430,19 @@ def matmul_t(a,b):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmul_t_b(a_g,b,n_tokens):
+def matmul_t_b(a_g,b,n_tokens,bias_g):
     a_rows = n_tokens
     b_cols = np.shape(b)[1]
     b_rows = np.shape(b)[0]
     c = np.zeros([a_rows,b_cols])
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    '''
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
-    print("SHAPE =",np.shape(b)) 
-    for j in range(np.shape(b)[0]):
-        for i in range(np.shape(b)[1]):
-            b[j][i] = np.copy(b2[i][j])
-    '''
+    ####TRANSPOSED
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    #bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
-        __global const float *a, __global const float *b, __global float *res)
+        __global const float *a, __global const float *b, __global const float *bias, __global float *res)
     {{
         int x = get_global_id(0);
         if(x < {b_cols}) {{
@@ -1458,14 +1451,14 @@ def matmul_t_b(a_g,b,n_tokens):
                 for(int k = 0; k < {b_rows}; k++) {{
                     total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
                 }}
-                res[y*{b_cols} + x] = total;
+                res[y*{b_cols} + x] = bias[x] + total;
             }}  
         }}
     }}
     """).build()
     knl = prg.matmul
     group_size = math.ceil(b_cols / 16) * 16
-    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    knl(queue, (group_size,1), (16,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
     cl.enqueue_copy(queue, c, c_g)
     return c
 
