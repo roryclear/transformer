@@ -32,18 +32,18 @@ def decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-def scaled_dot_product_attention(x, key, value):
-  key = np.transpose(key,(0,2,1))
-  qk = openclk.matmul_t_3d(x,key)
-  qk = qk / math.sqrt(np.shape(x)[-1])
-  for x in range(len(qk)):
-    for y in range(len(qk[0])):
-      for z in range(len(qk[0][0])):
-        if z > y: qk[x][y][z] -= np.inf
-      qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
-      qk[x][y] = qk[x][y] / qk[x][y].sum()
-  qk = np.array(openclk.matmul_t_3d(qk,value))
-  return qk
+def scaled_dot_product_attention(xq, keys, values):
+  keys = np.transpose(keys,(0,2,1))
+  xq = openclk.matmul_t_3d(xq,keys)
+  xq = xq / 8 #sqrt 64 input shape xq
+  for x in range(len(xq)):
+    for y in range(len(xq[0])):
+      for z in range(len(xq[0][0])):
+        if z > y: xq[x][y][z] -= np.inf
+      xq[x][y] = np.exp(xq[x][y] - np.max(xq[x][y]))
+      xq[x][y] = xq[x][y] / xq[x][y].sum()
+  xq = np.array(openclk.matmul_t_3d(xq,values))
+  return xq
 
 def scaled_dot_product_attention_b(x, key, value):
   qk = openclk.matvec4(x,key)
