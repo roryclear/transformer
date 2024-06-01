@@ -342,7 +342,20 @@ class Transformer:
           new_cache[1][j] = values[j]       
         self.h[i].attn.cache_kv = new_cache
         xq, keys, values = xq.transpose((1,0,2)), keys.transpose((1,0,2)), values.transpose((1,0,2))
-        xq = scaled_dot_product_attention(xq,keys,values)
+
+        #xq = scaled_dot_product_attention(xq,keys,values)
+        #inlined
+        keys = np.transpose(keys,(0,2,1))
+        xq = openclk.matmul_t_3d(xq,keys)
+        xq = xq / 8 #sqrt 64 input shape xq
+        for x in range(len(xq)):
+          for y in range(len(xq[0])):
+            for z in range(len(xq[0][0])):
+              if z > y: xq[x][y][z] -= np.inf
+            xq[x][y] = np.exp(xq[x][y] - np.max(xq[x][y]))
+            xq[x][y] = xq[x][y] / xq[x][y].sum()
+        xq = np.array(openclk.matmul_t_3d(xq,values))
+
         xq = xq.transpose((1,0,2))
         xq = xq.reshape(seqlen, self.dim)
         #ret = np.matmul(x,self.weight) kernel below
