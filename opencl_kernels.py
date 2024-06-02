@@ -1535,13 +1535,13 @@ def matmul_t_3d(a,b):
     knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
     cl.enqueue_copy(queue, c, c_g)
     return c
+    
 
-def matmul_t_3d_b(a,b,n_tokens):
+def matmul_t_3d_b(a,b):
     a_rows = np.shape(a)[1]
     a_cols = np.shape(a)[2]
-    b_cols = 64
-    b_rows = n_tokens
-    print(b_rows,b_cols)
+    b_cols = np.shape(b)[2]
+    b_rows = np.shape(b)[1]
     c = np.zeros([np.shape(a)[0],a_rows,b_cols])
     
     a = a.flatten()
@@ -1573,6 +1573,44 @@ def matmul_t_3d_b(a,b,n_tokens):
     knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
     cl.enqueue_copy(queue, c, c_g)
     return c
+
+def matmul_t_3d_c(a,b):
+    a_rows = np.shape(a)[1]
+    a_cols = np.shape(a)[2]
+    n = np.shape(a)[0]
+    c = np.zeros([n,a_rows,a_rows])
+    ls = 256
+    g = a_rows*a_rows*n
+    g = math.ceil(g / ls) * ls
+    a = a.flatten()
+    b = b.flatten()
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int gidx0 = get_global_id(0);
+        if(gidx0 < {n}*{a_rows}*{a_rows}) {{
+            int x = (gidx0 / {a_rows}) % {a_rows};
+            int z = gidx0 / ({a_rows}*{a_rows}); 
+            int y = gidx0 % {a_rows};
+            float total = 0;
+            for(int k = 0; k < {a_cols}; k++) {{
+                total += a[y*{a_cols} + k + z*{a_rows}*{a_cols}] * b[x + k*{a_rows} + z*{a_cols}*{a_rows}]; 
+            }}
+            res[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total;
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    knl(queue, (g,1), (ls,1), a_g, b_g,c_g) #todo this will break when g < ls, small prompt
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+    
+    
 
 def matvec4(a,b):
     b_cols = np.shape(b)[1]
@@ -1643,13 +1681,13 @@ def time_it(func,a,b,i=100):
 
 #12,15,64
 #50257
+#(12, 13, 64) (12, 64, 13)
 '''
-a = np.random.rand(768).astype(np.float32)
-b = np.random.rand(768,50257).astype(np.float32)
-n,t = time_it(matvec2,a,b,20)
-nb,tb = time_it(matvec2_b,a,b,20)
-n_np = np.matmul(a,b)
-np.testing.assert_allclose(n,n_np,rtol=1e-5)
-np.testing.assert_allclose(nb,n_np,rtol=1e-5)
-print("times:\t",t,"\t",tb)
-'''	
+a = np.random.rand(12, 13, 64).astype(np.float32)
+b = np.random.rand(12, 64, 13).astype(np.float32)
+
+n1,t1 = time_it(matmul_t_3d_b,a,b,20)
+n2,t2 = time_it(matmul_t_3d_c,a,b,20)
+np.testing.assert_allclose(n1,n2,rtol=1e-5)
+print(t1,t2)
+'''
