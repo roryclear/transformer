@@ -347,7 +347,6 @@ class Transformer:
         #xq = scaled_dot_product_attention(xq,keys,values)
         #inlined
         xq = openclk.matmul_t_3d_c(xq,keys)
-        xq = xq / 8 #sqrt 64 input shape xq
         for x in range(len(xq)):
           for y in range(len(xq[0])):
             for z in range(len(xq[0][0])):

@@ -1603,7 +1603,7 @@ def matmul_t_3d_c(a,b):
             for(int k = 0; k < {a_cols}; k++) {{
                 total += a[y*{a_cols} + k + z*{a_rows}*{a_cols}] * b[x*{a_cols} + k + z*{a_cols}*{a_rows}]; 
             }}
-            res[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total;
+            res[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total / 8; //sqrt 64 input shape xq
         }}
     }}
     """).build()
