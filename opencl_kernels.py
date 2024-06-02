@@ -1611,6 +1611,44 @@ def matmul_t_3d_c(a,b):
     knl(queue, (g,1), (ls,1), a_g, b_g,c_g) #todo this will break when g < ls, small prompt
     cl.enqueue_copy(queue, c, c_g)
     return c
+
+
+def minus_sum_3d(a):
+    print(np.shape(a))
+    x = np.shape(a[0])
+    num_tokens = np.shape(a)[1]
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    prg = cl.Program(ctx, f"""
+    __kernel void ms(
+        __global float *a)
+    {{
+      for(int x = 0; x < {x}; x++) {{
+        for(int y = 0; y < {num_tokens}; y++) {{
+            for(int z = y+1; z < {num_tokens}; z++) {{
+                a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = -INFINITY;
+            }}
+            float m = -INFINITY;
+            for(int z = 0; z < {num_tokens}; z++) {{
+                m = max(a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z],m);
+            }}
+            for(int z = 0; z < {num_tokens}; z++) {{
+                a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = exp(a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] - m);
+            }}
+            m = 0;
+            for(int z = 0; z < {num_tokens}; z++) {{
+                m += a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z];
+            }}
+            for(int z = 0; z < {num_tokens}; z++) {{
+                a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] /= m;
+            }}
+        }}
+      }}  
+    }}
+    """).build()
+    knl = prg.ms
+    knl(queue, (1,1), (1,1), a_g) #todo this will break when g < ls, small prompt
+    cl.enqueue_copy(queue, a, a_g)
+    return a
     
 
 def matvec4(a,b):
