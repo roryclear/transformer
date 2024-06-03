@@ -1506,7 +1506,7 @@ def matmul_t_3d(a,b):
     b_cols = np.shape(b)[2]
     b_rows = np.shape(b)[1]
     c = np.zeros([np.shape(a)[0],a_rows,b_cols])
-    
+    ls = 256
     a = a.flatten()
     b = b.flatten()
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -1517,23 +1517,20 @@ def matmul_t_3d(a,b):
     __kernel void matmul(
         __global const float *a, __global const float *b, __global float *res)
     {{
-        int x = get_global_id(0);
-        for(int z = 0; z < {np.shape(a)[0]}; z++) {{
-            if(x < {b_cols}) {{
-                for(int y = 0; y < {a_rows}; y++) {{
-                    float total = 0;
-                    for(int k = 0; k < {b_rows}; k++) {{
-                        total += a[y*{b_rows} + k + z*{a_rows}*{a_cols}] * b[x + k*{b_cols} + z*{b_rows}*{b_cols}]; 
-                    }}
-                    res[y*{b_cols} + x + z*{b_cols}*{a_rows}] = total;
-                }}  
-            }}
+        int gidx0 = get_global_id(0);
+        int z = (gidx0 / {a_rows}) / {b_cols};
+        int x = (gidx0 / {a_rows}) % {b_cols};
+        int y = gidx0 % {a_rows};
+        float total = 0;
+        for(int k = 0; k < {b_rows}; k++) {{
+            total += a[y*{b_rows} + k + z*{a_rows}*{a_cols}] * b[x + k*{b_cols} + z*{b_rows}*{b_cols}]; 
         }}
+        res[y*{b_cols} + x + z*{b_cols}*{a_rows}] = total;
     }}
     """).build()
+    g = math.ceil((np.shape(a)[0]*b_cols*a_rows / ls) * ls)
     knl = prg.matmul
-    group_size = math.ceil(b_cols / 16) * 16
-    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    knl(queue, (g,1), (ls,1), a_g, b_g,c_g) #todo, this is arbitrary
     cl.enqueue_copy(queue, c, c_g)
     return c
     
@@ -1637,7 +1634,6 @@ def minus_sum_3d(a):
     }}
     }}
 
-    
     __kernel void ms3(
         __global float *a, __global float *mx)
     {{
@@ -1650,8 +1646,6 @@ def minus_sum_3d(a):
         }}
         mx[x*{num_tokens} + y] = m;  
     }}
-
-    
 
     __kernel void ms4(
         __global float *a, global const float *mx)
