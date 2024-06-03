@@ -358,7 +358,36 @@ class Transformer:
         ############
       h = np.copy(x[-1]) #todo
       x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
-      attn = self.h[-1].attn(x)    
+      #attn = self.h[-1].attn(x)
+
+      xqkv = openclk.matmul_t(x,self.h[-1].attn.c_attn.weight)
+      xqkv += self.h[-1].attn.c_attn.bias
+      xq = xqkv[:,:self.h[-1].attn.dim]
+      xk = xqkv[:,self.h[-1].attn.dim:2*self.h[-1].attn.dim]
+      xv = xqkv[:,2*self.h[-1].attn.dim:]
+      xq = xq.reshape(len(xq),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
+      xk = xk.reshape(len(xk),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
+      xv = xv.reshape(len(xv),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
+      keys = xk
+      values = xv
+      s = list(np.shape(keys))
+      s[0] = MAX_CONTEXT
+      new_cache = np.zeros(shape=s).astype(np.float32)
+      new_cache = [np.copy(new_cache),np.copy(new_cache)]
+      for i in range(len(keys)):
+        new_cache[0][i] = keys[i]
+        new_cache[1][i] = values[i]       
+      self.h[-1].attn.cache_kv = new_cache
+      xq = xq[-1] #todo
+      keys = keys[-1] #todo
+      values = values[-1] #todo
+      qk = openclk.matvec4(xq,keys)
+      qk = qk / math.sqrt(np.shape(xq)[-1])
+      xq = np.array(openclk.matmul_t(qk,values))
+      attn = openclk.matmul_t_c(xq,self.h[-1].attn.c_proj.weight)
+      attn += self.h[-1].attn.c_proj.bias
+
+
       h += attn
       x = np.copy(h)
       x = openclk.kernel_0(x,self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
