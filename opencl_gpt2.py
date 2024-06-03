@@ -47,6 +47,7 @@ def scaled_dot_product_attention(xq, keys, values):
   return xq
 
 def scaled_dot_product_attention_b(x, key, value):
+  exit()
   qk = openclk.matvec4(x,key)
   qk = qk / math.sqrt(np.shape(x)[-1])
   qk = np.array(openclk.matmul_t(qk,value))
@@ -98,6 +99,7 @@ class Attention:
     self.head_dim = dim // n_heads
 
   def __call__(self, x):
+    exit()
     xqkv = openclk.matmul_t(x,self.c_attn.weight)
     xqkv += self.c_attn.bias
     xq = xqkv[:,:self.dim]
@@ -360,8 +362,7 @@ class Transformer:
       x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
       #attn = self.h[-1].attn(x)
 
-      xqkv = openclk.matmul_t(x,self.h[-1].attn.c_attn.weight)
-      xqkv += self.h[-1].attn.c_attn.bias
+      xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[-1],n_tokens,self.attn_c_attn_bias[-1])
       xq = xqkv[:,:self.h[-1].attn.dim]
       xk = xqkv[:,self.h[-1].attn.dim:2*self.h[-1].attn.dim]
       xv = xqkv[:,2*self.h[-1].attn.dim:]
