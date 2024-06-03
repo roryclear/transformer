@@ -355,12 +355,8 @@ class Transformer:
         attn = None
         x = np.copy(h)
         x = openclk.kernel_0_b(x,self.h[i].ln_2.weight, self.h[i].ln_2.bias,n_tokens,True)
-        x = openclk.matmul_t_d(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i])
-        #x += self.h[i].mlp.c_fc.bias
-        for j in range(len(x)):
-          x[j] = 0.5 * x[j] * (1 + np.tanh(x[j] * 0.7978845608 * (1 + 0.044715 * x[j] * x[j])))
+        x = openclk.matmul_t_d2(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i])
         x = openclk.matmul_t_d(x,self.h[i].mlp.c_proj.weight,self.mlp_c_proj_bias[i])
-        #x += self.h[i].mlp.c_proj.bias
         x += h
         ############
       h = np.copy(x[-1]) #todo
