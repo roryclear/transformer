@@ -332,7 +332,6 @@ class Transformer:
         xq = xq.reshape(len(xq),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xk = xk.reshape(len(xk),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xv = xv.reshape(len(xv),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        seqlen = len(xq)
         keys = xk
         values = xv
         s = list(np.shape(keys))
@@ -355,8 +354,7 @@ class Transformer:
         xq = None
         attn = None
         x = np.copy(h)
-        for j in range(len(x)):
-          x[j] = openclk.kernel_0(x[j],self.h[i].ln_2.weight, self.h[i].ln_2.bias)
+        x = openclk.kernel_0_b(x,self.h[i].ln_2.weight, self.h[i].ln_2.bias,n_tokens,True)
         x = openclk.matmul_t_d(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i])
         #x += self.h[i].mlp.c_fc.bias
         for j in range(len(x)):
@@ -366,8 +364,7 @@ class Transformer:
         x += h
         ############
       h = np.copy(x[-1]) #todo
-      for j in range(len(x)): #todo, kernel instead of loop
-        x[j] = openclk.kernel_0(x[j],self.h[-1].ln_1.weight, self.h[-1].ln_1.bias)
+      x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
       attn = self.h[-1].attn(x,start_pos,od_out=True)    
       h += attn
       x = np.copy(h)

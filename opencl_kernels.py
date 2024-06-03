@@ -264,7 +264,7 @@ def kernel_0(a,c,d):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def kernel_0_b(x,weight,bias,n_tokens):
+def kernel_0_b(x,weight,bias,n_tokens,retnp=False):
     size = 768 #todo hardcoded
     ls = 256
     seg = int(size / ls) #todo
@@ -319,6 +319,9 @@ def kernel_0_b(x,weight,bias,n_tokens):
     """).build()
     knl = prg.mm
     knl(queue, (ls*n_tokens,1), (ls,1), x_g, weight_g, bias_g) #rory to test large stuff
+    if retnp:
+       cl.enqueue_copy(queue, x, x_g)
+       return x 
     return x_g
 
 def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
