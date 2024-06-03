@@ -1,3 +1,4 @@
+	
 
 import numpy as np
 import pyopencl as cl
@@ -1614,39 +1615,65 @@ def matmul_t_3d_c(a,b):
 
 
 def minus_sum_3d(a):
-    print(np.shape(a))
-    x = np.shape(a[0])
+    x = np.shape(a)[0]
     num_tokens = np.shape(a)[1]
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    res = np.zeros(num_tokens*x).astype(np.float32)
+    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
+    ls = 256
     prg = cl.Program(ctx, f"""
     __kernel void ms(
         __global float *a)
     {{
-      for(int x = 0; x < {x}; x++) {{
-        for(int y = 0; y < {num_tokens}; y++) {{
-            for(int z = y+1; z < {num_tokens}; z++) {{
-                a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = -INFINITY;
-            }}
-            float m = -INFINITY;
-            for(int z = 0; z < {num_tokens}; z++) {{
-                m = max(a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z],m);
-            }}
-            for(int z = 0; z < {num_tokens}; z++) {{
-                a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = exp(a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] - m);
-            }}
-            m = 0;
-            for(int z = 0; z < {num_tokens}; z++) {{
-                m += a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z];
-            }}
-            for(int z = 0; z < {num_tokens}; z++) {{
-                a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] /= m;
-            }}
+    int gidx0 = get_global_id(0);
+    if(gidx0 < {num_tokens*num_tokens*x}) {{
+        int x = (gidx0 / {num_tokens}) / {num_tokens};
+        int y = (gidx0 / {num_tokens}) % {num_tokens};
+        int z = gidx0 % {num_tokens};
+        if(z > y) {{ //todo, this can probably be 2x faster
+            a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = -INFINITY;
         }}
-      }}  
+        a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = exp(a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z]);
+    }}
+    }}
+
+    
+    __kernel void ms3(
+        __global float *a, __global float *mx)
+    {{
+    int gidx0 = get_global_id(0);
+    int x = gidx0 / {num_tokens};
+    int y = gidx0 % {num_tokens};
+        float m = 0;
+        for(int z = 0; z < {num_tokens}; z++) {{
+            m += a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z];
+        }}
+        mx[x*{num_tokens} + y] = m;  
+    }}
+
+    
+
+    __kernel void ms4(
+        __global float *a, global const float *mx)
+    {{
+    int gidx0 = get_global_id(0);
+    if(gidx0 < {num_tokens*num_tokens*x}) {{
+        int x = (gidx0 / {num_tokens}) / {num_tokens};
+        int y = (gidx0 / {num_tokens}) % {num_tokens};
+        int z = gidx0 % {num_tokens};
+        a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] /= mx[x*{num_tokens} + y];
+    }}
     }}
     """).build()
     knl = prg.ms
-    knl(queue, (1,1), (1,1), a_g) #todo this will break when g < ls, small prompt
+    g = x*num_tokens*num_tokens
+    g = math.ceil(g / ls) * ls
+    knl(queue, (g,1), (ls,1), a_g)
+    g2 = x*num_tokens #todo, will break for larger inputs
+    knl3 = prg.ms3
+    knl3(queue, (g2,1), (g2,1), a_g,res_g)
+    knl4 = prg.ms4
+    knl4(queue, (g,1), (ls,1), a_g,res_g)
     cl.enqueue_copy(queue, a, a_g)
     return a
     
@@ -1685,7 +1712,6 @@ def matvec4(a,b):
 def transpose(a):
     a_rows = np.shape(a)[1]
     a_cols = np.shape(a)[2]
-    print(a_rows,a_cols)  
     a = a.flatten()
     at = np.zeros_like(a)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
