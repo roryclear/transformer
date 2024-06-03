@@ -874,10 +874,9 @@ def matmul_t_b(a_g,b,n_tokens,bias_g):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmul_t_c(a_g,b,temperature):
+def matmul_t_c(a_g,b,temperature,buffer=False):
     b_cols = 50257
     b_rows = 768
-    print(b_cols,b_rows)
     c = np.zeros(b_cols)
     ls = 256
     ####TRANSPOSED, this replicates it for a test. todo: fix 
@@ -909,6 +908,8 @@ def matmul_t_c(a_g,b,temperature):
     knl = prg.matmul
     group_size = math.ceil(b_cols / ls) * ls
     knl(queue, (group_size,1), (ls,1), a_g, b_g,c_g) #todo, this is arbitrary
+    if buffer:
+        return c_g
     cl.enqueue_copy(queue, c, c_g)
     return c
 

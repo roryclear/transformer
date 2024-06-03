@@ -397,19 +397,9 @@ class Transformer:
       logits = openclk.matmul_t_c(x,self.lm_head.weight) #todo
       ret = logits.argmax(-1)
     else:
-      logits = openclk.matmul_t_c(x,self.lm_head.weight,temperature)
-      logits = np.exp(logits - np.max(logits))
-      logits = logits / logits.sum()
-      logits = logits.cumsum(0)
+      logits = openclk.matmul_t_c(x,self.lm_head.weight,temperature,True)
       unif_samples = tg_rand.rand()
-      b = np.empty_like(logits,dtype=bool)
-      for i in range(len(logits)):
-        if unif_samples >= logits[i]:
-          b[i] = True
-        else:
-          b[i] = False
-      b = b.sum()
-      ret = np.array(b)
+      ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
     return ret
 
   def __call__(self, tokens, start_pos, temperature:np.float32=0.0,v_in=False):
