@@ -384,13 +384,10 @@ class Transformer:
       values = values[-1] #todo
       qk = openclk.matvec4(xq,keys)
       xq = openclk.matmul_t(qk,values)
-      attn = openclk.matmul_t_c2(xq,self.h[-1].attn.c_proj.weight,self.attn_c_proj_bias[-1])
-      h += attn
-      x = np.copy(h)
+      x = openclk.matmul_t_c2(xq,self.h[-1].attn.c_proj.weight,self.attn_c_proj_bias[-1],h)
       x = openclk.kernel_0(x,self.ln_2_weight[-1], self.ln_2_bias[-1])
       x = openclk.matmul_t_c3(x,self.h[-1].mlp.c_fc.weight,self.mlp_c_fc_bias[-1])
-      x = openclk.matmul_t_c2(x,self.h[-1].mlp.c_proj.weight,self.mlp_c_proj_bias[-1])
-      x += h
+      x = openclk.matmul_t_c2(x,self.h[-1].mlp.c_proj.weight,self.mlp_c_proj_bias[-1],h)
       h = None
       x = openclk.kernel_0(x,self.ln_f_weight, self.ln_f_bias)
     if temperature < 1e-6:
