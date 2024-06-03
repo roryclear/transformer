@@ -1396,6 +1396,7 @@ def matmul_t(a,b):
     b_cols = np.shape(b)[1]
     b_rows = np.shape(b)[0]
     c = np.zeros([a_rows,b_cols])
+    ls = 256
     ####TRANSPOSED, this replicates it for a test. todo: fix 
     '''
     b2 = np.copy(b)
@@ -1413,21 +1414,19 @@ def matmul_t(a,b):
     __kernel void matmul(
         __global const float *a, __global const float *b, __global float *res)
     {{
-        int x = get_global_id(0);
-        if(x < {b_cols}) {{
-            for(int y = 0; y < {a_rows}; y++) {{
-                float total = 0;
-                for(int k = 0; k < {b_rows}; k++) {{
-                    total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
-                }}
-                res[y*{b_cols} + x] = total;
-            }}  
+        int gidx0 = get_global_id(0);
+        int x = gidx0 / {a_rows};
+        int y = gidx0 % {a_rows};
+        float total = 0;
+        for(int k = 0; k < {b_rows}; k++) {{
+            total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
         }}
+        res[y*{b_cols} + x] = total;
     }}
     """).build()
+    g = math.ceil((b_cols*a_rows / ls)*ls)
     knl = prg.matmul
-    group_size = math.ceil(b_cols / 16) * 16
-    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    knl(queue, (g,1), (ls,1), a_g, b_g,c_g) #todo, this is arbitrary
     cl.enqueue_copy(queue, c, c_g)
     return c
 
