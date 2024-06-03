@@ -97,36 +97,34 @@ class Attention:
     self.dim = dim
     self.head_dim = dim // n_heads
 
-  def __call__(self, x, start_pos,od_out=False):
-    x = np.array(x)
-    if od_out:
-      #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
-      xqkv = openclk.matmul_t(x,self.c_attn.weight)
-      xqkv += self.c_attn.bias
-      xq = xqkv[:,:self.dim]
-      xk = xqkv[:,self.dim:2*self.dim]
-      xv = xqkv[:,2*self.dim:]
-      xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
-      xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
-      xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
-      keys = xk
-      values = xv
-      s = list(np.shape(keys))
-      s[0] = MAX_CONTEXT
-      new_cache = np.zeros(shape=s).astype(np.float32)
-      new_cache = [np.copy(new_cache),np.copy(new_cache)]
-      for i in range(len(keys)):
-        new_cache[0][i] = keys[i]
-        new_cache[1][i] = values[i]       
-      self.cache_kv = new_cache
-      xq = xq[-1] #todo
-      keys = keys[-1] #todo
-      values = values[-1] #todo
-      xq = scaled_dot_product_attention_b(xq,keys,values)
-      #ret = np.matmul(x,self.weight) kernel below
-      ret = openclk.matmul_t_c(xq,self.c_proj.weight)
-      ret += self.c_proj.bias
-      return ret
+  def __call__(self, x):
+    xqkv = openclk.matmul_t(x,self.c_attn.weight)
+    xqkv += self.c_attn.bias
+    xq = xqkv[:,:self.dim]
+    xk = xqkv[:,self.dim:2*self.dim]
+    xv = xqkv[:,2*self.dim:]
+    xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
+    xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
+    xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
+    keys = xk
+    values = xv
+    s = list(np.shape(keys))
+    s[0] = MAX_CONTEXT
+    new_cache = np.zeros(shape=s).astype(np.float32)
+    new_cache = [np.copy(new_cache),np.copy(new_cache)]
+    for i in range(len(keys)):
+      new_cache[0][i] = keys[i]
+      new_cache[1][i] = values[i]       
+    self.cache_kv = new_cache
+    xq = xq[-1] #todo
+    keys = keys[-1] #todo
+    values = values[-1] #todo
+    qk = openclk.matvec4(xq,keys)
+    qk = qk / math.sqrt(np.shape(xq)[-1])
+    xq = np.array(openclk.matmul_t(qk,values))
+    ret = openclk.matmul_t_c(xq,self.c_proj.weight)
+    ret += self.c_proj.bias
+    return ret
     
 class FeedForward:
   def __init__(self, dim, hidden_dim):
@@ -360,7 +358,7 @@ class Transformer:
         ############
       h = np.copy(x[-1]) #todo
       x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
-      attn = self.h[-1].attn(x,start_pos,od_out=True)    
+      attn = self.h[-1].attn(x)    
       h += attn
       x = np.copy(h)
       x = openclk.kernel_0(x,self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
