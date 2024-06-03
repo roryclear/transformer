@@ -350,11 +350,8 @@ class Transformer:
         xq = openclk.matmul_t_3d_c(xq,keys)
         xq = openclk.minus_sum_3d(xq)
         xq = openclk.matmul_t_3d(xq,values)
-
-        xq = xq.transpose((1,0,2))
-        xq = xq.reshape(seqlen, self.dim)
-        #ret = np.matmul(x,self.weight) kernel below
-        ret = openclk.matmul_t_d(xq,self.h[i].attn.c_proj.weight,self.attn_c_proj_bias[i])
+        xq = openclk.transpose(xq)
+        ret = openclk.matmul_t_e(xq,self.h[i].attn.c_proj.weight,self.attn_c_proj_bias[i],n_tokens)
         xq = None
         #print("shapes =",np.shape(ret),np.shape(self.h[i].attn.c_proj.bias))
         #ret += self.h[i].attn.c_proj.bias

@@ -727,6 +727,44 @@ def matmul_t_d(a,b,bias_g):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
+def matmul_t_e(a,b,bias_g,n_tokens):
+    a_rows = n_tokens
+    b_rows = 768
+    c = np.zeros([n_tokens,768]) #todo
+    ls = 256
+    ####TRANSPOSED, this replicates it for a test. todo: fix 
+    '''
+    b2 = np.copy(b)
+    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
+    print("SHAPE =",np.shape(b)) 
+    for j in range(np.shape(b)[0]):
+        for i in range(np.shape(b)[1]):
+            b[j][i] = np.copy(b2[i][j])
+    '''
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b,__global const float *bias, __global float *res)
+    {{
+        int gidx0 = get_global_id(0);
+        int x = gidx0 / {a_rows};
+        int y = gidx0 % {a_rows};
+        float total = 0;
+        for(int k = 0; k < {b_rows}; k++) {{
+            total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
+        }}
+        res[y*{b_rows} + x] = total + bias[x];
+    }}
+    """).build()
+    g = math.ceil((b_rows*a_rows / ls)*ls)
+    knl = prg.matmul
+    knl(queue, (g,1), (ls,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
 def matmul_t_b(a_g,b,n_tokens,bias_g):
     a_rows = n_tokens
     b_cols = np.shape(b)[1]
@@ -963,6 +1001,7 @@ def matvec4(a,b):
     return c
 
 def transpose(a):
+    # (12,13,64) -? (13,12,64)
     a_rows = np.shape(a)[1]
     a_cols = np.shape(a)[2]
     a = a.flatten()
@@ -973,17 +1012,18 @@ def transpose(a):
     __kernel void matmul(
         __global const float *a, __global float *at)
     {{
-        for(int i = 0; i < 12; i++) {{
-            for(int j = 0; j < {a_rows}; j++) {{
-                for(int k = 0; k < {a_cols}; k++) {{
-                    at[i*{a_rows}*{a_cols} + j + k*{a_rows}] = a[i*{a_rows}*{a_cols} + j*{a_cols} + k];
-                }}
-            }}
-        }}
+        int gidx0 = get_global_id(0);
+        int i = (gidx0 / 64) / {a_rows};
+        int j = (gidx0 / 64) % {a_rows};
+        int k = gidx0 % 64;
+        at[i*64 + j*12*64 + k] = a[i*{a_rows}*64 + j*64 + k];
     }}
     """).build()
     knl = prg.matmul
-    knl(queue, (1,1), (1,1), a_g, at_g)
+    g = a_rows*12*64
+    ls = 256
+    g = math.ceil(g / ls)*ls
+    knl(queue, (g,1), (ls,1), a_g, at_g)
     cl.enqueue_copy(queue, at, at_g)
     return at
 
