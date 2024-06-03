@@ -727,10 +727,9 @@ def matmul_t_d(a,b,bias_g):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmul_t_e(a,b,bias_g,n_tokens):
+def matmul_t_e(a,b,bias_g,n_tokens,h):
     a_rows = n_tokens
     b_rows = 768
-    c = np.zeros([n_tokens,768]) #todo
     ls = 256
     ####TRANSPOSED, this replicates it for a test. todo: fix 
     '''
@@ -743,8 +742,7 @@ def matmul_t_e(a,b,bias_g,n_tokens):
     '''
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
         __global const float *a, __global const float *b,__global const float *bias, __global float *res)
@@ -756,14 +754,14 @@ def matmul_t_e(a,b,bias_g,n_tokens):
         for(int k = 0; k < {b_rows}; k++) {{
             total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
         }}
-        res[y*{b_rows} + x] = total + bias[x];
+        res[y*{b_rows} + x] += total + bias[x];
     }}
     """).build()
     g = math.ceil((b_rows*a_rows / ls)*ls)
     knl = prg.matmul
-    knl(queue, (g,1), (ls,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
-    cl.enqueue_copy(queue, c, c_g)
-    return c
+    knl(queue, (g,1), (ls,1), a_g, b_g,bias_g,h_g)
+    cl.enqueue_copy(queue, h, h_g)
+    return h
 
 def matmul_t_b(a_g,b,n_tokens,bias_g):
     a_rows = n_tokens

@@ -351,13 +351,9 @@ class Transformer:
         xq = openclk.minus_sum_3d(xq)
         xq = openclk.matmul_t_3d(xq,values)
         xq = openclk.transpose(xq)
-        ret = openclk.matmul_t_e(xq,self.h[i].attn.c_proj.weight,self.attn_c_proj_bias[i],n_tokens)
+        h = openclk.matmul_t_e(xq,self.h[i].attn.c_proj.weight,self.attn_c_proj_bias[i],n_tokens,h)
         xq = None
-        #print("shapes =",np.shape(ret),np.shape(self.h[i].attn.c_proj.bias))
-        #ret += self.h[i].attn.c_proj.bias
-        attn = ret
-
-        h += attn
+        attn = None
         x = np.copy(h)
         for j in range(len(x)):
           x[j] = openclk.kernel_0(x[j],self.h[i].ln_2.weight, self.h[i].ln_2.bias)
