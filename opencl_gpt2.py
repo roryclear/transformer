@@ -134,6 +134,7 @@ class FeedForward:
     self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
+    exit()
     ret = openclk.matmul_t(x,self.c_fc.weight)
     ret += self.c_fc.bias
     x = ret
@@ -353,20 +354,22 @@ class Transformer:
         xq = xq.transpose((1,0,2))
         xq = xq.reshape(seqlen, self.dim)
         #ret = np.matmul(x,self.weight) kernel below
-        ret = openclk.matmul_t(xq,self.h[i].attn.c_proj.weight)
-        ret += self.h[i].attn.c_proj.bias
+        ret = openclk.matmul_t_d(xq,self.h[i].attn.c_proj.weight,self.attn_c_proj_bias[i])
+        xq = None
+        #print("shapes =",np.shape(ret),np.shape(self.h[i].attn.c_proj.bias))
+        #ret += self.h[i].attn.c_proj.bias
         attn = ret
 
         h += attn
         x = np.copy(h)
         for j in range(len(x)):
           x[j] = openclk.kernel_0(x[j],self.h[i].ln_2.weight, self.h[i].ln_2.bias)
-        x = openclk.matmul_t(x,self.h[i].mlp.c_fc.weight)
-        x += self.h[i].mlp.c_fc.bias
+        x = openclk.matmul_t_d(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i])
+        #x += self.h[i].mlp.c_fc.bias
         for j in range(len(x)):
           x[j] = 0.5 * x[j] * (1 + np.tanh(x[j] * 0.7978845608 * (1 + 0.044715 * x[j] * x[j])))
-        x = openclk.matmul_t(x,self.h[i].mlp.c_proj.weight)
-        x += self.h[i].mlp.c_proj.bias
+        x = openclk.matmul_t_d(x,self.h[i].mlp.c_proj.weight,self.mlp_c_proj_bias[i])
+        #x += self.h[i].mlp.c_proj.bias
         x += h
         ############
       h = np.copy(x[-1]) #todo
