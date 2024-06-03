@@ -245,30 +245,25 @@ class Transformer:
         h = np.copy(x) #todo
         x = openclk.kernel_0_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
         xqkv = openclk.matmul_t_b(x,self.h[i].attn.c_attn.weight,n_tokens,self.attn_c_attn_bias[i])
-        #xqkv += self.h[i].attn.c_attn.bias
         xq = xqkv[:,:self.dim]
         xk = xqkv[:,self.dim:2*self.dim]
         xv = xqkv[:,2*self.dim:]
         xq = xq.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xk = xk.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xv = xv.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        keys = xk
         values = xv
 
-        s = list(np.shape(keys))
+        s = list(np.shape(xk))
         s[0] = MAX_CONTEXT
         new_cache = np.zeros(shape=s).astype(np.float32)
         new_cache = [np.copy(new_cache),np.copy(new_cache)]
-        for j in range(len(keys)):
-          new_cache[0][j] = keys[j]
+        for j in range(len(xk)):
+          new_cache[0][j] = xk[j]
           new_cache[1][j] = values[j]       
         self.h[i].attn.cache_kv = new_cache
         
-        xq, keys, values = xq.transpose((1,0,2)), keys.transpose((1,0,2)), values.transpose((1,0,2))
-
-        #xq = scaled_dot_product_attention(xq,keys,values)
-        #inlined
-        xq = openclk.matmul_t_3d_c(xq,keys)
+        xq, values = xq.transpose((1,0,2)), values.transpose((1,0,2))
+        xq = openclk.matmul_t_3d_c(xq,xk)
         xq = openclk.minus_sum_3d(xq,n_tokens)
         xq = openclk.matmul_t_3d(xq,values,n_tokens)
         xq = openclk.transpose(xq,n_tokens)

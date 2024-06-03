@@ -832,6 +832,7 @@ def matmul_t_3d(a_g,b,n_tokens):
 def matmul_t_3d_c(a,b):
     a_rows = np.shape(a)[1]
     a_cols = np.shape(a)[2]
+    b_rows = np.shape(b)[0]
     n = np.shape(a)[0]
     c = np.zeros([n,a_rows,a_rows])
     ls = 256
@@ -844,7 +845,6 @@ def matmul_t_3d_c(a,b):
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
 
-
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
         __global const float *a, __global const float *b, __global float *res)
@@ -856,7 +856,7 @@ def matmul_t_3d_c(a,b):
             int y = gidx0 % {a_rows};
             float total = 0;
             for(int k = 0; k < {a_cols}; k++) {{
-                total += a[y*{a_cols} + k + z*{a_rows}*{a_cols}] * b[x*{a_cols} + k + z*{a_cols}*{a_rows}]; 
+                total += a[y*{a_cols} + k + z*{a_rows}*{a_cols}] * b[x*64*12 + k + z*64]; 
             }}
             res[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total / 8; //sqrt 64 input shape xq
         }}
