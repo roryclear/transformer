@@ -32,34 +32,10 @@ def decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-def scaled_dot_product_attention(xq, keys, values):
-  exit()
-  keys = np.transpose(keys,(0,2,1))
-  xq = openclk.matmul_t_3d(xq,keys)
-  xq = xq / 8 #sqrt 64 input shape xq
-  for x in range(len(xq)):
-    for y in range(len(xq[0])):
-      for z in range(len(xq[0][0])):
-        if z > y: xq[x][y][z] -= np.inf
-      xq[x][y] = np.exp(xq[x][y] - np.max(xq[x][y]))
-      xq[x][y] = xq[x][y] / xq[x][y].sum()
-  xq = np.array(openclk.matmul_t_3d(xq,values))
-  return xq
-
-def scaled_dot_product_attention_b(x, key, value):
-  exit()
-  qk = openclk.matvec4(x,key)
-  qk = qk / math.sqrt(np.shape(x)[-1])
-  qk = np.array(openclk.matmul_t(qk,value))
-  return qk
-
 class Linear():
   def __init__(self, in_features, out_features, bias=True):
     self.bias = None
     self.weight = None
-
-  def __call__(self,x):
-    return None
   
 class LayerNorm:
   def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True):
@@ -67,12 +43,6 @@ class LayerNorm:
     self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
     self.bias = None
     self.weight = None
-
-  def __call__(self, x):
-    for i in range(len(x)):
-      exit()
-      x[i] = openclk.kernel_0(np.copy(x[i]),self.weight, self.bias)
-    return x
 
 def encode(x):
   ret = []
@@ -97,54 +67,11 @@ class Attention:
     self.n_heads = n_heads
     self.dim = dim
     self.head_dim = dim // n_heads
-
-  def __call__(self, x):
-    exit()
-    xqkv = openclk.matmul_t(x,self.c_attn.weight)
-    xqkv += self.c_attn.bias
-    xq = xqkv[:,:self.dim]
-    xk = xqkv[:,self.dim:2*self.dim]
-    xv = xqkv[:,2*self.dim:]
-    xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
-    xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
-    xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
-    keys = xk
-    values = xv
-    s = list(np.shape(keys))
-    s[0] = MAX_CONTEXT
-    new_cache = np.zeros(shape=s).astype(np.float32)
-    new_cache = [np.copy(new_cache),np.copy(new_cache)]
-    for i in range(len(keys)):
-      new_cache[0][i] = keys[i]
-      new_cache[1][i] = values[i]       
-    self.cache_kv = new_cache
-    xq = xq[-1] #todo
-    keys = keys[-1] #todo
-    values = values[-1] #todo
-    qk = openclk.matvec4(xq,keys)
-    qk = qk / math.sqrt(np.shape(xq)[-1])
-    xq = np.array(openclk.matmul_t(qk,values))
-    ret = openclk.matmul_t_c(xq,self.c_proj.weight)
-    ret += self.c_proj.bias
-    return ret
     
 class FeedForward:
   def __init__(self, dim, hidden_dim):
     self.c_fc = Linear(dim, hidden_dim, bias=True)
     self.c_proj = Linear(hidden_dim, dim, bias=True)
-
-  def __call__(self, x):
-    exit()
-    ret = openclk.matmul_t(x,self.c_fc.weight)
-    ret += self.c_fc.bias
-    x = ret
-    for i in range(len(x)):
-      # gelu() activation
-      x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
-    x = np.array(x) #todo
-    ret = openclk.matmul_t(x,self.c_proj.weight)
-    ret += self.c_proj.bias
-    return ret
   
 class Embedding: #todo, not used but variables are
   def __init__(self, vocab_size:int, embed_size:int):
@@ -156,13 +83,6 @@ class Embedding: #todo, not used but variables are
 class Embedding_2: #todo crutch
   def __init__(self, vocab_size:int, embed_size:int):
     self.vocab_size, self.embed_size = vocab_size, embed_size
-
-  def __call__(self, idx):
-    ret = np.empty((len(idx),self.embed_size)).astype(np.float32)
-    for i in range(len(ret)):
-      for j in range(len(ret[0])):
-        ret[i][j] = self.weight[idx[i]][j]
-    return ret
 
 class Mock_tg_rand:
   def __init__(self):
@@ -351,8 +271,6 @@ class Transformer:
         xq = openclk.matmul_t_3d(xq,values,n_tokens)
         xq = openclk.transpose(xq,n_tokens)
         h = openclk.matmul_t_e(xq,self.h[i].attn.c_proj.weight,self.attn_c_proj_bias[i],n_tokens,h)
-        xq = None
-        attn = None
         x = np.copy(h)
         x = openclk.kernel_0_b(x,self.h[i].ln_2.weight, self.h[i].ln_2.bias,n_tokens,True)
         x = openclk.matmul_t_d2(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i])
@@ -467,15 +385,8 @@ class GPT2:
 
 if __name__ == "__main__":
   #bc tinygrad doesnt work in windows, and opencl doesnt work on WSL
-  use_tg_rand = True #mocks tg random function by just reading from a file
   default_prompt = "What is the answer to life, the universe, and everything?"
   #default_prompt = "What happened in 1939?"
-  # should output:
-  # .... The Jewish people rejected
-
-  #(tg random) should output:
-  #It was a very fateful day.
-  #When the Nazis occupied Poland in 1939....
 
   #Tensor.manual_seed(420) #don't need
   np.random.seed(28)
@@ -483,31 +394,19 @@ if __name__ == "__main__":
   #filehandler = open("weights_2.pickle", 'rb')
   filehandler = open("weights.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
-  if use_tg_rand:
-    tg_rand = Mock_tg_rand()
-  print(type(gpt2))
+  tg_rand = Mock_tg_rand()
 
 
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
   print('Generating text...')
   print((f"Response:", "green"), text)
   #assert for tg seed 420 unif samples
-  if tg_rand:
-    assert text == ("What is the answer to life, the universe, and everything?"
-    "\n\nIf you were an astrophysicist, or just a physicist, your answer might "
-    "be a bit different. For one, you might take a longer view of the universe. "
-    "But for other people — including scientists, artists, and other in-your-face "
-    "people — your answer might be far more like: Life doesn't exist at all.\n\n"
-    "Imagine you are a young person who just graduated from middle school and has "
-    "never really pursued a career in astrophysics. You're on an eight")
-  else:
-    # for np random
-    assert text == ("What is the answer to life, the universe, and everything? "
-    "But what is the answer to the mystery of Enlightenment? Does the only "
-    "solution lie in a series of calls to agency? Do virtues and proper duties "
-    "need to separate? How does a patient become his or her own individual conscience?\n\n"
-    "What does the Universal Law mean? Why do some people do good and others contemptible? " 
-    "How does the Universal Law maximize the efficiency of the health system? How does the "
-    "Universal Law facilitate all of human virtue? What does it mean to be a man or a woman")
+  assert text == ("What is the answer to life, the universe, and everything?"
+  "\n\nIf you were an astrophysicist, or just a physicist, your answer might "
+  "be a bit different. For one, you might take a longer view of the universe. "
+  "But for other people — including scientists, artists, and other in-your-face "
+  "people — your answer might be far more like: Life doesn't exist at all.\n\n"
+  "Imagine you are a young person who just graduated from middle school and has "
+  "never really pursued a career in astrophysics. You're on an eight")
 
   exit()

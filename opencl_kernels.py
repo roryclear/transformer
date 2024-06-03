@@ -513,121 +513,6 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
     weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g, xq_temp_g)
     return a_g
 
-def matmul2(a,b,s=112):
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b = b.flatten() #todo, shouldnt be needed
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([12,1,s])
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-
-    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
-
-    prg = cl.Program(ctx, f"""
-    __kernel void matmul(
-        __global const float *a, __global const float *b, __global float *res)
-    {{
-    int x = get_global_id(0) % {s};
-    int k = get_global_id(0) / {s};
-    float acc0 = 0.0f;
-    float4 vals_a[16];
-    for(int i = 0; i < 16; i++) {{
-        vals_a[i] = (float4)(*((__global float4*)(a+i*4+64*k)));
-    }}
-                    
-    float vals_b[64];
-    for(int i = 0; i < 64; i++) {{
-        vals_b[i] = b[x+i*{s} + {s}*64*k]; // rory i*x
-    }}
-    
-    for(int i = 0; i < 16; i++) {{
-        acc0 = mad((vals_a[i]).x,vals_b[i*4],acc0);
-        acc0 = mad((vals_a[i]).y,vals_b[i*4 + 1],acc0);
-        acc0 = mad((vals_a[i]).z,vals_b[i*4 + 2],acc0);
-        acc0 = mad((vals_a[i]).w,vals_b[i*4 + 3],acc0);
-    }}
-    res[x + k*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
-    }}
-    """).build()
-    knl = prg.matmul
-    local0 = min(256,s*64*12)
-    group0 = math.ceil(12*s / local0) * local0
-    knl(queue, (group0,1), (local0,1), a_g, b_g,c_g)
-    cl.enqueue_copy(queue, c, c_g)
-    return c
-
-def minus_max(a,s=112):
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    c = np.zeros((12,1,s))
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-
-    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
-
-    prg = cl.Program(ctx, f"""
-    __kernel void k(
-        __global const float *data1, __global float *data0)
-    {{
-        int lid = get_local_id(0);
-        float m = -INFINITY;
-        for(int i = 0; i < {s}; i++) {{
-            float val = data1[i + lid*{s}];
-            m = max(m,val);
-        }}
-        for(int i = 0; i < {s}; i++) {{
-            data0[i + lid*{s}] = exp(data1[i + lid*{s}] - m);
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE); //not needed in practice?
-        float t = 0;
-        for(int i = 0; i < {s}; i++) {{
-            float val = data0[i + lid*{s}];
-            t = t+val;
-        }}
-        for(int i = 0; i < {s}; i++) {{
-            data0[i + lid*{s}] = data0[i + lid*{s}] / t;
-        }}
-    }}
-    """).build()
-    knl = prg.k
-    knl(queue, (12,1), (12,1), a_g,c_g) #todo hardcoded
-    cl.enqueue_copy(queue, c, c_g)
-    return c
-
-def matmul3(a,b,s):
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b = b.flatten() #todo, shouldnt be needed
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.zeros([12,1,64])
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-
-    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
-    prg = cl.Program(ctx, f"""
-    __kernel void matmul(
-        __global const float *a, __global const float *b, __global float *res)
-    {{
-        int lidx0 = get_local_id(0);
-        int gidx0 = get_group_id(0);
-        float acc0 = 0;
-        float4 vals_a[{s}];
-        for(int i = 0; i < {s}; i++) {{
-            vals_a[i] = a[i + {s}*gidx0];
-        }}
-        float vals_b[{s}];
-        for(int i = 0; i < {s}; i++) {{
-            vals_b[i] = b[i*64 + lidx0 + gidx0*{s}*64];
-        }}
-        for(int i = 0; i < {s}; i++) {{
-            acc0 = mad(vals_a[i].x,vals_b[i],acc0);
-        }}
-        res[lidx0 + gidx0*64] = acc0;
-    }}
-    """).build()
-    knl = prg.matmul
-    knl(queue, (64*12,1), (64,1), a_g, b_g,c_g) #todo, this is arbitrary
-    cl.enqueue_copy(queue, c, c_g)
-    return c
-
 def matvec2(h_g,weight2_g,temperatue): #pass bias in instead of adding to zero, todo for other kernels
     rows = 768
     cols = 50257
@@ -655,15 +540,6 @@ def matmul_t(a,b):
     b_rows = np.shape(b)[0]
     c = np.zeros([a_rows,b_cols])
     ls = 256
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    '''
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
-    print("SHAPE =",np.shape(b)) 
-    for j in range(np.shape(b)[0]):
-        for i in range(np.shape(b)[1]):
-            b[j][i] = np.copy(b2[i][j])
-    '''
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.float32(c)
@@ -694,15 +570,6 @@ def matmul_t_f(a,b_g,n_tokens,bias_g):
     b_rows = 768
     c = np.zeros([a_rows,b_cols])
     ls = 256
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    '''
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
-    print("SHAPE =",np.shape(b)) 
-    for j in range(np.shape(b)[0]):
-        for i in range(np.shape(b)[1]):
-            b[j][i] = np.copy(b2[i][j])
-    '''
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
@@ -732,15 +599,6 @@ def matmul_t_d(a,b,bias_g,h):
     b_rows = np.shape(b)[0]
     c = np.zeros([a_rows,b_cols])
     ls = 256
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    '''
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
-    print("SHAPE =",np.shape(b)) 
-    for j in range(np.shape(b)[0]):
-        for i in range(np.shape(b)[1]):
-            b[j][i] = np.copy(b2[i][j])
-    '''
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.float32(c)
@@ -772,15 +630,6 @@ def matmul_t_d2(a,b,bias_g):
     b_rows = np.shape(b)[0]
     c = np.zeros([a_rows,b_cols])
     ls = 256
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    '''
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
-    print("SHAPE =",np.shape(b)) 
-    for j in range(np.shape(b)[0]):
-        for i in range(np.shape(b)[1]):
-            b[j][i] = np.copy(b2[i][j])
-    '''
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.float32(c)
@@ -811,15 +660,6 @@ def matmul_t_e(a_g,b,bias_g,n_tokens,h):
     a_rows = n_tokens
     b_rows = 768
     ls = 256
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    '''
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
-    print("SHAPE =",np.shape(b)) 
-    for j in range(np.shape(b)[0]):
-        for i in range(np.shape(b)[1]):
-            b[j][i] = np.copy(b2[i][j])
-    '''
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     prg = cl.Program(ctx, f"""
@@ -847,11 +687,9 @@ def matmul_t_b(a_g,b,n_tokens,bias_g):
     b_cols = np.shape(b)[1]
     b_rows = np.shape(b)[0]
     c = np.zeros([a_rows,b_cols])
-    ####TRANSPOSED
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    #bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
         __global const float *a, __global const float *b, __global const float *bias, __global float *res)
@@ -879,15 +717,6 @@ def matmul_t_c(a_g,b,temperature,buffer=False):
     b_rows = 768
     c = np.zeros(b_cols)
     ls = 256
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    '''
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
-    print("SHAPE =",np.shape(b)) 
-    for j in range(np.shape(b)[0]):
-        for i in range(np.shape(b)[1]):
-            b[j][i] = np.copy(b2[i][j])
-    '''
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
@@ -916,15 +745,6 @@ def matmul_t_c(a_g,b,temperature,buffer=False):
 def matmul_t_c2(a,b,bias_g,h):
     b_cols = np.shape(b)[1]
     b_rows = np.shape(b)[0]
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    '''
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
-    print("SHAPE =",np.shape(b)) 
-    for j in range(np.shape(b)[0]):
-        for i in range(np.shape(b)[1]):
-            b[j][i] = np.copy(b2[i][j])
-    '''
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
@@ -952,15 +772,6 @@ def matmul_t_c3(a_g,b,bias_g):
     b_cols = 3072
     b_rows = 768
     c = np.zeros(b_cols)
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    '''
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
-    print("SHAPE =",np.shape(b)) 
-    for j in range(np.shape(b)[0]):
-        for i in range(np.shape(b)[1]):
-            b[j][i] = np.copy(b2[i][j])
-    '''
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
@@ -1181,16 +992,3 @@ def time_it(func,a,b,i=100):
         if f is None or t < f:
             f = t
     return ret,f
-
-#12,15,64
-#50257
-#(12, 13, 64) (12, 64, 13)
-'''
-a = np.random.rand(12, 13, 64).astype(np.float32)
-b = np.random.rand(12, 64, 13).astype(np.float32)
-
-n1,t1 = time_it(matmul_t_3d_b,a,b,20)
-n2,t2 = time_it(matmul_t_3d_c,a,b,20)
-np.testing.assert_allclose(n1,n2,rtol=1e-5)
-print(t1,t2)
-'''
