@@ -958,8 +958,9 @@ def matvec4(a,b):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def transpose(a_g,n_tokens):
+def transpose(a_g,n_tokens,np_in=False):
     # (12,13,64) -? (13,12,64)
+    #a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     a_rows = n_tokens
     at = np.zeros(12*64*n_tokens).astype(np.float32) #todo
     at_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=at)

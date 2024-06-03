@@ -284,19 +284,17 @@ class Transformer:
       xq = xq.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
       xk = xk.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
       xv = xv.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
-      keys = xk
-      values = xv
       new_cache = np.zeros(shape=s).astype(np.float32)
       new_cache = [np.copy(new_cache),np.copy(new_cache)]
-      for i in range(len(keys)):
-        new_cache[0][i] = keys[i]
-        new_cache[1][i] = values[i]       
+      for i in range(len(xk)):
+        new_cache[0][i] = xk[i]
+        new_cache[1][i] = xv[i]       
       self.h[-1].attn.cache_kv = new_cache
       xq = xq[-1] #todo
-      keys = keys[-1] #todo
-      values = values[-1] #todo
-      qk = openclk.matvec4(xq,keys)
-      xq = openclk.matmul_t(qk,values)
+      xk = xk[-1] #todo
+      xv = xv[-1] #todo
+      qk = openclk.matvec4(xq,xk)
+      xq = openclk.matmul_t(qk,xv)
       x = openclk.matmul_t_c2(xq,self.h[-1].attn.c_proj.weight,self.attn_c_proj_bias[-1],h)
       x = openclk.kernel_0(x,self.ln_2_weight[-1], self.ln_2_bias[-1])
       x = openclk.matmul_t_c3(x,self.h[-1].mlp.c_fc.weight,self.mlp_c_fc_bias[-1])
