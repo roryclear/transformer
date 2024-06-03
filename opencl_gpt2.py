@@ -249,11 +249,12 @@ class Transformer:
         xq = xqkv[:,:self.dim]
         xk = xqkv[:,self.dim:2*self.dim]
         xv = xqkv[:,2*self.dim:]
-        xq = xq.reshape(len(xq),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        xk = xk.reshape(len(xk),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        xv = xv.reshape(len(xv),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
+        xq = xq.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
+        xk = xk.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
+        xv = xv.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         keys = xk
         values = xv
+
         s = list(np.shape(keys))
         s[0] = MAX_CONTEXT
         new_cache = np.zeros(shape=s).astype(np.float32)
@@ -262,6 +263,7 @@ class Transformer:
           new_cache[0][j] = keys[j]
           new_cache[1][j] = values[j]       
         self.h[i].attn.cache_kv = new_cache
+        
         xq, keys, values = xq.transpose((1,0,2)), keys.transpose((1,0,2)), values.transpose((1,0,2))
 
         #xq = scaled_dot_product_attention(xq,keys,values)
@@ -284,13 +286,11 @@ class Transformer:
       xq = xqkv[:,:self.h[-1].attn.dim]
       xk = xqkv[:,self.h[-1].attn.dim:2*self.h[-1].attn.dim]
       xv = xqkv[:,2*self.h[-1].attn.dim:]
-      xq = xq.reshape(len(xq),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
-      xk = xk.reshape(len(xk),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
-      xv = xv.reshape(len(xv),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
+      xq = xq.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
+      xk = xk.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
+      xv = xv.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
       keys = xk
       values = xv
-      s = list(np.shape(keys))
-      s[0] = MAX_CONTEXT
       new_cache = np.zeros(shape=s).astype(np.float32)
       new_cache = [np.copy(new_cache),np.copy(new_cache)]
       for i in range(len(keys)):
