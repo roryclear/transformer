@@ -383,20 +383,13 @@ class Transformer:
       keys = keys[-1] #todo
       values = values[-1] #todo
       qk = openclk.matvec4(xq,keys)
-      qk = qk / math.sqrt(np.shape(xq)[-1])
-      xq = np.array(openclk.matmul_t(qk,values))
-      attn = openclk.matmul_t_c(xq,self.h[-1].attn.c_proj.weight)
-      attn += self.h[-1].attn.c_proj.bias
-
-
+      xq = openclk.matmul_t(qk,values)
+      attn = openclk.matmul_t_c2(xq,self.h[-1].attn.c_proj.weight,self.attn_c_proj_bias[-1])
       h += attn
       x = np.copy(h)
       x = openclk.kernel_0(x,self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
-      x = openclk.matmul_t_c(x,self.h[-1].mlp.c_fc.weight)
-      x += self.h[-1].mlp.c_fc.bias
-      x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
-      x = openclk.matmul_t_c(x,self.h[-1].mlp.c_proj.weight)
-      x += self.h[-1].mlp.c_proj.bias
+      x = openclk.matmul_t_c3(x,self.h[-1].mlp.c_fc.weight,self.mlp_c_fc_bias[-1])
+      x = openclk.matmul_t_c2(x,self.h[-1].mlp.c_proj.weight,self.mlp_c_proj_bias[-1])
       x += h
       x = openclk.kernel_0(x,self.ln_f.weight, self.ln_f.bias)
       logits = openclk.matmul_t_c(x,self.lm_head.weight)
