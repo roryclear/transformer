@@ -387,11 +387,11 @@ class Transformer:
       attn = openclk.matmul_t_c2(xq,self.h[-1].attn.c_proj.weight,self.attn_c_proj_bias[-1])
       h += attn
       x = np.copy(h)
-      x = openclk.kernel_0(x,self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
+      x = openclk.kernel_0(x,self.ln_2_weight[-1], self.ln_2_bias[-1])
       x = openclk.matmul_t_c3(x,self.h[-1].mlp.c_fc.weight,self.mlp_c_fc_bias[-1])
       x = openclk.matmul_t_c2(x,self.h[-1].mlp.c_proj.weight,self.mlp_c_proj_bias[-1])
       x += h
-      x = openclk.kernel_0(x,self.ln_f.weight, self.ln_f.bias)
+      x = openclk.kernel_0(x,self.ln_f_weight, self.ln_f_bias)
       logits = openclk.matmul_t_c(x,self.lm_head.weight)
     if temperature < 1e-6:
       ret = logits.argmax(-1)
