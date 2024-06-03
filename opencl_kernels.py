@@ -874,7 +874,7 @@ def matmul_t_b(a_g,b,n_tokens,bias_g):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmul_t_c(a_g,b):
+def matmul_t_c(a_g,b,temperature):
     b_cols = 50257
     b_rows = 768
     print(b_cols,b_rows)
@@ -902,7 +902,7 @@ def matmul_t_c(a_g,b):
             for(int k = 0; k < {b_rows}; k++) {{
                 total += a[k] * b[x*{b_rows} + k]; 
             }}
-            res[x] = total; 
+            res[x] = total / {temperature}; 
         }}
     }}
     """).build()

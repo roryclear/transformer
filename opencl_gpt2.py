@@ -310,7 +310,7 @@ class Transformer:
       h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
 
       if temperature < 1e-6:
-        logits = openclk.matvec2(h,self.lm_head_weight)
+        logits = openclk.matvec2(h,self.lm_head_weight) #todo
         ret = logits.argmax(-1)
       else:
         logits = openclk.matvec2(h,self.lm_head_weight,temperature)
@@ -391,12 +391,13 @@ class Transformer:
       x = openclk.matmul_t_c3(x,self.h[-1].mlp.c_fc.weight,self.mlp_c_fc_bias[-1])
       x = openclk.matmul_t_c2(x,self.h[-1].mlp.c_proj.weight,self.mlp_c_proj_bias[-1])
       x += h
+      h = None
       x = openclk.kernel_0(x,self.ln_f_weight, self.ln_f_bias)
-      logits = openclk.matmul_t_c(x,self.lm_head.weight)
     if temperature < 1e-6:
+      logits = openclk.matmul_t_c(x,self.lm_head.weight) #todo
       ret = logits.argmax(-1)
     else:
-      logits = np.array(logits) / temperature
+      logits = openclk.matmul_t_c(x,self.lm_head.weight,temperature)
       logits = np.exp(logits - np.max(logits))
       logits = logits / logits.sum()
       logits = logits.cumsum(0)
