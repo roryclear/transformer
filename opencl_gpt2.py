@@ -203,13 +203,6 @@ class Transformer:
 
     seqlen = len(tokens)
     if start_pos > 0:
-      if hasattr(self, 'attn_cache_kv') == False:
-        print("copying attn_cache_kv")
-        self.attn_cache_kv = []
-        for i in range(len(self.h)):
-          self.attn_cache_kv.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.concatenate((\
-          self.h[i].attn.cache_kv[0].flatten(),self.h[i].attn.cache_kv[1].flatten()))))
-
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
         self.h[i].attn.c_proj.weight = self.h[i].attn.c_proj.weight.flatten()
@@ -222,7 +215,7 @@ class Transformer:
         h = openclk.kernel_2(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
         self.attn_c_attn_bias[i],attn_dim,\
-        self.attn_cache_kv[i],start_pos,\
+        self.h[i].attn.cache_kv,start_pos,\
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
@@ -259,8 +252,9 @@ class Transformer:
         new_cache = [np.copy(new_cache),np.copy(new_cache)]
         for j in range(len(xk)):
           new_cache[0][j] = xk[j]
-          new_cache[1][j] = values[j]       
-        self.h[i].attn.cache_kv = new_cache
+          new_cache[1][j] = values[j]
+        new_cache = np.array(new_cache)       
+        self.h[i].attn.cache_kv = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
         
         xq, values = xq.transpose((1,0,2)), values.transpose((1,0,2))
         xq = openclk.matmul_t_3d_c(xq,xk)
@@ -276,7 +270,6 @@ class Transformer:
       h = np.copy(x[-1]) #todo
       x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
       #attn = self.h[-1].attn(x)
-
       xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[-1],n_tokens,self.attn_c_attn_bias[-1])
       xq = xqkv[:,:self.h[-1].attn.dim]
       xk = xqkv[:,self.h[-1].attn.dim:2*self.h[-1].attn.dim]
@@ -286,10 +279,10 @@ class Transformer:
       xv = xv.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
       new_cache = np.zeros(shape=s).astype(np.float32)
       new_cache = [np.copy(new_cache),np.copy(new_cache)]
-      for i in range(len(xk)):
-        new_cache[0][i] = xk[i]
-        new_cache[1][i] = xv[i]       
-      self.h[-1].attn.cache_kv = new_cache
+      new_cache[0][0:len(xk)] = xk
+      new_cache[1][0:len(xk)] = xv   
+      new_cache = np.array(new_cache)
+      self.h[-1].attn.cache_kv = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
       xq = xq[-1] #todo
       xk = xk[-1] #todo
       xv = xv[-1] #todo
