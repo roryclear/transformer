@@ -235,8 +235,8 @@ class Transformer:
       n_tokens = len(tokens)
       x = openclk.tok_emb(tokens,self.wte.weight,self.wpe.weight)
       for i in range(len(self.h)-1):
-        h = np.copy(x) #todo
-        x = openclk.kernel_0_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
+        h = x
+        x = openclk.kernel_0_b(h,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
         xqkv = openclk.matmul_t_b(x,self.h[i].attn.c_attn.weight,n_tokens,self.attn_c_attn_bias[i])
         xq = xqkv[:,:self.dim]
         xk = xqkv[:,self.dim:2*self.dim]
@@ -244,7 +244,6 @@ class Transformer:
         xq = xq.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xk = xk.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xv = xv.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        values = xv
 
         s = list(np.shape(xk))
         s[0] = MAX_CONTEXT
@@ -252,14 +251,14 @@ class Transformer:
         new_cache = [np.copy(new_cache),np.copy(new_cache)]
         for j in range(len(xk)):
           new_cache[0][j] = xk[j]
-          new_cache[1][j] = values[j]
-        new_cache = np.array(new_cache)       
+          new_cache[1][j] = xv[j]
+        new_cache = np.array(new_cache)   
         self.h[i].attn.cache_kv = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
         
-        xq, values = xq.transpose((1,0,2)), values.transpose((1,0,2))
+        xq, xv = xq.transpose((1,0,2)), xv.transpose((1,0,2))
         xq = openclk.matmul_t_3d_c(xq,xk)
         xq = openclk.minus_sum_3d(xq,n_tokens)
-        xq = openclk.matmul_t_3d(xq,values,n_tokens)
+        xq = openclk.matmul_t_3d(xq,xv,n_tokens)
         xq = openclk.transpose(xq,n_tokens)
         h = openclk.matmul_t_e(xq,self.h[i].attn.c_proj.weight,self.attn_c_proj_bias[i],n_tokens,h)
         x = np.copy(h)
