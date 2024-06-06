@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3 #for tinygrad repo, get rid of libs etc
 # can I beat https://github.com/jaymody/xpicoGPT.git?
 # beating https://github.com/WAUthethird/stupidGPT should be easy
@@ -8,9 +7,11 @@ import numpy as np
 import math
 import os
 import pickle
-import opencl_kernels as openclk
+import opencl_kernels# as openclk
 import pyopencl as cl
 opencl = True
+
+openclk = opencl_kernels.Opencl_Kernels()
 
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
@@ -209,7 +210,6 @@ class Transformer:
         self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten()
 
       attn_dim = 768
-      kernel_2_prg = openclk.build_kernel_2_prg(start_pos,attn_dim)
       for i in range(0,len(self.h)):
         #inlined attn
         h = openclk.kernel_2(h,self.ln_1_weight[i],\
@@ -219,7 +219,7 @@ class Transformer:
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
-        self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i],kernel_2_prg)
+        self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
       h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
 
       if temperature < 1e-6:
