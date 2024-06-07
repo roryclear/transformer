@@ -204,11 +204,6 @@ class Transformer:
 
     if start_pos > 0:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
-      for i in range(len(self.h)):
-        self.h[i].attn.c_proj.weight = self.h[i].attn.c_proj.weight.flatten()
-        self.h[i].mlp.c_proj.weight = self.h[i].mlp.c_proj.weight.flatten()
-        self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten()
-
       attn_dim = 768
       for i in range(0,len(self.h)):
         #inlined attn
