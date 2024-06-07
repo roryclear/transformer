@@ -19,8 +19,7 @@ class Opencl_Kernels:
         self.prg_cache = {}
         return None
 
-    def add(self,a,b,b_s=0,a_s=0):
-        a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    def add(self,a_g,b,b_s=0,a_s=0):
         b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
 
         res_np = np.zeros(768).astype(np.float32).flatten()
