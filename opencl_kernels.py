@@ -143,11 +143,10 @@ class Opencl_Kernels:
         #cl.enqueue_copy(queue, a, a_g)
         return res
 
-    def tok_emb(self,tokens,weight,weight2):
+    def tok_emb(self,tokens,weight,weight2,no_tokens):
         tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
         weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
         weight_2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
-        no_tokens = np.shape(tokens)[0]
         tok_emb = np.zeros((no_tokens,dim)).astype(np.float32)
         ls = 256
         size = no_tokens*dim
@@ -223,7 +222,7 @@ class Opencl_Kernels:
         return h_g
 
     def kernel_0(self,a,c_g,d_g):
-        size = np.shape(a)[0]
+        size = 768
         ls = 256
         seg = int(size / ls) #todo
         a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -558,9 +557,9 @@ class Opencl_Kernels:
         return res_g
 
     def matmul_t(self,a,b):
-        a_rows = np.shape(a)[0]
-        b_cols = np.shape(b)[1]
-        b_rows = np.shape(b)[0]
+        a_rows = 64
+        b_cols = 64
+        b_rows = 12
         c = np.zeros([a_rows,b_cols])
         ls = 256
         a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -616,10 +615,10 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, c, c_g)
         return c
 
-    def matmul_t_d(self,a,b,bias_g,h):
-        a_rows = np.shape(a)[0]
-        b_cols = np.shape(b)[1]
-        b_rows = np.shape(b)[0]
+    def matmul_t_d(self,a,b,bias_g,h,n_tokens):
+        a_rows = n_tokens
+        b_cols = 768
+        b_rows = 3072
         c = np.zeros([a_rows,b_cols])
         ls = 256
         a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -647,10 +646,10 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, c, c_g)
         return c
 
-    def matmul_t_d2(self,a,b,bias_g):
-        a_rows = np.shape(a)[0]
-        b_cols = np.shape(b)[1]
-        b_rows = np.shape(b)[0]
+    def matmul_t_d2(self,a,b,bias_g,n_tokens):
+        a_rows = n_tokens
+        b_cols = 3072
+        b_rows = 768
         c = np.zeros([a_rows,b_cols])
         ls = 256
         a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -707,8 +706,8 @@ class Opencl_Kernels:
 
     def matmul_t_b(self,a_g,b,n_tokens,bias_g):
         a_rows = n_tokens
-        b_cols = np.shape(b)[1]
-        b_rows = np.shape(b)[0]
+        b_cols = 2304
+        b_rows = 768
         c = np.zeros([a_rows,b_cols])
         b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
         c = np.float32(c)
@@ -769,8 +768,8 @@ class Opencl_Kernels:
         return c
 
     def matmul_t_c2(self,a,b,bias_g,h):
-        b_cols = np.shape(b)[1]
-        b_rows = np.shape(b)[0]
+        b_cols = 768
+        b_rows = 768
         a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
         b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
@@ -793,6 +792,8 @@ class Opencl_Kernels:
         knl(queue, (group_size,1), (16,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
         cl.enqueue_copy(queue, h, c_g)
         return h
+    
+
 
     def matmul_t_c3(self,a_g,b,bias_g):
         b_cols = 3072
@@ -951,8 +952,8 @@ class Opencl_Kernels:
         
 
     def matvec4(self,a,b):
-        b_cols = np.shape(b)[1]
-        b_rows = np.shape(b)[0]
+        b_cols = 64
+        b_rows = 12
         c = np.zeros(b_cols)
         
         a = a.flatten()
