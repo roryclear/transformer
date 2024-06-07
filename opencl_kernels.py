@@ -19,9 +19,7 @@ class Opencl_Kernels:
         self.prg_cache = {}
         return None
 
-    def add(self,a_g,b,b_s=0,a_s=0):
-        b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-
+    def add(self,a_g,b_g,b_s=0,a_s=0):
         res_np = np.zeros(768).astype(np.float32).flatten()
         res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res_np)
         #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
@@ -142,9 +140,8 @@ class Opencl_Kernels:
         #cl.enqueue_copy(queue, a, a_g)
         return res
 
-    def tok_emb(self,tokens,weight,weight2,no_tokens):
+    def tok_emb(self,tokens,weight_g,weight2,no_tokens):
         tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
-        weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
         weight_2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
         tok_emb = np.zeros((no_tokens,dim)).astype(np.float32)
         ls = 256

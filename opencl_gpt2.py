@@ -204,10 +204,14 @@ class Transformer:
     
     if hasattr(self, 'wte_weight') == False:
       print("copying self_wte_weight")
-      self.wte_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wte.weight.flatten())
+      self.wte_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wte.weight)
+
+    if hasattr(self, 'wpe_weight') == False:
+      print("copying self_wpe_weight")
+      self.wpe_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wpe.weight)
 
     if start_pos > 0:
-      h = openclk.add(self.wte_weight,self.wpe.weight,start_pos,tokens[0])
+      h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
       attn_dim = 768
       for i in range(0,len(self.h)):
         #inlined attn
@@ -231,7 +235,7 @@ class Transformer:
         return ret
 
     else:
-      x = openclk.tok_emb(tokens,self.wte.weight,self.wpe.weight,n_tokens)
+      x = openclk.tok_emb(tokens,self.wte_weight,self.wpe.weight,n_tokens)
       for i in range(len(self.h)-1):
         h = x
         x = openclk.kernel_0_b(h,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
