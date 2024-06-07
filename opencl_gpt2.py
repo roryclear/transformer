@@ -117,7 +117,7 @@ class Transformer:
     self.dim = dim
     #self.ln_1_weights = None
 
-  def forward(self, tokens, start_pos, temperature:float=0.0):
+  def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if hasattr(self, 'ln_1_weight') == False:
       print("copying ln_1_weight")
       self.ln_1_weight = []
@@ -201,7 +201,6 @@ class Transformer:
     if hasattr(self, 'lm_head_weight') == False:
       print("copying lm_head_weight")
       self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head.weight.flatten())
-
     if start_pos > 0:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       attn_dim = 768
@@ -227,7 +226,6 @@ class Transformer:
         return ret
 
     else:
-      n_tokens = len(tokens)
       x = openclk.tok_emb(tokens,self.wte.weight,self.wpe.weight)
       for i in range(len(self.h)-1):
         h = x
@@ -250,8 +248,10 @@ class Transformer:
         new_cache = np.array(new_cache)   
         self.h[i].attn.cache_kv = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
         
-        xq, xv = xq.transpose((1,0,2)), xv.transpose((1,0,2))
-        xq = openclk.matmul_t_3d_c(xq,xk)
+        xq = xq.flatten() #todo remove
+        xv = xv.flatten()
+        xq,xv = openclk.transpose_b(xq,n_tokens,xv)
+        xq = openclk.matmul_t_3d_c(xq,xk,n_tokens)
         xq = openclk.minus_sum_3d(xq,n_tokens)
         xq = openclk.matmul_t_3d(xq,xv,n_tokens)
         xq = openclk.transpose(xq,n_tokens)
@@ -297,8 +297,8 @@ class Transformer:
       ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
     return ret
 
-  def __call__(self, tokens, start_pos, temperature:np.float32=0.0,v_in=False):
-    return self.forward(tokens, start_pos, temperature)
+  def __call__(self, tokens, start_pos, temperature:np.float32=0.0,n_tokens=1):
+    return self.forward(tokens, start_pos, temperature,n_tokens)
 
 def pt(x):
   for _ in range(len(np.shape(x))):
@@ -344,12 +344,13 @@ class GPT2:
 
     toks = encode(prompt)
     start_pos = 0
+    n_tokens = len(toks)
     for _ in trange(max_length, disable=(timing==True)):
       if batch_size == 1 and len(toks[start_pos:]) == 1:
         tokens = np.array([toks[start_pos]])
       else:
         tokens = np.array(toks)
-      tok = self.model(tokens, start_pos, temperature).tolist()
+      tok = self.model(tokens, start_pos, temperature, n_tokens).tolist()
       start_pos = len(toks)
       
       if tg_rand:
