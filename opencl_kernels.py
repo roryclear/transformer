@@ -728,12 +728,11 @@ class Opencl_Kernels:
         return new_cache_g
 
 
-    def matmul_t_b(self,a_g,b,n_tokens,bias_g):
+    def matmul_t_b(self,a_g,b_g,n_tokens,bias_g):
         a_rows = n_tokens
         b_cols = 2304
         b_rows = 768
         c = np.zeros([a_rows,b_cols])
-        b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
         c = np.float32(c)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
         prg_str = f"""

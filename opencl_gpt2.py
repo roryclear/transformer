@@ -239,7 +239,7 @@ class Transformer:
       for i in range(len(self.h)-1):
         h = x
         x = openclk.kernel_0_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
-        xqkv = openclk.matmul_t_b(x,self.h[i].attn.c_attn.weight,n_tokens,self.attn_c_attn_bias[i])
+        xqkv = openclk.matmul_t_b(x,self.attn_c_attn_weight[i],n_tokens,self.attn_c_attn_bias[i])
         xq = xqkv[:,:self.dim]
         xk = xqkv[:,self.dim:2*self.dim]
         xv = xqkv[:,2*self.dim:]
@@ -263,9 +263,8 @@ class Transformer:
         x = openclk.matmul_t_d2(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],n_tokens)
         x = openclk.matmul_t_d(x,self.h[i].mlp.c_proj.weight,self.mlp_c_proj_bias[i],h,n_tokens)
         ############
-      h = np.copy(x[-1]) #todo
+      h = np.copy(x[-1]) 
       x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
-      #attn = self.h[-1].attn(x)
       xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[-1],n_tokens,self.attn_c_attn_bias[-1])
       xq = xqkv[:,:self.h[-1].attn.dim]
       xk = xqkv[:,self.h[-1].attn.dim:2*self.h[-1].attn.dim]
