@@ -246,12 +246,9 @@ class Transformer:
         xq = xq.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xk = xk.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xv = xv.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        s = list(np.shape(xk))
-        s[0] = MAX_CONTEXT
-        new_cache = np.zeros(shape=s).astype(np.float32)
-        new_cache = [np.copy(new_cache),np.copy(new_cache)]
+        new_cache = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
         new_cache = openclk.copy_to_cache(xk,xv,new_cache,n_tokens,MAX_CONTEXT)
-        self.h[i].attn.cache_kv = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
+        self.h[i].attn.cache_kv = new_cache
         
         xq = xq.flatten() #todo remove
         xv = xv.flatten()
@@ -276,12 +273,9 @@ class Transformer:
       xq = xq.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
       xk = xk.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
       xv = xv.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
-      new_cache = np.zeros(shape=s).astype(np.float32)
-      new_cache = [np.copy(new_cache),np.copy(new_cache)]
-      new_cache[0][0:len(xk)] = xk
-      new_cache[1][0:len(xk)] = xv   
-      new_cache = np.array(new_cache)
-      self.h[-1].attn.cache_kv = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
+      new_cache = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
+      new_cache = openclk.copy_to_cache(xk,xv,new_cache,n_tokens,MAX_CONTEXT)
+      self.h[-1].attn.cache_kv = new_cache
       xq = xq[-1] #todo
       xk = xk[-1] #todo
       xv = xv[-1] #todo

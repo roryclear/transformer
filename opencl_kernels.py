@@ -725,8 +725,7 @@ class Opencl_Kernels:
         ls = 256
         g = math.ceil((n_tokens*12*64) / ls) * ls
         knl(queue, (g,1), (ls,1), xk_g, xv_g, new_cache_g) #todo, this is arbitrary
-        cl.enqueue_copy(queue, new_cache, new_cache_g)
-        return new_cache
+        return new_cache_g
 
 
     def matmul_t_b(self,a_g,b,n_tokens,bias_g):
