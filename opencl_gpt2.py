@@ -240,16 +240,13 @@ class Transformer:
         h = x
         x = openclk.kernel_0_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
         xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[i],n_tokens,self.attn_c_attn_bias[i])
+        new_cache = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
+        new_cache = openclk.copy_to_cache_b(xqkv,new_cache,n_tokens,MAX_CONTEXT)
+        self.h[i].attn.cache_kv = new_cache
         xq = xqkv[:,:self.dim]
         xk = xqkv[:,self.dim:2*self.dim]
         xv = xqkv[:,2*self.dim:]
-        xq = xq.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        xk = xk.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        xv = xv.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        new_cache = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
-        new_cache = openclk.copy_to_cache(xk,xv,new_cache,n_tokens,MAX_CONTEXT)
-        self.h[i].attn.cache_kv = new_cache
-        
+
         xq = xq.flatten() #todo remove
         xv = xv.flatten()
         xq,xv = openclk.transpose_b(xq,n_tokens,xv)

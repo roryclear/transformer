@@ -701,6 +701,30 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, h, h_g)
         return h
 
+    def copy_to_cache_b(self,xqkv,new_cache,n_tokens,max_content):
+        new_cache = np.array(new_cache)
+        xqkv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xqkv)
+        new_cache_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
+        prg_str = f"""
+        __kernel void matmul(
+            __global const float *xqkv, __global float *new_cache)
+        {{
+            int gidx0 = get_global_id(0);
+            int i = gidx0 / {12*64};
+            int j = gidx0 % {12*64};
+            new_cache[i*12*64 + j] = xqkv[i*12*64*3 + 768*1 + j];
+            new_cache[{max_content}*12*64 + i*12*64 + j] = xqkv[i*12*64*3 + 768*2 + j]; 
+        }}
+        """
+        if prg_str not in self.prg_cache:
+            self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
+        prg = self.prg_cache[prg_str]
+        knl = prg.matmul
+        ls = 256
+        g = math.ceil((n_tokens*12*64) / ls) * ls
+        knl(queue, (g,1), (ls,1), xqkv_g, new_cache_g) #todo, this is arbitrary
+        return new_cache_g
+
     def copy_to_cache(self,xk,xv,new_cache,n_tokens,max_content):
         xk = xk.flatten()
         xv = xv.flatten()
@@ -716,7 +740,7 @@ class Opencl_Kernels:
             int i = gidx0 / {12*64};
             int j = gidx0 % {12*64};
             new_cache[i*12*64 + j] = xk[i*12*64 + j];
-            new_cache[128*12*64 + i*12*64 + j] = xv[i*12*64 + j]; 
+            new_cache[{max_content}*12*64 + i*12*64 + j] = xv[i*12*64 + j]; 
         }}
         """
         if prg_str not in self.prg_cache:
