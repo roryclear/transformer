@@ -700,6 +700,35 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, h, h_g)
         return h
 
+    def copy_to_cache(self,xk,xv,new_cache,n_tokens,max_content):
+        xk = xk.flatten()
+        xv = xv.flatten()
+        new_cache = np.array(new_cache)
+        xk_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xk)
+        xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
+        new_cache_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
+        prg_str = f"""
+        __kernel void matmul(
+            __global const float *xk, __global const float *xv, __global float *new_cache)
+        {{
+            int gidx0 = get_global_id(0);
+            int i = gidx0 / {12*64};
+            int j = gidx0 % {12*64};
+            new_cache[i*12*64 + j] = xk[i*12*64 + j];
+            new_cache[128*12*64 + i*12*64 + j] = xv[i*12*64 + j]; 
+        }}
+        """
+        if prg_str not in self.prg_cache:
+            self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
+        prg = self.prg_cache[prg_str]
+        knl = prg.matmul
+        ls = 256
+        g = math.ceil((n_tokens*12*64) / ls) * ls
+        knl(queue, (g,1), (ls,1), xk_g, xv_g, new_cache_g) #todo, this is arbitrary
+        cl.enqueue_copy(queue, new_cache, new_cache_g)
+        return new_cache
+
+
     def matmul_t_b(self,a_g,b,n_tokens,bias_g):
         a_rows = n_tokens
         b_cols = 2304
