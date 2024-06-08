@@ -582,13 +582,14 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, c, c_g)
         return c
 
-    def matmul_t_f(self,a,b_g,n_tokens,bias_g):
+    def matmul_t_f(self,a_g,b_g,n_tokens,bias_g):
         a_rows = n_tokens
         b_cols = 2304 #todo
         b_rows = 768
         c = np.zeros([a_rows,b_cols])
         ls = 256
-        a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+        if type(a_g) is np.ndarray:
+            a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a_g)
         c = np.float32(c)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
         prg = cl.Program(ctx, f"""
@@ -726,39 +727,6 @@ class Opencl_Kernels:
         g = math.ceil((n_tokens*12*64) / ls) * ls
         knl(queue, (g,1), (ls,1), xk_g, xv_g, new_cache_g) #todo, this is arbitrary
         return new_cache_g
-
-
-    def matmul_t_b(self,a_g,b_g,n_tokens,bias_g):
-        a_rows = n_tokens
-        b_cols = 2304
-        b_rows = 768
-        c = np.zeros([a_rows,b_cols])
-        c = np.float32(c)
-        c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-        prg_str = f"""
-        __kernel void matmul(
-            __global const float *a, __global const float *b, __global const float *bias, __global float *res)
-        {{
-            int x = get_global_id(0);
-            if(x < {b_cols}) {{
-                for(int y = 0; y < {a_rows}; y++) {{
-                    float total = 0;
-                    for(int k = 0; k < {b_rows}; k++) {{
-                        total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
-                    }}
-                    res[y*{b_cols} + x] = bias[x] + total;
-                }}  
-            }}
-        }}
-        """
-        if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
-        prg = self.prg_cache[prg_str]
-        knl = prg.matmul
-        group_size = math.ceil(b_cols / 16) * 16
-        knl(queue, (group_size,1), (16,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
-        cl.enqueue_copy(queue, c, c_g)
-        return c
 
     def matmul_t_c(self,a_g,b,temperature,buffer=False):
         b_cols = 50257

@@ -239,7 +239,7 @@ class Transformer:
       for i in range(len(self.h)-1):
         h = x
         x = openclk.kernel_0_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
-        xqkv = openclk.matmul_t_b(x,self.attn_c_attn_weight[i],n_tokens,self.attn_c_attn_bias[i])
+        xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[i],n_tokens,self.attn_c_attn_bias[i])
         xq = xqkv[:,:self.dim]
         xk = xqkv[:,self.dim:2*self.dim]
         xv = xqkv[:,2*self.dim:]
