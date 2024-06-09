@@ -243,13 +243,9 @@ class Transformer:
         new_cache = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
         new_cache = openclk.copy_to_cache_b(xqkv,new_cache,n_tokens,MAX_CONTEXT)
         self.h[i].attn.cache_kv = new_cache
-        xq = xqkv[:,:self.dim]
         xk = xqkv[:,self.dim:2*self.dim]
-        xv = xqkv[:,2*self.dim:]
 
-        xq = xq.flatten() #todo remove
-        xv = xv.flatten()
-        xq,xv = openclk.transpose_b(xq,n_tokens,xv)
+        xq,xv = openclk.transpose_b(xqkv,n_tokens)
         xq = openclk.matmul_t_3d_c(xq,xk,n_tokens)
         xq = openclk.minus_sum_3d(xq,n_tokens)
         xq = openclk.matmul_t_3d(xq,xv,n_tokens)

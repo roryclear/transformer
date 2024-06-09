@@ -839,15 +839,13 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, c, c_g)
         return c
 
-    def matmul_t_3d(self,a_g,b,n_tokens):
+    def matmul_t_3d(self,a_g,b_g,n_tokens):
         a_rows = n_tokens
         a_cols = n_tokens
         b_rows = n_tokens
         b_cols = 64 #todo
         c = np.zeros([12,a_rows,b_cols])
         ls = 256
-        b = b.flatten()
-        b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
         c = np.float32(c)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
         prg = cl.Program(ctx, f"""
@@ -1021,32 +1019,31 @@ class Opencl_Kernels:
         knl(queue, (g,1), (ls,1), a_g, at_g)
         return at_g
     
-    def transpose_b(self,a,n_tokens,b,np_in=False):
+    def transpose_b(self,a,n_tokens,np_in=False):
         a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-        b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
         at = np.zeros(12*64*n_tokens).astype(np.float32) #todo
         bt = np.zeros(12*64*n_tokens).astype(np.float32) #todo
         at_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=at)
         bt_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bt)
         prg = cl.Program(ctx, f"""
         __kernel void matmul(
-            __global const float *a, __global float *at, __global const float *b, __global float *bt)
+            __global const float *a, __global float *at, __global float *bt)
         {{
             int gidx0 = get_global_id(0);
             int i = (gidx0 / {64}) / {n_tokens};
             int j = (gidx0 / {64}) % {n_tokens};
             int k = gidx0 % 64;
-            at[i*{n_tokens}*64 + j*64 + k] = a[i*64 + j*64*12 + k];
-            bt[i*{n_tokens}*64 + j*64 + k] = b[i*64 + j*64*12 + k];
+            at[i*{n_tokens}*64 + j*64 + k] = a[i*64 + j*64*12*3 + k];
+            bt[i*{n_tokens}*64 + j*64 + k] = a[i*64 + j*64*12*3 + k + 64*12*2];
         }}
         """).build()
         knl = prg.matmul
         g = n_tokens*12*64
         ls = 256
         g = math.ceil(g / ls)*ls
-        knl(queue, (g,1), (ls,1), a_g, at_g, b_g, bt_g)
-        cl.enqueue_copy(queue, bt, bt_g)
-        return at_g,bt
+        knl(queue, (g,1), (ls,1), a_g, at_g, bt_g)
+        #cl.enqueue_copy(queue, bt, bt_g)
+        return at_g,bt_g
 
     def time_it(func,a,b,i=100):
         f = None
