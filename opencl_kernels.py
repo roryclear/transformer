@@ -675,11 +675,10 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, c, c_g)
         return c
 
-    def matmul_t_e(self,a_g,b,bias_g,n_tokens,h):
+    def matmul_t_e(self,a_g,b_g,bias_g,n_tokens,h):
         a_rows = n_tokens
         b_rows = 768
         ls = 256
-        b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
         h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
         prg = cl.Program(ctx, f"""
         __kernel void matmul(
@@ -782,11 +781,11 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, c, c_g)
         return c
 
-    def matmul_t_c2(self,a,b,bias_g,h):
+    def matmul_t_c2(self,a,b_g,bias_g,h):
         b_cols = 768
         b_rows = 768
         a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-        b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+        #b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
         prg = cl.Program(ctx, f"""
         __kernel void matmul(

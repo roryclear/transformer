@@ -148,6 +148,12 @@ class Transformer:
       for i in range(len(self.h)):
         self.attn_c_proj_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].attn.c_proj.weight.flatten()))
 
+    if hasattr(self, 'attn_c_proj_weight2') == False: #todo, why is un-flattened one needed?
+      print("copying attn_c_proj_weight2")
+      self.attn_c_proj_weight2 = []
+      for i in range(len(self.h)):
+        self.attn_c_proj_weight2.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].attn.c_proj.weight))
+
     if hasattr(self, 'attn_c_proj_bias') == False:
       print("copying attn_c_proj_bias")
       self.attn_c_proj_bias = []
@@ -250,7 +256,7 @@ class Transformer:
         xq = openclk.minus_sum_3d(xq,n_tokens)
         xq = openclk.matmul_t_3d(xq,xv,n_tokens)
         xq = openclk.transpose(xq,n_tokens)
-        h = openclk.matmul_t_e(xq,self.h[i].attn.c_proj.weight,self.attn_c_proj_bias[i],n_tokens,h)
+        h = openclk.matmul_t_e(xq,self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],n_tokens,h)
         x = np.copy(h)
         x = openclk.kernel_0_b(x,self.h[i].ln_2.weight, self.h[i].ln_2.bias,n_tokens,True)
         x = openclk.matmul_t_d2(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],n_tokens)
@@ -273,10 +279,10 @@ class Transformer:
       xv = xv[-1] #todo
       qk = openclk.matvec4(xq,xk)
       xq = openclk.matmul_t(qk,xv)
-      x = openclk.matmul_t_c2(xq,self.h[-1].attn.c_proj.weight,self.attn_c_proj_bias[-1],h)
+      x = openclk.matmul_t_c2(xq,self.attn_c_proj_weight[-1],self.attn_c_proj_bias[-1],h)
       x = openclk.kernel_0(x,self.ln_2_weight[-1], self.ln_2_bias[-1])
       x = openclk.matmul_t_c3(x,self.h[-1].mlp.c_fc.weight,self.mlp_c_fc_bias[-1])
-      x = openclk.matmul_t_c2(x,self.h[-1].mlp.c_proj.weight,self.mlp_c_proj_bias[-1],h)
+      x = openclk.matmul_t_c2(x,self.mlp_c_proj_weight[-1],self.mlp_c_proj_bias[-1],h)
       h = None
       x = openclk.kernel_0(x,self.ln_f_weight, self.ln_f_bias)
     if temperature < 1e-6:
