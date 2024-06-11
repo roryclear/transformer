@@ -279,6 +279,7 @@ class Transformer:
       xv = xv[-1] #todo
       qk = openclk.matvec4(xq,xk)
       xq = openclk.matmul_t(qk,xv)
+      qk = None
       x = openclk.matmul_t_c2(xq,self.attn_c_proj_weight[-1],self.attn_c_proj_bias[-1],h)
       x = openclk.kernel_0(x,self.ln_2_weight[-1], self.ln_2_bias[-1])
       x = openclk.matmul_t_c3(x,self.h[-1].mlp.c_fc.weight,self.mlp_c_fc_bias[-1])

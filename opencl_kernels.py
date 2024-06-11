@@ -217,11 +217,10 @@ class Opencl_Kernels:
         knl(queue, (ls,1), (ls,1), h_g, weight_g, bias_g) #rory to test large stuff
         return h_g
 
-    def kernel_0(self,a,c_g,d_g):
+    def kernel_0(self,a_g,c_g,d_g):
         size = 768
         ls = 256
         seg = int(size / ls) #todo
-        a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
         prg = cl.Program(ctx, f"""
         __kernel void mm(
             __global float *a, __global const float *c, __global const float *d)
@@ -550,13 +549,12 @@ class Opencl_Kernels:
         knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
         return res_g
 
-    def matmul_t(self,a,b):
+    def matmul_t(self,a_g,b):
         a_rows = 64
         b_cols = 64
         b_rows = 12
         c = np.zeros([a_rows,b_cols])
         ls = 256
-        a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
         b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
         c = np.float32(c)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
@@ -802,8 +800,7 @@ class Opencl_Kernels:
         knl = prg.matmul
         group_size = math.ceil(b_cols / 16) * 16
         knl(queue, (group_size,1), (16,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
-        cl.enqueue_copy(queue, h, c_g)
-        return h
+        return c_g
     
 
 
@@ -989,8 +986,7 @@ class Opencl_Kernels:
         knl = prg.matmul
         group_size = math.ceil(b_cols / 16) * 16
         knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
-        cl.enqueue_copy(queue, c, c_g)
-        return c
+        return c_g
 
     def transpose(self,a_g,n_tokens,np_in=False):
         # (12,13,64) -? (13,12,64)
