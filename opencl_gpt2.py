@@ -244,7 +244,7 @@ class Transformer:
       x = openclk.tok_emb(tokens,self.wte_weight,self.wpe.weight,n_tokens)
       for i in range(len(self.h)-1):
         h = x
-        x = openclk.kernel_0_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
+        x = openclk.kernel_0_b(x,self.ln_1_weight[i], self.ln_1_bias[i],n_tokens)
         xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[i],n_tokens,self.attn_c_attn_bias[i])
         new_cache = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
         new_cache = openclk.copy_to_cache_b(xqkv,new_cache,n_tokens,MAX_CONTEXT)
@@ -258,12 +258,12 @@ class Transformer:
         xq = openclk.transpose(xq,n_tokens)
         h = openclk.matmul_t_e(xq,self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],n_tokens,h)
         x = np.copy(h)
-        x = openclk.kernel_0_b(x,self.h[i].ln_2.weight, self.h[i].ln_2.bias,n_tokens,True)
+        x = openclk.kernel_0_b(x,self.ln_2_weight[i], self.ln_2_bias[i],n_tokens,True)
         x = openclk.matmul_t_d2(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],n_tokens)
         x = openclk.matmul_t_d(x,self.h[i].mlp.c_proj.weight,self.mlp_c_proj_bias[i],h,n_tokens)
         ############
       h = np.copy(x[-1]) 
-      x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
+      x = openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],n_tokens,True)
       xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[-1],n_tokens,self.attn_c_attn_bias[-1])
       xq = xqkv[:,:self.h[-1].attn.dim]
       xk = xqkv[:,self.h[-1].attn.dim:2*self.h[-1].attn.dim]

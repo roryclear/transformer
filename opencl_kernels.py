@@ -270,13 +270,11 @@ class Opencl_Kernels:
         knl(queue, (ls,1), (ls,1), a_g, c_g, d_g) #rory to test large stuff
         return a_g
 
-    def kernel_0_b(self,x,weight,bias,n_tokens,retnp=False):
+    def kernel_0_b(self,x,weight_g,bias_g,n_tokens,retnp=False):
         size = 768 #todo hardcoded
         ls = 256
         seg = int(size / ls) #todo
         x_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
-        weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
-        bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
         prg_str = f"""
         __kernel void mm(
             __global float *x, __global const float *weight, __global const float *bias)
