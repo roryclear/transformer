@@ -757,31 +757,6 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, c, c_g)
         return c
 
-    def matmul_t_e(self,a_g,b_g,bias_g,n_tokens,h):
-        a_rows = n_tokens
-        b_rows = 768
-        ls = 256
-        h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
-        prg = cl.Program(ctx, f"""
-        __kernel void matmul(
-            __global const float *a, __global const float *b,__global const float *bias, __global float *res)
-        {{
-            int gidx0 = get_global_id(0);
-            int x = gidx0 / {a_rows};
-            int y = gidx0 % {a_rows};
-            float total = 0;
-            for(int k = 0; k < {b_rows}; k++) {{
-                total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
-            }}
-            res[y*{b_rows} + x] += total + bias[x];
-        }}
-        """).build()
-        g = math.ceil((b_rows*a_rows / ls)*ls)
-        knl = prg.matmul
-        knl(queue, (g,1), (ls,1), a_g, b_g,bias_g,h_g)
-        cl.enqueue_copy(queue, h, h_g)
-        return h
-
     def copy_to_cache_b(self,xqkv_g,new_cache,n_tokens,max_content):
         new_cache = np.array(new_cache)
         new_cache_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
@@ -924,7 +899,8 @@ class Opencl_Kernels:
         return c_g
         
 
-    def kernel_7(self,xqkv_g,num_tokens):
+    def kernel_7(self,xqkv_g,attn_weight_g,attn_bias_g,h,num_tokens):
+        h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
         xq = np.zeros(12*64*num_tokens).astype(np.float32) #todo
         xv = np.zeros(12*64*num_tokens).astype(np.float32) #todo
         xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
@@ -932,6 +908,7 @@ class Opencl_Kernels:
 
         a_rows = num_tokens
         a_cols = 64
+        b_rows = 768
         n = 12
         x = 12
         res = np.zeros(num_tokens*x).astype(np.float32)
@@ -1030,6 +1007,19 @@ class Opencl_Kernels:
             xqt[i*64 + j*12*64 + k] = xq[i*{num_tokens}*64 + j*64 + k];
         }}
 
+        __kernel void ms7(
+            __global const float *xq, __global const float *attn_weight,__global const float *attn_bias, __global float *res)
+        {{
+            int gidx0 = get_global_id(0);
+            int x = gidx0 / {num_tokens};
+            int y = gidx0 % {num_tokens};
+            float total = 0;
+            for(int k = 0; k < {b_rows}; k++) {{
+                total += xq[y*{b_rows} + k] * attn_weight[x*{b_rows} + k]; 
+            }}
+            res[y*{b_rows} + x] += total + attn_bias[x];
+        }}
+
         """).build()
 
         knltr = prg.tr
@@ -1062,7 +1052,13 @@ class Opencl_Kernels:
         xqt_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xqt)
         knl6 = prg.ms6
         knl6(queue, (g4,1), (ls,1), c_g,xqt_g)
-        return xqt_g
+
+        g = math.ceil((b_rows*num_tokens / ls)*ls)
+        knl7 = prg.ms7
+        knl7(queue, (g,1), (ls,1), xqt_g,attn_weight_g,attn_bias_g,h_g)
+        cl.enqueue_copy(queue, h, h_g)
+
+        return h
         
 
     def matvec4(self,a,b):
