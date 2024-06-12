@@ -249,12 +249,7 @@ class Transformer:
         new_cache = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
         new_cache = openclk.copy_to_cache_b(xqkv,new_cache,n_tokens,MAX_CONTEXT)
         self.h[i].attn.cache_kv = new_cache
-        xk = xqkv[:,self.dim:2*self.dim]
-
-        xq,xv = openclk.transpose_b(xqkv,n_tokens)
-        xq = openclk.matmul_t_3d_c(xq,xk,n_tokens)
-        xq = openclk.minus_sum_3d(xq,n_tokens)
-        xq = openclk.matmul_t_3d(xq,xv,n_tokens)
+        xq,xv = openclk.kernel_7(xqkv,n_tokens)
         xq = openclk.transpose(xq,n_tokens)
         h = openclk.matmul_t_e(xq,self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],n_tokens,h)
         x = np.copy(h)
@@ -280,12 +275,7 @@ class Transformer:
       qk = openclk.matvec4(xq,xk)
       xq = openclk.matmul_t(qk,xv)
       qk = None
-      x = openclk.matmul_t_c2(xq,self.attn_c_proj_weight[-1],self.attn_c_proj_bias[-1],h)
-      x = openclk.kernel_0(x,self.ln_2_weight[-1], self.ln_2_bias[-1])
-      x = openclk.matmul_t_c3(x,self.h[-1].mlp.c_fc.weight,self.mlp_c_fc_bias[-1])
-      x = openclk.matmul_t_c2(x,self.mlp_c_proj_weight[-1],self.mlp_c_proj_bias[-1],h)
-      h = None
-      x = openclk.kernel_0(x,self.ln_f_weight, self.ln_f_bias)
+      x = openclk.kernel_0(h,self.ln_f_weight, self.ln_f_bias)
     if temperature < 1e-6:
       logits = openclk.matmul_t_c(x,self.lm_head.weight) #todo
       ret = logits.argmax(-1)
