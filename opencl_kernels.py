@@ -1019,6 +1019,17 @@ class Opencl_Kernels:
             }}
             res[y*{a_cols} + x + z*{a_cols}*{num_tokens}] = total;
         }}
+
+        __kernel void ms6( //transpose
+            __global const float *xq, __global float *xqt)
+        {{
+            int gidx0 = get_global_id(0);
+            int i = (gidx0 / 64) / {num_tokens};
+            int j = (gidx0 / 64) % {num_tokens};
+            int k = gidx0 % 64;
+            xqt[i*64 + j*12*64 + k] = xq[i*{num_tokens}*64 + j*64 + k];
+        }}
+
         """).build()
 
         knltr = prg.tr
@@ -1045,7 +1056,13 @@ class Opencl_Kernels:
         g3 = (math.ceil(12*a_cols*num_tokens / ls) * ls)
         knl5 = prg.ms5
         knl5(queue, (g3,1), (ls,1), xq_g,xv_g,c_g)
-        return c_g
+        g4 = num_tokens*12*64
+        g4 = math.ceil(g4 / ls)*ls
+        xqt = np.zeros(12*64*num_tokens).astype(np.float32) #todo
+        xqt_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xqt)
+        knl6 = prg.ms6
+        knl6(queue, (g4,1), (ls,1), c_g,xqt_g)
+        return xqt_g
         
 
     def matvec4(self,a,b):
@@ -1078,29 +1095,29 @@ class Opencl_Kernels:
         knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
         return c_g
 
-    def transpose(self,a_g,n_tokens,np_in=False):
+    def transpose(self,xq_g,n_tokens,np_in=False):
         # (12,13,64) -? (13,12,64)
         #a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
         a_rows = n_tokens
-        at = np.zeros(12*64*n_tokens).astype(np.float32) #todo
-        at_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=at)
+        xqt = np.zeros(12*64*n_tokens).astype(np.float32) #todo
+        xqt_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xqt)
         prg = cl.Program(ctx, f"""
         __kernel void matmul(
-            __global const float *a, __global float *at)
+            __global const float *xq, __global float *xqt)
         {{
             int gidx0 = get_global_id(0);
             int i = (gidx0 / 64) / {a_rows};
             int j = (gidx0 / 64) % {a_rows};
             int k = gidx0 % 64;
-            at[i*64 + j*12*64 + k] = a[i*{a_rows}*64 + j*64 + k];
+            xqt[i*64 + j*12*64 + k] = xq[i*{a_rows}*64 + j*64 + k];
         }}
         """).build()
         knl = prg.matmul
         g = a_rows*12*64
         ls = 256
         g = math.ceil(g / ls)*ls
-        knl(queue, (g,1), (ls,1), a_g, at_g)
-        return at_g
+        knl(queue, (g,1), (ls,1), xq_g, xqt_g)
+        return xqt_g
     
     def time_it(func,a,b,i=100):
         f = None

@@ -249,8 +249,6 @@ class Transformer:
         new_cache = openclk.copy_to_cache_b(xqkv,new_cache,n_tokens,MAX_CONTEXT)
         self.h[i].attn.cache_kv = new_cache
         xq = openclk.kernel_7(xqkv,n_tokens)
-        xqkv = None
-        xq = openclk.transpose(xq,n_tokens)
         h = openclk.matmul_t_e(xq,self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],n_tokens,x)
         x = np.copy(h)
         x = openclk.kernel_0_c(x,self.ln_2_weight[i], self.ln_2_bias[i],n_tokens,True)
