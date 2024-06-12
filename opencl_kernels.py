@@ -271,7 +271,91 @@ class Opencl_Kernels:
         knl(queue, (ls,1), (ls,1), a_g, c_g, d_g) #rory to test large stuff
         return a_g
 
-    def kernel_0_b(self,x,weight_g,bias_g,n_tokens,retnp=False):
+    def kernel_0_b(self,x,weight_g,bias_g,attn_weight_g,attn_bias_g,n_tokens,retnp=False):
+        size = 768 #todo hardcoded
+        ls = 256
+        b_cols = 2304 #todo
+        b_rows = 768
+        seg = int(size / ls) #todo
+        x_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
+        prg_str = f"""
+        __kernel void mm(
+            __global float *x, __global const float *weight, __global const float *bias)
+        {{
+            __attribute__ ((aligned (16))) __local float temp[{ls}];
+            __attribute__ ((aligned (16))) __local float temp2[{n_tokens}];
+            int lidx0 = get_local_id(0);
+            int gidx0 = get_group_id(0);
+            int r = gidx0; //todo clean
+            temp2[r] = 0;
+            for(int i = 0; i < {seg}; i++) {{
+                temp2[r] += x[768*r + lidx0*{seg} + i];
+            }}
+            temp[lidx0] = temp2[r];
+            barrier(CLK_LOCAL_MEM_FENCE);
+            if(lidx0<{n_tokens}) {{
+                temp2[lidx0] = 0;
+                for(int i = 0; i < {ls}; i++) {{
+                    temp2[lidx0] += temp[i];
+                }}
+                temp2[lidx0] = temp2[lidx0] / {size};  
+            }}
+            barrier(CLK_LOCAL_MEM_FENCE);
+            for(int i = 0; i < {seg}; i++) {{
+                x[768*r + i + lidx0*{seg}] -= temp2[r];
+            }}
+            barrier(CLK_LOCAL_MEM_FENCE);
+            temp2[r] = 0;
+            for(int i = 0; i < {seg}; i++) {{
+                temp2[r] += pow(x[768*r + lidx0*{seg} + i],2);
+            }}
+            temp[lidx0] = temp2[r];
+            barrier(CLK_LOCAL_MEM_FENCE);
+            if(lidx0<{n_tokens}) {{
+                temp2[lidx0] = 0;
+                for(int i = 0; i < {ls}; i++) {{
+                    temp2[lidx0] += temp[i];
+                }}
+                temp2[lidx0] = pow(temp2[lidx0] / {size} + 1e-5,0.5);
+            }}
+            barrier(CLK_LOCAL_MEM_FENCE);
+            for(int i = 0; i < {seg}; i++) {{
+                x[768*r + i + lidx0*{seg}] = (x[768*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
+            }}
+        }}
+
+        __kernel void mm2(
+            __global const float *x, __global const float *attn_weight, __global const float *attn_bias,__global float *res)
+        {{
+            int gidx0 = get_global_id(0);
+            int i = gidx0 / {n_tokens};
+            int y = gidx0 % {n_tokens};
+            float total = 0;
+            for(int k = 0; k < {b_rows}; k++) {{
+                total += x[y*{b_rows} + k] * attn_weight[i*{b_rows} + k]; 
+            }}
+            res[y*{b_cols} + i] = total + attn_bias[i];
+        }}
+
+        """
+        if prg_str not in self.prg_cache:
+            self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
+        prg = self.prg_cache[prg_str]
+        knl = prg.mm
+        knl(queue, (ls*n_tokens,1), (ls,1), x_g, weight_g, bias_g) #rory to test large stuff
+        g = math.ceil((b_cols*n_tokens / ls)*ls)
+        c = np.zeros([n_tokens,b_cols]).astype(np.float32)
+        c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+        knl2 = prg.mm2
+        knl2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,c_g) #todo, this is arbitrary
+        if retnp:
+            cl.enqueue_copy(queue, c, c_g)
+            return c 
+        #return x_g
+        return c_g
+    
+
+    def kernel_0_c(self,x,weight_g,bias_g,n_tokens,retnp=False):
         size = 768 #todo hardcoded
         ls = 256
         seg = int(size / ls) #todo
@@ -580,33 +664,33 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, c, c_g)
         return c
 
-    def matmul_t_f(self,a_g,b_g,n_tokens,bias_g):
+    def matmul_t_f(self,x_g,attn_weight_g,n_tokens,attn_bias_g):
         a_rows = n_tokens
         b_cols = 2304 #todo
         b_rows = 768
         c = np.zeros([a_rows,b_cols])
         ls = 256
-        if type(a_g) is np.ndarray:
-            a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a_g)
+        if type(x_g) is np.ndarray:
+            x_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x_g)
         c = np.float32(c)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
         prg = cl.Program(ctx, f"""
         __kernel void matmul(
-            __global const float *a, __global const float *b, __global const float *bias,__global float *res)
+            __global const float *x, __global const float *attn_weight, __global const float *attn_bias,__global float *res)
         {{
             int gidx0 = get_global_id(0);
-            int x = gidx0 / {a_rows};
+            int i = gidx0 / {a_rows};
             int y = gidx0 % {a_rows};
             float total = 0;
             for(int k = 0; k < {b_rows}; k++) {{
-                total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
+                total += x[y*{b_rows} + k] * attn_weight[i*{b_rows} + k]; 
             }}
-            res[y*{b_cols} + x] = total + bias[x];
+            res[y*{b_cols} + i] = total + attn_bias[i];
         }}
         """).build()
         g = math.ceil((b_cols*a_rows / ls)*ls)
         knl = prg.matmul
-        knl(queue, (g,1), (ls,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
+        knl(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,c_g) #todo, this is arbitrary
         cl.enqueue_copy(queue, c, c_g)
         return c
 
@@ -698,9 +782,8 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, h, h_g)
         return h
 
-    def copy_to_cache_b(self,xqkv,new_cache,n_tokens,max_content):
+    def copy_to_cache_b(self,xqkv_g,new_cache,n_tokens,max_content):
         new_cache = np.array(new_cache)
-        xqkv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xqkv)
         new_cache_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
         prg_str = f"""
         __kernel void matmul(
@@ -841,8 +924,7 @@ class Opencl_Kernels:
         return c_g
         
 
-    def kernel_7(self,xqkv,num_tokens):
-        xqkv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xqkv)
+    def kernel_7(self,xqkv_g,num_tokens):
         xq = np.zeros(12*64*num_tokens).astype(np.float32) #todo
         xv = np.zeros(12*64*num_tokens).astype(np.float32) #todo
         xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
@@ -963,7 +1045,7 @@ class Opencl_Kernels:
         g3 = (math.ceil(12*a_cols*num_tokens / ls) * ls)
         knl5 = prg.ms5
         knl5(queue, (g3,1), (ls,1), xq_g,xv_g,c_g)
-        return c_g, xv_g
+        return c_g
         
 
     def matvec4(self,a,b):
