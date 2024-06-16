@@ -222,6 +222,15 @@ class Transformer:
     if hasattr(self, 'wpe_weight') == False:
       print("copying self_wpe_weight")
       self.wpe_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wpe.weight)
+    
+    if hasattr(self, 'attn_cache_kv') == False:
+      print("creating attn_cache_kv")
+      self.attn_cache_kv = []
+      for i in range(len(self.h)):
+        a = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
+        self.attn_cache_kv.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a))
+        
+
 
     if start_pos > 0:
       h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
@@ -231,7 +240,7 @@ class Transformer:
         h = openclk.kernel_2(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
         self.attn_c_attn_bias[i],attn_dim,\
-        self.h[i].attn.cache_kv,start_pos,\
+        self.attn_cache_kv[i],start_pos,\
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
@@ -250,15 +259,12 @@ class Transformer:
     else:
       x = openclk.tok_emb(tokens,self.wte_weight,self.wpe.weight,n_tokens)
       for i in range(len(self.h)-1):
-        xqkv = openclk.kernel_0_b(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],n_tokens)
-        new_cache = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
-        new_cache = openclk.copy_to_cache_b(xqkv,new_cache,n_tokens,MAX_CONTEXT)
-        self.h[i].attn.cache_kv = new_cache
+        xqkv = openclk.kernel_0_c(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],n_tokens,MAX_CONTEXT)
         x = openclk.kernel_7(xqkv,self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],x,n_tokens)
         ############
       h = np.copy(x[-1]) 
-      xqkv = openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],n_tokens,True)
+      xqkv = openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],n_tokens,MAX_CONTEXT,True)
       xq = xqkv[:,:self.h[-1].attn.dim]
       xk = xqkv[:,self.h[-1].attn.dim:2*self.h[-1].attn.dim]
       xv = xqkv[:,2*self.h[-1].attn.dim:]
@@ -267,7 +273,7 @@ class Transformer:
       xv = xv.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
       new_cache = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
       new_cache = openclk.copy_to_cache(xk,xv,new_cache,n_tokens,MAX_CONTEXT)
-      self.h[-1].attn.cache_kv = new_cache
+      self.attn_cache_kv[-1] = new_cache
       xq = xq[-1] #todo
       xk = xk[-1] #todo
       xv = xv[-1] #todo
