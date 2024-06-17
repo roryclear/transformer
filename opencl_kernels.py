@@ -217,66 +217,14 @@ class Opencl_Kernels:
         knl(queue, (ls,1), (ls,1), h_g, weight_g, bias_g) 
         return h_g
 
-    def kernel_0(self,a_g,c_g,d_g):
-        if type(a_g) == np.ndarray:
-            a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a_g)
-        size = 768
-        ls = 256
-        seg = int(size / ls) #todo
-        prg = cl.Program(ctx, f"""
-        __kernel void mm(
-            __global float *a, __global const float *c, __global const float *d)
-        {{
-            __attribute__ ((aligned (16))) __local float temp[{seg}];
-            __attribute__ ((aligned (16))) __local float mean;
-            int lidx0 = get_local_id(0);
-            float total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                total += a[lidx0*{seg} + i];
-            }}
-            temp[lidx0] = total;
-            barrier(CLK_LOCAL_MEM_FENCE);
-            if(lidx0==0) {{
-                total = 0;
-                for(int i = 0; i < {ls}; i++) {{
-                    total += temp[i];
-                }}
-                mean = total / {size};  
-            }}
-            barrier(CLK_LOCAL_MEM_FENCE);
-            for(int i = 0; i < {seg}; i++) {{
-                a[i + lidx0*{seg}] -= mean;
-            }}
-            barrier(CLK_LOCAL_MEM_FENCE);
-            total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                total += pow(a[lidx0*{seg} + i],2);
-            }}
-            temp[lidx0] = total;
-            barrier(CLK_LOCAL_MEM_FENCE);
-            if(lidx0==0) {{
-                total = 0;
-                for(int i = 0; i < {ls}; i++) {{
-                    total += temp[i];
-                }}
-                mean = pow(total / {size} + 1e-5,0.5);
-            }}
-            barrier(CLK_LOCAL_MEM_FENCE);
-            for(int i = 0; i < {seg}; i++) {{
-                a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * c[i + lidx0*{seg}]) / mean + d[i + lidx0*{seg}];
-            }}
-        }}
-        """).build()
-        knl = prg.mm
-        knl(queue, (ls,1), (ls,1), a_g, c_g, d_g)
-        return a_g
-
-    def kernel_0_b(self,x,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g,n_tokens,max_content,retnp=False):
+    def kernel_0_b(self,x,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
+        ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,retnp=False):
         size = 768 #todo hardcoded
         ls = 256
         b_cols = 2304 #todo
         b_rows = 768
         seg = int(size / ls) #todo
+        x0_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
         x_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
         prg_str = f"""
         __kernel void mm(
@@ -357,23 +305,69 @@ class Opencl_Kernels:
             new_cache[{max_content}*12*64 + i*12*64 + j] = xqkv[i*12*64*3 + j + 768*2]; 
         }}
 
+        __kernel void mm5(
+            __global float *x, __global const float *ln_f_weight, __global const float *ln_f_bias)
+        {{
+            __attribute__ ((aligned (16))) __local float temp[{seg}];
+            __attribute__ ((aligned (16))) __local float mean;
+            int lidx0 = get_local_id(0);
+            float total = 0;
+            for(int i = 0; i < {seg}; i++) {{
+                total += x[lidx0*{seg} + i];
+            }}
+            temp[lidx0] = total;
+            barrier(CLK_LOCAL_MEM_FENCE);
+            if(lidx0==0) {{
+                total = 0;
+                for(int i = 0; i < {ls}; i++) {{
+                    total += temp[i];
+                }}
+                mean = total / {size};  
+            }}
+            barrier(CLK_LOCAL_MEM_FENCE);
+            for(int i = 0; i < {seg}; i++) {{
+                x[i + lidx0*{seg} + {(n_tokens - 1)*768}] -= mean;
+            }}
+            barrier(CLK_LOCAL_MEM_FENCE);
+            total = 0;
+            for(int i = 0; i < {seg}; i++) {{
+                total += pow(x[lidx0*{seg} + i + {(n_tokens - 1)*768}],2);
+            }}
+            temp[lidx0] = total;
+            barrier(CLK_LOCAL_MEM_FENCE);
+            if(lidx0==0) {{
+                total = 0;
+                for(int i = 0; i < {ls}; i++) {{
+                    total += temp[i];
+                }}
+                mean = pow(total / {size} + 1e-5,0.5);
+            }}
+            barrier(CLK_LOCAL_MEM_FENCE);
+            for(int i = 0; i < {seg}; i++) {{
+                x[i + lidx0*{seg}] = (x[i + lidx0*{seg} + {(n_tokens - 1)*768}] * ln_f_weight[i + lidx0*{seg}]) / mean + ln_f_bias[i + lidx0*{seg}];
+            }}
+        }}
+
         """
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
         prg = self.prg_cache[prg_str]
         knl = prg.mm
-        knl(queue, (ls*n_tokens,1), (ls,1), x_g, weight_g, bias_g) 
+        knl(queue, (ls*n_tokens,1), (ls,1), x0_g, weight_g, bias_g) 
         g = math.ceil((b_cols*n_tokens / ls)*ls)
         c = np.zeros([n_tokens,b_cols]).astype(np.float32)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
         knl2 = prg.mm2
-        knl2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,c_g)
+        knl2(queue, (g,1), (ls,1), x0_g, attn_weight_g,attn_bias_g,c_g)
 
         knl4 = prg.mm4
         ls = 256
         g = math.ceil((n_tokens*12*64) / ls) * ls
         knl4(queue, (g,1), (ls,1), c_g, new_cache_g) 
-        return
+
+        knl5 = prg.mm5
+        knl5(queue, (ls,1), (ls,1), x_g, ln_f_weight_g, ln_f_bias_g)
+        return x_g
     
     def kernel_0_c(self,x,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,num_tokens,max_content,retnp=False):
         size = 768 #todo hardcoded
