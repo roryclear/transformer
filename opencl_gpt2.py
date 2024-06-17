@@ -262,22 +262,7 @@ class Transformer:
         x = openclk.kernel_7(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],x,n_tokens,MAX_CONTEXT)
       h = np.copy(x[-1]) 
-      xqkv = openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],n_tokens,MAX_CONTEXT,True)
-      xq = xqkv[:,:self.h[-1].attn.dim]
-      xk = xqkv[:,self.h[-1].attn.dim:2*self.h[-1].attn.dim]
-      xv = xqkv[:,2*self.h[-1].attn.dim:]
-      xq = xq.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
-      xk = xk.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
-      xv = xv.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
-      new_cache = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
-      new_cache = openclk.copy_to_cache(xk,xv,new_cache,n_tokens,MAX_CONTEXT)
-      self.attn_cache_kv[-1] = new_cache
-      xq = xq[-1] #todo
-      xk = xk[-1] #todo
-      xv = xv[-1] #todo
-      qk = openclk.matvec4(xq,xk)
-      xq = openclk.matmul_t(qk,xv)
-      qk = None
+      openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1],n_tokens,MAX_CONTEXT,True)
       x = openclk.kernel_0(h,self.ln_f_weight, self.ln_f_bias)
     if temperature < 1e-6:
       logits = openclk.matmul_t_c(x,self.lm_head.weight) #todo
