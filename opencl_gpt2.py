@@ -242,7 +242,7 @@ class Transformer:
       attn_dim = 768
       for i in range(0,len(self.h)):
         #inlined attn
-        h = openclk.kernel_2(h,self.ln_1_weight[i],\
+        h = openclk.kernel_0(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
         self.attn_c_attn_bias[i],attn_dim,\
         self.attn_cache_kv[i],start_pos,\
@@ -250,16 +250,16 @@ class Transformer:
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i],MAX_CONTEXT)
-      ret = openclk.kernel_8(h,self.lm_head_weight,self.ln_f_weight, self.ln_f_bias,unif_samples,temperature).astype(np.int32)[0]
+      ret = openclk.kernel_1(h,self.lm_head_weight,self.ln_f_weight, self.ln_f_bias,unif_samples,temperature).astype(np.int32)[0]
       return ret
 
     else:
       x = openclk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
       for i in range(len(self.h)-1):
-        x = openclk.kernel_7(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
+        x = openclk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT)
       unif_samples = tg_rand.rand()
-      ret = openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1]\
+      ret = openclk.kernel_3(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1]\
       ,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight2,self.attn_cache_kv[-1],temperature,n_tokens,unif_samples,MAX_CONTEXT,True)\
       .astype(np.int32)[0]  
       return ret
