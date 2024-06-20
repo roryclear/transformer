@@ -34,30 +34,6 @@ def decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-class Linear:
-  def __init__(self):
-    return None
-  
-class LayerNorm:
-  def __init__(self):
-    return None
-
-class Attention:
-  def __init__(self):
-    return None
-    
-class FeedForward:
-  def __init__(self):
-    return None
-  
-class Embedding:
-  def __init__(self):
-    return None
-  
-class Embedding_2:
-  def __init__(self):
-    return None
-  
 def encode(x):
   ret = []
   token = None
@@ -84,26 +60,40 @@ class Rand:
     rng_np_buffer = rng.random(size=1, dtype=np.float32).astype(dtype=np.float32, copy=False)
     return rng_np_buffer[0]
 
-class TransformerBlock:
-  def __init__(self, dim, n_heads, norm_eps):
-    self.attn = Attention(dim,n_heads) # done
-    self.mlp = FeedForward(dim, 4*dim) #
-    self.ln_1 = LayerNorm(dim,norm_eps)
-    self.ln_2 = LayerNorm(dim,norm_eps)
+class Linear:
+  def __init__(self):
+    return None
+  
+class LayerNorm:
+  def __init__(self):
+    return None
 
-  def __call__(self, x, start_pos):
+class Attention:
+  def __init__(self):
+    return None
+    
+class FeedForward:
+  def __init__(self):
+    return None
+  
+class Embedding:
+  def __init__(self):
+    return None
+  
+class Embedding_2:
+  def __init__(self):
+    return None
+  
+class TransformerBlock:
+  def __init__(self):
+    return None
+
+  def __call__(self):
     return None
     
 class Transformer:
-  def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
-    self.vocab_size = vocab_size
-    self.wte = None
-    self.wpe = Embedding(max_seq_len,dim)
-    self.h = [TransformerBlock(dim, n_heads, norm_eps) for i in range(n_layers)]
-    self.ln_f = LayerNorm(dim,norm_eps)
-    self.lm_head = Linear(dim, vocab_size, bias=False)
-    self.dim = dim
-    #self.ln_1_weights = None
+  def __init__(self):
+    return None
 
   def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if hasattr(self, 'ln_1_weight') == False:
@@ -222,8 +212,6 @@ class Transformer:
         a = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
         self.attn_cache_kv.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a))
         
-
-
     if start_pos > 0:
       unif_samples = rand.rand()
       h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
@@ -263,18 +251,10 @@ def pt(x):
 VOCAB_SIZE = 50257
 class GPT2:
   @staticmethod
-  def build():
-    model = Transformer(n_layers=12,n_heads=12,dim=768,norm_eps=1e-5,vocab_size=VOCAB_SIZE) #small
-    return GPT2(model)
+  def __init__():
+    return None
 
-  def __init__(self, model):
-    self.model = model
-
-  def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):
-    #self.model.convert()
-    #with open('weights_2.pickle', 'wb') as handle:
-    #  pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    
+  def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):    
     excepted_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
     893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
     1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
@@ -306,42 +286,23 @@ class GPT2:
         tokens = np.array(toks)
       tok = self.model(tokens, start_pos, temperature, n_tokens).tolist()
       start_pos = len(toks)
-      
       if default_prompt == "What is the answer to life, the universe, and everything?":
         np.testing.assert_equal(tok,excepted_tokens[start_pos-13])
       else:
         np.testing.assert_equal(tok,excepted_tokens_b[start_pos-5])
-      
       toks.append(tok)
     return decode(toks)
 
-# **** main code ****
-
 if __name__ == "__main__":
-  #bc tinygrad doesnt work in windows, and opencl doesnt work on WSL
   default_prompt = "What is the answer to life, the universe, and everything?"
   #default_prompt = "What happened in 1939?"
 
-  #Tensor.manual_seed(420) #don't need
-  np.random.seed(28)
-  #filehandler = open("weights.obj", 'rb') 
-  #filehandler = open("weights_2.pickle", 'rb')
   filehandler = open("weights.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
-  print(type(gpt2))
+  #print(gpt2.model.wte)
   rand = Rand()
-
 
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
   print('Generating text...')
   print((f"Response:", "green"), text)
-  #assert for tg seed 420 unif samples
-  assert text == ("What is the answer to life, the universe, and everything?"
-  "\n\nIf you were an astrophysicist, or just a physicist, your answer might "
-  "be a bit different. For one, you might take a longer view of the universe. "
-  "But for other people — including scientists, artists, and other in-your-face "
-  "people — your answer might be far more like: Life doesn't exist at all.\n\n"
-  "Imagine you are a young person who just graduated from middle school and has "
-  "never really pursued a career in astrophysics. You're on an eight")
-
   exit()
