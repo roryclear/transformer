@@ -34,18 +34,30 @@ def decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-class Linear():
-  def __init__(self, in_features, out_features, bias=True):
-    self.bias = None
-    self.weight = None
+class Linear:
+  def __init__(self):
+    return None
   
 class LayerNorm:
-  def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True):
-    self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else tuple(normalized_shape)
-    self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
-    self.bias = None
-    self.weight = None
+  def __init__(self):
+    return None
 
+class Attention:
+  def __init__(self):
+    return None
+    
+class FeedForward:
+  def __init__(self):
+    return None
+  
+class Embedding:
+  def __init__(self):
+    return None
+  
+class Embedding_2:
+  def __init__(self):
+    return None
+  
 def encode(x):
   ret = []
   token = None
@@ -62,31 +74,7 @@ def encode(x):
     x = x[min(max_token_length,len(x))-i:]
   return ret
 
-class Attention:
-  def __init__(self, dim, n_heads):
-    self.c_attn = Linear(dim, 3*dim, bias=True) #float32
-    self.c_proj = Linear(dim, dim, bias=True)
-    self.n_heads = n_heads
-    self.dim = dim
-    self.head_dim = dim // n_heads
-    
-class FeedForward:
-  def __init__(self, dim, hidden_dim):
-    self.c_fc = Linear(dim, hidden_dim, bias=True)
-    self.c_proj = Linear(hidden_dim, dim, bias=True)
-  
-class Embedding: #todo, not used but variables are
-  def __init__(self, vocab_size:int, embed_size:int):
-    self = self
-
-  def __call__(self, idx):
-    return None
-  
-class Embedding_2: #todo crutch
-  def __init__(self, vocab_size:int, embed_size:int):
-    self.vocab_size, self.embed_size = vocab_size, embed_size
-
-class Mock_tg_rand:
+class Rand:
   def __init__(self):
     self.seed = 420
 
@@ -109,7 +97,7 @@ class TransformerBlock:
 class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
     self.vocab_size = vocab_size
-    self.wte = Embedding_2(vocab_size,dim)
+    self.wte = None
     self.wpe = Embedding(max_seq_len,dim)
     self.h = [TransformerBlock(dim, n_heads, norm_eps) for i in range(n_layers)]
     self.ln_f = LayerNorm(dim,norm_eps)
@@ -237,7 +225,7 @@ class Transformer:
 
 
     if start_pos > 0:
-      unif_samples = tg_rand.rand()
+      unif_samples = rand.rand()
       h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
       attn_dim = 768
       for i in range(0,len(self.h)):
@@ -258,9 +246,9 @@ class Transformer:
       for i in range(len(self.h)-1):
         x = openclk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT)
-      unif_samples = tg_rand.rand()
+      unif_samples = rand.rand()
       ret = openclk.kernel_3(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1]\
-      ,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight2,self.attn_cache_kv[-1],temperature,n_tokens,unif_samples,MAX_CONTEXT,True)\
+      ,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight2,self.attn_cache_kv[-1],temperature,n_tokens,unif_samples,MAX_CONTEXT)\
       .astype(np.int32)[0]  
       return ret
 
@@ -287,27 +275,26 @@ class GPT2:
     #with open('weights_2.pickle', 'wb') as handle:
     #  pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
-    if tg_rand:
-      excepted_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
-      893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
-      1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
-      1244, 1011, 257, 2392, 1570, 286, 262, 6881, 13,\
-      887, 329, 584, 661, 851, 1390, 5519, 11, 7912,\
-      11, 290, 584, 287, 12, 14108, 12, 2550, 661, 851,\
-      534, 3280, 1244, 307, 1290, 517, 588, 25, 5155, 1595,\
-      470, 2152, 379, 477, 13, 198, 198, 25153, 345, 389, 257,\
-      1862, 1048, 508, 655, 18303, 422, 3504, 1524, 290, 468,\
-      1239, 1107, 19189, 257, 3451, 287, 48782, 23154, 13, 921, 821, 319, 281, 3624]
+    excepted_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
+    893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
+    1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
+    1244, 1011, 257, 2392, 1570, 286, 262, 6881, 13,\
+    887, 329, 584, 661, 851, 1390, 5519, 11, 7912,\
+    11, 290, 584, 287, 12, 14108, 12, 2550, 661, 851,\
+    534, 3280, 1244, 307, 1290, 517, 588, 25, 5155, 1595,\
+    470, 2152, 379, 477, 13, 198, 198, 25153, 345, 389, 257,\
+    1862, 1048, 508, 655, 18303, 422, 3504, 1524, 290, 468,\
+    1239, 1107, 19189, 257, 3451, 287, 48782, 23154, 13, 921, 821, 319, 281, 3624]
 
-      excepted_tokens_b = [198, 198,\
-      1026, 373, 257, 845, 46873, 1110, 13, 198, 198, 2215, 262,
-      19147, 12030, 12873, 287, 24414, 11, 262, 6771, 547, 407, 3142,\
-      284, 670, 287, 262, 17590, 11, 645, 2300, 703, 881, 484, 2227,\
-      284, 13, 383, 1917, 2627, 1598, 618, 262, 5103, 1664, 286, 262,\
-      309, 9116, 4623, 268, 4618, 11, 543, 925, 281, 3113, 329, 262,\
-      11908, 12, 1273, 14414, 41460, 11, 3414, 617, 19008, 284, 262,\
-      24718, 25931, 13, 198, 198, 464, 2551, 373, 2077, 706, 257, 1327,\
-      6531, 1022, 262, 7570, 4479, 338, 1964, 5531, 290, 12267, 7602, 11, 290, 373, 1912, 319, 262]
+    excepted_tokens_b = [198, 198,\
+    1026, 373, 257, 845, 46873, 1110, 13, 198, 198, 2215, 262,
+    19147, 12030, 12873, 287, 24414, 11, 262, 6771, 547, 407, 3142,\
+    284, 670, 287, 262, 17590, 11, 645, 2300, 703, 881, 484, 2227,\
+    284, 13, 383, 1917, 2627, 1598, 618, 262, 5103, 1664, 286, 262,\
+    309, 9116, 4623, 268, 4618, 11, 543, 925, 281, 3113, 329, 262,\
+    11908, 12, 1273, 14414, 41460, 11, 3414, 617, 19008, 284, 262,\
+    24718, 25931, 13, 198, 198, 464, 2551, 373, 2077, 706, 257, 1327,\
+    6531, 1022, 262, 7570, 4479, 338, 1964, 5531, 290, 12267, 7602, 11, 290, 373, 1912, 319, 262]
 
     toks = encode(prompt)
     start_pos = 0
@@ -320,11 +307,10 @@ class GPT2:
       tok = self.model(tokens, start_pos, temperature, n_tokens).tolist()
       start_pos = len(toks)
       
-      if tg_rand:
-        if default_prompt == "What is the answer to life, the universe, and everything?":
-          np.testing.assert_equal(tok,excepted_tokens[start_pos-13])
-        else:
-          np.testing.assert_equal(tok,excepted_tokens_b[start_pos-5])
+      if default_prompt == "What is the answer to life, the universe, and everything?":
+        np.testing.assert_equal(tok,excepted_tokens[start_pos-13])
+      else:
+        np.testing.assert_equal(tok,excepted_tokens_b[start_pos-5])
       
       toks.append(tok)
     return decode(toks)
@@ -342,7 +328,8 @@ if __name__ == "__main__":
   #filehandler = open("weights_2.pickle", 'rb')
   filehandler = open("weights.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
-  tg_rand = Mock_tg_rand()
+  print(type(gpt2))
+  rand = Rand()
 
 
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)

@@ -64,7 +64,7 @@ class Opencl_Kernels:
         return tok_emb_g
 
     def kernel_3(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g\
-        ,ln_f_weight_g,ln_f_bias_g,lm_head_weight_g,new_cache_g,temperature,n_tokens,random_num,max_content,retnp=False):
+        ,ln_f_weight_g,ln_f_bias_g,lm_head_weight_g,new_cache_g,temperature,n_tokens,random_num,max_content):
         size = 768 #todo hardcoded
         ls = 256
         b_cols = 2304 #todo
