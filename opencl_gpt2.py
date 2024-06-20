@@ -214,6 +214,10 @@ class Transformer:
     if hasattr(self, 'lm_head_weight') == False:
       print("copying lm_head_weight")
       self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head.weight.flatten())
+
+    if hasattr(self, 'lm_head_weight2') == False: #todo again, what's the difference in a kernel after flatten()?
+      print("copying lm_head_weight2")
+      self.lm_head_weight2 = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head.weight)
     
     if hasattr(self, 'wte_weight') == False:
       print("copying self_wte_weight")
@@ -233,6 +237,7 @@ class Transformer:
 
 
     if start_pos > 0:
+      unif_samples = tg_rand.rand()
       h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
       attn_dim = 768
       for i in range(0,len(self.h)):
@@ -244,33 +249,20 @@ class Transformer:
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
-        self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
-      h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
-
-      if temperature < 1e-6:
-        logits = openclk.matvec2(h,self.lm_head_weight) #todo
-        ret = logits.argmax(-1)
-      else:
-        logits = openclk.matvec2(h,self.lm_head_weight,temperature)
-        unif_samples = tg_rand.rand()
-        ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0] 
-        return ret
+        self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i],MAX_CONTEXT)
+      ret = openclk.kernel_8(h,self.lm_head_weight,self.ln_f_weight, self.ln_f_bias,unif_samples,temperature).astype(np.int32)[0]
+      return ret
 
     else:
-      x = openclk.tok_emb(tokens,self.wte_weight,self.wpe.weight,n_tokens)
+      x = openclk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
       for i in range(len(self.h)-1):
         x = openclk.kernel_7(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
-        self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],x,n_tokens,MAX_CONTEXT)
-      x = openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\
-      ,self.ln_f_weight, self.ln_f_bias,n_tokens,MAX_CONTEXT,True)
-    if temperature < 1e-6:
-      logits = openclk.matmul_t_c(x,self.lm_head.weight) #todo
-      ret = logits.argmax(-1)
-    else:
-      logits = openclk.matmul_t_c(x,self.lm_head.weight,temperature,True)
+        self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT)
       unif_samples = tg_rand.rand()
-      ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
-    return ret
+      ret = openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1]\
+      ,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight2,self.attn_cache_kv[-1],temperature,n_tokens,unif_samples,MAX_CONTEXT,True)\
+      .astype(np.int32)[0]  
+      return ret
 
   def __call__(self, tokens, start_pos, temperature:np.float32=0.0,n_tokens=1):
     return self.forward(tokens, start_pos, temperature,n_tokens)
