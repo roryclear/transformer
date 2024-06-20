@@ -44,7 +44,6 @@ class Opencl_Kernels:
         tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
         ls = 256
         size = no_tokens*dim
-        tok_emb = np.zeros((no_tokens,dim)).astype(np.float32)
         if "tok_emb" not in self.buffer_cache:
             self.buffer_cache["tok_emb"] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros((no_tokens,dim)).astype(np.float32))
         tok_emb_g = self.buffer_cache["tok_emb"]
@@ -72,7 +71,7 @@ class Opencl_Kernels:
         b_rows = 768
         b_cols2 = 50257
         seg = int(size / ls) #todo
-        x0_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(n_tokens*768).astype(np.float32))
+        x0_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(n_tokens*768).astype(np.float32)) #only called once, so ok
         seg2 = math.ceil(50257 / ls)
         prg_str = f"""
         __kernel void mm0(
@@ -666,15 +665,23 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, res, res_g)
         return res
 
-    def kernel_7(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight,c_fc_bias_g\
+    def kernel_7(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content):
-        h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(num_tokens*768).astype(np.float32))
-        h_g_2 = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(num_tokens*768).astype(np.float32))
-        xq = np.zeros(12*64*num_tokens).astype(np.float32) #todo
-        xv = np.zeros(12*64*num_tokens).astype(np.float32) #todo
-        xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
-        xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
-        c_fc_weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c_fc_weight)
+
+        if "h_g" not in self.buffer_cache:
+            self.buffer_cache["h_g"] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(num_tokens*768).astype(np.float32))
+        h_g = self.buffer_cache["h_g"]
+        if "h_g_2" not in self.buffer_cache:
+            self.buffer_cache["h_g_2"] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(num_tokens*768).astype(np.float32))
+        h_g_2 = self.buffer_cache["h_g_2"]
+
+        if "xq" not in self.buffer_cache:
+            self.buffer_cache["xq"] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(12*64*max_content).astype(np.float32))
+        xq_g = self.buffer_cache["xq"]
+
+        if "xv" not in self.buffer_cache:
+            self.buffer_cache["xv"] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(12*64*max_content).astype(np.float32))
+        xv_g = self.buffer_cache["xv"]
 
         a_rows = num_tokens
         a_cols = 64
