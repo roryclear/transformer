@@ -12,4 +12,4 @@
 
   
 
-*fastest GPT-2 inference I can find, running on laptop (2020 XPS13).
+*fastest GPT-2 inference I can find, running on my laptop (2020 XPS13).
