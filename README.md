@@ -1,10 +1,11 @@
 # Transformer
-## Fastest OpenCL GPT-2 inference*
-- [x] Fastest Inference
+Use git lfs to clone with weights
+## Fastest OpenCL GPT-2 (124M) inference*
+- [x] Fastest Inference*
 
 - [ ] Remove all Numpy Usage
 
-- [ ] Support other models 
+- [ ] Support for any transformer
 
 - [ ] Support other compute languages
 
@@ -12,4 +13,4 @@
 
   
 
-*fastest GPT-2 inference I can find, running on my laptop (2020 XPS13).
+*fastest GPT-2 124M inference I can find, running on my laptop (2020 XPS13). Almost 50% faster than huggingface's Transformers.
