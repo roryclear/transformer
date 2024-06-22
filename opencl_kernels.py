@@ -378,7 +378,7 @@ class Opencl_Kernels:
                     keys_values[{start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {g}] = xqkv[768 + lidx0*{int(dim*3 / ls)} + i - {g}] + total;
                 }}
                 if((lidx0*{int(dim*3 / ls)} + i) >= {2*g}) {{
-                    keys_values[98304 + {start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {2*g}] = xqkv[{768*2} + lidx0*{int(dim*3 / ls)} + i - {2*g}] + total;
+                    keys_values[{12*64*max_content} + {start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {2*g}] = xqkv[{768*2} + lidx0*{int(dim*3 / ls)} + i - {2*g}] + total;
                 }}
             }}
         }}
@@ -435,7 +435,7 @@ class Opencl_Kernels:
                 int x = (g + lidx0*{seg}) % 64;
                 float acc0 = 0;
                 for(int i = 0; i < {start_pos+1}; i++) {{
-                    acc0 += temp3[i + {start_pos+1}*y] * keys_values[98304 + i*12*64 + x + y*64];
+                    acc0 += temp3[i + {start_pos+1}*y] * keys_values[{12*64*max_content} + i*12*64 + x + y*64];
                 }}
                 xq_temp[x + y*64] = acc0;
             }}
