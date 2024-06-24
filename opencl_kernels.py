@@ -66,6 +66,37 @@ def minus_mean_multi(a):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
+def sq_mean_sqrt(a):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    prg = cl.Program(ctx, f"""
+    __kernel void sq_mean_sqrt(
+        __global float *data0)
+    {{
+    float avg = 0;
+    __attribute__ ((aligned (16))) __local float temp[256];
+    int lidx0 = get_local_id(0); /* 256 */
+    int gidx0 = get_global_id(0); /* 256 */
+    float acc0 = 0.0f;
+    for (int ridx0 = 0; ridx0 < {loop_size}; ridx0++) {{
+        float val0 = data0[(lidx0*{loop_size})+ridx0];
+        acc0 = (pow(val0,2)+acc0);
+    }}
+    temp[lidx0] = acc0;
+    barrier(CLK_LOCAL_MEM_FENCE); //rory need this barrier when input is large like 7680, 768 seems to work
+    //I think this woudlnt work if loop was smaller than len / 256?
+    float acc1 = 0.0f;
+    for (int ridx1 = 0; ridx1 < 256; ridx1++) {{
+        float val1 = temp[ridx1];
+        acc1 += val1;
+    }}
+    avg = acc1 / {len};
+    data0[0] = pow(avg + 1e-5,0.5);
+    }}
+    """).build()
+    knl = prg.sq_mean_sqrt
+    knl(queue, (256,1), (256,1), a_g) #rory to test large stuff
+    cl.enqueue_copy(queue, a, a_g)
+    return a[0]
 
 def minus_mean(a):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -83,7 +114,25 @@ def minus_mean(a):
     }}
     """).build()
     knl = prg.minus_mean
-
     knl(queue, (768,1), (256,1), a_g) #has to be multiple of 256
+    cl.enqueue_copy(queue, a, a_g)
+    return a
+
+def divide(a,b,c,d):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
+    prg = cl.Program(ctx, f"""
+    __kernel void divide(
+        __global float *a, __global const float *b, __global const float *c, __global const float *d)
+    {{
+    int gidx0 = get_global_id(0);
+    a[gidx0] = (a[gidx0] * c[gidx0]) / b[0] + d[gidx0];
+    }}
+    """).build()
+    knl = prg.divide
+
+    knl(queue, (768,1), (256,1), a_g, b_g, c_g, d_g) #has to be multiple of 256
     cl.enqueue_copy(queue, a, a_g)
     return a

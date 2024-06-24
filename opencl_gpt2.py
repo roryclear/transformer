@@ -110,13 +110,6 @@ def encode(x):
   return ret
 
 class Attention:
-  def __init__(self, dim, n_heads):
-    self = self
-
-  def __call__(self, x, mask):
-    return None
-
-class Attention:
   def __init__(self, dim, n_heads,key="0"):
     self.key = key
     self.c_attn = Linear(dim, 3*dim, bias=True,key="at_0_"+self.key)
@@ -128,7 +121,6 @@ class Attention:
   def __call__(self, x, start_pos, mask):
     xqkv = self.c_attn(x)
 
-    # rory this is bad now obv
     xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
     for i in range(xq.shape[1]):
       xq[0][i] = xqkv[0][i][0:self.dim]
@@ -273,7 +265,6 @@ class Embedding_2: #todo crutch
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps,key="0"):
-    self.attn = Attention(dim, n_heads)
     self.attn = Attention(dim,n_heads,key=key)
     self.mlp = FeedForward(dim, 4*dim,key=key)
     self.ln_1 = LayerNorm(dim,norm_eps,key="0_"+key)
@@ -318,14 +309,15 @@ class Transformer:
     if start_pos > 0 and opencl:
       self.wpe.weight = np.float32(self.wpe.weight)
       self.wte.weight = np.float32(self.wte.weight)
+      self.h[0].ln_1.weight = np.float32(self.h[0].ln_1.weight)
+      self.h[0].ln_1.bias = np.float32(self.h[0].ln_1.bias)
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0])
       #h = self.h[0](h,start_pos,mask)
       #ln1 = self.h[0].ln_1(h)
-      mm = openclk.minus_mean(h)
-      x = (mm) / np.sqrt(np.mean(mm**2) + self.h[0].ln_1.eps)\
-      * self.h[0].ln_1.weight + self.h[0].ln_1.bias
+      mm = openclk.minus_mean_multi(h)
+      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+      x = openclk.divide(np.copy(mm),mm2,self.h[0].ln_1.weight,self.h[0].ln_1.bias)
       x = [[x]]
-
       attn = self.h[0].attn(x,start_pos,mask)
       h = h.reshape(1,1,dim)
       h += attn
