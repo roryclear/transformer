@@ -304,24 +304,40 @@ class Transformer:
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
     seqlen = tokens.shape[1]
+    if seqlen > 1:
+      mask = np.triu(np.full([seqlen,seqlen],1)) 
+      mask = (mask - np.eye(seqlen)) * -math.inf
+      mask[np.isnan(mask)] = 0
+      np.where(np.isnan(mask), 0, mask) # inf * 0 = nan
+      mask = [[mask]]
+    else:
+      mask = None
+    
     tok_emb = self.wte(tokens) #rorys todo
 
     if start_pos > 0 and opencl:
-      #pos_emb = self.wpe(allpos_s)
-      # rory todo merge all this into 1 kernel? or why is it not possible?
-      if not hasattr(self, 'vocab_counter'):
-        self.vocab_counter = np.arange(start=0,stop=self.vocab_size)
-        self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
-      idx_np = []
-      for i in range(len(tokens[0])):
-        idx_np.append([tokens[0][i]])
-      idx_np = ([idx_np] == self.vocab_counter)
-      tok_emb = np.matmul(idx_np,self.wte.weight)
-      #tok_emb = self.wte(tokens)
       self.wpe.weight = np.float32(self.wpe.weight)
-      pos_emb = self.wpe.weight[start_pos]
-      tok_emb = np.float32(tok_emb)
-      h = openclk.add(tok_emb,self.wpe.weight,start_pos).reshape(1,1,dim)
+      self.wte.weight = np.float32(self.wte.weight)
+      h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0])
+      #h = self.h[0](h,start_pos,mask)
+      #ln1 = self.h[0].ln_1(h)
+      mm = openclk.minus_mean(h)
+      x = (mm) / np.sqrt(np.mean(mm**2) + self.h[0].ln_1.eps)\
+      * self.h[0].ln_1.weight + self.h[0].ln_1.bias
+      x = [[x]]
+
+      attn = self.h[0].attn(x,start_pos,mask)
+      h = h.reshape(1,1,dim)
+      h += attn
+      h2 = np.copy(h)
+      ln2 = self.h[0].ln_2(h2) 
+      mlp = self.h[0].mlp(ln2)
+      h = mlp + h  
+
+      for i in range(1,len(self.h)):
+        h = self.h[i](h, start_pos, mask)
+      h = self.ln_f(h)
+      logits = self.lm_head(h)
     else:
       tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))
@@ -332,21 +348,12 @@ class Transformer:
       pos_emb = self.wpe(allpos_s)
       h = tok_emb + pos_emb
 
-    if seqlen > 1:
-      mask = np.triu(np.full([seqlen,seqlen],1)) 
-      mask = (mask - np.eye(seqlen)) * -math.inf
-      mask[np.isnan(mask)] = 0
-      np.where(np.isnan(mask), 0, mask) # inf * 0 = nan
-      mask = [[mask]]
-    else:
-      mask = None
 
     #rory - h self.h is the 12 transformer blocks, so this is just forward through all
-    for hi in self.h:
-      h = hi(h, start_pos, mask)
-    h = self.ln_f(h)
-    logits = self.lm_head(h)
-
+      for hi in self.h:
+        h = hi(h, start_pos, mask)
+      h = self.ln_f(h)
+      logits = self.lm_head(h)
     logits = [logits[0][-1]]
 
     if temperature < 1e-6:
