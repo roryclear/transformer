@@ -7,9 +7,14 @@ import numpy as np
 import math
 import os
 import pickle
+import opencl_kernels as openclk
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 opencl = True
+med = False
+dim = 768
+if med == True:
+  dim = 1024
 
 MAX_CONTEXT = 128
 
@@ -301,14 +306,31 @@ class Transformer:
     seqlen = tokens.shape[1]
     tok_emb = self.wte(tokens) #rorys todo
 
-    s = list(np.shape(self.allpos))
-    s[1] = seqlen
-    allpos_s = np.empty(s,dtype=np.int32)
-    for i in range(seqlen):
-      allpos_s[0][i] = self.allpos[0][start_pos + i]
-    pos_emb = self.wpe(allpos_s)
-    print("rory tok_emb + pos_emb sizes =",np.shape(tok_emb),np.shape(pos_emb))
-    h = tok_emb + pos_emb # rory do
+    if start_pos > 0 and opencl:
+      #pos_emb = self.wpe(allpos_s)
+      # rory todo merge all this into 1 kernel? or why is it not possible?
+      if not hasattr(self, 'vocab_counter'):
+        self.vocab_counter = np.arange(start=0,stop=self.vocab_size)
+        self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
+      idx_np = []
+      for i in range(len(tokens[0])):
+        idx_np.append([tokens[0][i]])
+      idx_np = ([idx_np] == self.vocab_counter)
+      tok_emb = np.matmul(idx_np,self.wte.weight)
+      #tok_emb = self.wte(tokens)
+      self.wpe.weight = np.float32(self.wpe.weight)
+      pos_emb = self.wpe.weight[start_pos]
+      tok_emb = np.float32(tok_emb)
+      h = openclk.add(tok_emb,self.wpe.weight,start_pos).reshape(1,1,dim)
+    else:
+      tok_emb = self.wte(tokens) #rorys todo
+      s = list(np.shape(self.allpos))
+      s[1] = seqlen
+      allpos_s = np.empty(s,dtype=np.int32)
+      for i in range(seqlen):
+        allpos_s[0][i] = self.allpos[0][start_pos + i]
+      pos_emb = self.wpe(allpos_s)
+      h = tok_emb + pos_emb
 
     if seqlen > 1:
       mask = np.triu(np.full([seqlen,seqlen],1)) 
@@ -474,7 +496,6 @@ if __name__ == "__main__":
   #filehandler = open("weights_med.pickle", 'rb')  
   #gpt2_med = pickle.load(filehandler)
 
-  med = True
   if med:
     filehandler = open("weights_med.pickle", 'rb')  
     gpt2_med = pickle.load(filehandler)
