@@ -1,6 +1,7 @@
 import numpy as np
 import pyopencl as cl
 import time
+import math
 
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
@@ -269,6 +270,8 @@ def matvec(a,b,c):
     return d
 
 def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kernels
+    rows = np.shape(b)[0]
+    cols = np.shape(b)[1]
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b = b.flatten()
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
@@ -280,12 +283,13 @@ def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kern
         __global const float *a, __global const float *b , __global float *res)
     {{
         int gidx0 = get_global_id(0);
-        for(int j = 0; j < 768; j++) {{
-            res[gidx0] += a[j] * b[gidx0 + j*3072];
+        for(int j = 0; j < {rows}; j++) {{
+            res[gidx0] += a[j] * b[gidx0 + j*{cols}];
         }}
     }}
     """).build()
     knl = prg.matvec
-    knl(queue, (3072,1), (16,1), a_g, b_g,c_g)
+    gidx = math.ceil(cols / 16) * 16
+    knl(queue, (gidx,1), (16,1), a_g, b_g,c_g)
     cl.enqueue_copy(queue, c, c_g)
     return c
