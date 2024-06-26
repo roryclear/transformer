@@ -58,12 +58,18 @@ class Linear():
     self.weight = None
 
   def __call__(self,x):
-    #rory this is terrible atm obv    
-    x = x[0]
-    ret = np.matmul(x,self.weight)
+    x = np.float32(x)
+    self.weight = np.float32(self.weight)
     if self.bias is not None:
-      for x in range(ret.shape[0]):
-        ret[x] += self.bias
+      self.bias = np.float32(self.bias)
+    x = x[0]
+    if np.shape(self.weight) == (768,3072) and np.shape(x) == (1,768):
+      #ret = np.matmul(x,self.weight) + self.bias #kernel below
+      ret = openclk.matvec2(x,self.weight,self.bias)
+    else:
+      ret = np.matmul(x,self.weight)
+      if self.bias is not None:
+        ret += self.bias
     ret = [ret]
     return ret
   
@@ -110,7 +116,7 @@ def encode(x):
 
 class Attention:
   def __init__(self, dim, n_heads):
-    self.c_attn = Linear(dim, 3*dim, bias=True)
+    self.c_attn = Linear(dim, 3*dim, bias=True) #float32
     self.c_proj = Linear(dim, dim, bias=True)
     self.n_heads = n_heads
     self.dim = dim
@@ -160,9 +166,17 @@ class Attention:
       #  xq[a] = xq[a] / xq[a].sum()
       #kernel below
       xq = openclk.minus_max(xq,(start_pos+1))
-      xq = np.matmul(xq,values)
+
+      values = values.astype(np.float32)
+      #xq = np.matmul(xq,values) #kernel below
+      xq = openclk.matmul3(xq,values,(start_pos+1))
+
       xq = xq.reshape((1,1,self.dim))
-      ret = self.c_proj(xq)
+      self.c_proj.weight = np.float32(self.c_proj.weight)
+      self.c_proj.bias = np.float32(self.c_proj.bias)
+
+      #ret = np.matmul(xq,self.c_proj.weight) + self.c_proj.bias kernel below
+      ret = openclk.matvec(xq,self.c_proj.weight,self.c_proj.bias)
       return ret
     
     else:
@@ -218,6 +232,7 @@ class FeedForward:
       # gelu() activation
       x[0][i] = 0.5 * x[0][i] * (1 + np.tanh(x[0][i] * 0.7978845608 * (1 + 0.044715 * x[0][i] * x[0][i])))
     ret = self.c_proj(x)
+    ret = np.float64(ret) #todo, shouldnt need f64
     return ret
   
 class Embedding:
@@ -265,8 +280,8 @@ class Embedding_2: #todo crutch
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
-    self.attn = Attention(dim,n_heads)
-    self.mlp = FeedForward(dim, 4*dim)
+    self.attn = Attention(dim,n_heads) # done
+    self.mlp = FeedForward(dim, 4*dim) #
     self.ln_1 = LayerNorm(dim,norm_eps)
     self.ln_2 = LayerNorm(dim,norm_eps)
 
@@ -313,8 +328,8 @@ class Transformer:
       #ln1 = self.h[0].ln_1(h)
       mm = openclk.minus_mean_multi(h)
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-      x = ((mm * mm2) / self.h[0].ln_1.weight) + self.h[0].ln_1.bias
-      x = openclk.divide(np.copy(mm),mm2,self.h[0].ln_1.weight,self.h[0].ln_1.bias)
+      #x = ((mm * self.h[0].ln_1.weight) / mm2) + self.h[0].ln_1.bias #kernel below
+      x = openclk.divide(np.copy(mm), mm2, self.h[0].ln_1.weight, self.h[0].ln_1.bias)
       x = [[x]]
       attn = self.h[0].attn(x,start_pos,mask)
       h = h.reshape(1,1,dim)
@@ -328,6 +343,7 @@ class Transformer:
         h = self.h[i](h, start_pos, mask)
       h = self.ln_f(h)
       logits = self.lm_head(h)
+      logits = np.float64(logits) #todo shouldnt need f64
     else:
       tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))

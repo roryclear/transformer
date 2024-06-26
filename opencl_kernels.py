@@ -183,3 +183,109 @@ def minus_max(a,s=112):
     knl(queue, (12,1), (12,1), a_g,c_g) #todo hardcoded
     cl.enqueue_copy(queue, c, c_g)
     return c
+
+def matmul3(a,b,s):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten() #todo, shouldnt be needed
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([12,1,64])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+
+    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int lidx0 = get_local_id(0);
+        int gidx0 = get_group_id(0);
+        float acc0 = 0;
+        float4 vals_a[{s}];
+        for(int i = 0; i < {s}; i++) {{
+            vals_a[i] = a[i + {s}*gidx0];
+        }}
+        float vals_b[{s}];
+        for(int i = 0; i < {s}; i++) {{
+            vals_b[i] = b[i*64 + lidx0 + gidx0*{s}*64];
+        }}
+        for(int i = 0; i < {s}; i++) {{
+            acc0 = mad(vals_a[i].x,vals_b[i],acc0);
+        }}
+        res[lidx0 + gidx0*64] = acc0;
+    }}
+    """).build()
+    knl = prg.matmul
+    knl(queue, (64*12,1), (64,1), a_g, b_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def matmul4(a,b,s):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten() #todo, shouldnt be needed
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([1,1,s])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int lidx0 = get_global_id(0);
+        float acc = 0;
+        for(int x = 0; x < {s}; x++) {{
+            acc += a[x] * b[x*{s} + lidx0];
+        }}
+        res[lidx0] = acc;
+    }}
+    """).build()
+    knl = prg.matmul
+    knl(queue, (768,1), (256,1), a_g, b_g,c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def matvec(a,b,c):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten()
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d = np.zeros([1,1,768])
+    d = np.float32(d)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
+    prg = cl.Program(ctx, f"""
+    __kernel void matvec(
+        __global const float *a, __global const float *b, __global const float *c, __global float *res)
+    {{
+        int lidx0 = get_global_id(0);
+        float acc = 0;
+        for(int x = 0; x < 768; x++) {{
+            acc += a[x] * b[x*768 + lidx0];
+        }}
+        res[lidx0] = acc + c[lidx0];
+    }}
+    """).build()
+    knl = prg.matvec
+    knl(queue, (768,1), (256,1), a_g, b_g,c_g,d_g)
+    cl.enqueue_copy(queue, d, d_g)
+    return d
+
+def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kernels
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten()
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = c.flatten()
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matvec(
+        __global const float *a, __global const float *b , __global float *res)
+    {{
+        int gidx0 = get_global_id(0);
+        for(int j = 0; j < 768; j++) {{
+            res[gidx0] += a[j] * b[gidx0 + j*3072];
+        }}
+    }}
+    """).build()
+    knl = prg.matvec
+    knl(queue, (3072,1), (16,1), a_g, b_g,c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    return c
