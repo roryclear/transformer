@@ -34,18 +34,14 @@ def decode(index):
 
 def scaled_dot_product_attention(x, key, value, attn_mask=None,
                                   dropout_p:float=0.0, is_causal:bool=False):
-  my_mask = np.triu(np.full([np.shape(x)[2],np.shape(x)[2]],1)) 
-  my_mask = (my_mask - np.eye(np.shape(x)[2])) * -math.inf
-  my_mask[np.isnan(my_mask)] = 0
-  np.where(np.isnan(my_mask), 0, my_mask) # inf * 0 = nan
-  my_mask = [[my_mask]]
   key = np.transpose(key,(0,1,3,2))
   qk = np.matmul(x,key)
   qk = qk / math.sqrt(np.shape(x)[-1])
-  qk = qk + my_mask
   for a in range(len(qk)):
     for b in range(len(qk[0])):
       for c in range(len(qk[0][0])):
+        for d in range(len(qk[0][0][0])):
+          if d > c: qk[a][b][c][d] -= np.inf
         qk[a][b][c] = np.exp(qk[a][b][c] - np.max(qk[a][b][c]))
         qk[a][b][c] = qk[a][b][c] / qk[a][b][c].sum()
   qk = np.matmul(qk,value)
@@ -258,43 +254,21 @@ class FeedForward:
 class Embedding:
   def __init__(self, vocab_size:int, embed_size:int):
     self.vocab_size, self.embed_size = vocab_size, embed_size
-    self.weight = None
-    self.weight = np.zeros([self.vocab_size,self.embed_size])
-
-    if not hasattr(self, 'vocab_counter'):
-      self.vocab_counter = np.arange(start=0,stop=self.vocab_size)
-      self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
 
   def __call__(self, idx):
-    if idx.shape[1] == 1:
-      b = np.repeat(False,self.vocab_size)
-      b[idx] = True
-      ret = [[np.matmul(b,self.weight)]]
-      return ret
-    
-    b = np.empty((1,idx.shape[1],self.vocab_size),dtype=bool)
-    b.fill(False)
-    for i in range(len(b[0])):
-      b[0][i][i] = True
-    ret = np.matmul(b,self.weight)
+    ret = np.resize(self.weight,new_shape=(len(idx[0]),dim))
     return ret
   
 class Embedding_2: #todo crutch
   def __init__(self, vocab_size:int, embed_size:int):
     self.vocab_size, self.embed_size = vocab_size, embed_size
-    self.weight = None
-    self.weight = np.empty([self.vocab_size,self.embed_size])
-
-    if not hasattr(self, 'vocab_counter'):
-      self.vocab_counter = np.arange(start=0,stop=self.vocab_size)
-      self.vocab_counter = self.vocab_counter.reshape(1,1,self.vocab_size)
 
   def __call__(self, idx):
-    idx_np = []
-    for i in range(len(idx[0])):
-      idx_np.append([idx[0][i]])
-    idx_np = ([idx_np] == self.vocab_counter)
-    ret = np.matmul(idx_np,self.weight)
+    ret = np.empty((len(idx[0]),self.embed_size))
+    for i in range(len(ret)):
+      for j in range(len(ret[0])):
+        ret[i][j] = self.weight[idx[0][i]][j]
+    ret = [ret]
     return ret
 
 
