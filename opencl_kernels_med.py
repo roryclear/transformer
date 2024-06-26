@@ -300,6 +300,12 @@ def matmul(a,b):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
+def matmul_t(a,b):
+    return np.matmul(a,b)
+
+def matmul_t_3d(a,b):
+    return np.matmul(a,b)
+
 def matmulcr(a,b): #column-row weight (b) #todo different from main, row-column order or opposite
     cols = np.shape(b)[0]
     rows = np.shape(b)[1]
