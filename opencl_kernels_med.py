@@ -300,8 +300,36 @@ def matmul(a,b):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmulcr(a,b): #TODO crutch
-    c = np.matmul(a,b)
+def matmulcr(a,b): #column-row weight (b) #todo different from main, row-column order or opposite
+    cols = np.shape(b)[0]
+    rows = np.shape(b)[1]
+    a_rows = np.shape(a)[0]
+    print("rory a_rows =",a_rows)
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([a_rows,rows])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int x = get_global_id(0);
+        if(x < {cols}) {{
+            for(int y = 0; y < {a_rows}; y++) {{
+                float total = 0;
+                for(int k = 0; k < {rows}; k++) {{
+                    total += a[y*{cols} + k] * b[x + k*{cols}]; 
+                }}
+                res[y*{cols} + x] = total;
+            }}  
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    group_size = math.ceil(cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
     return c
 
 def matmulb(a,b):
