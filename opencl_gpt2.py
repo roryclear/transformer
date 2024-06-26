@@ -153,11 +153,13 @@ class Attention:
       values = np.concatenate([values,xv])
       keys = keys.transpose(1,2,0)
       values = values.transpose(1,0,2)
-      xq = np.matmul(xq,keys)
-      xq = xq / math.sqrt(self.head_dim)
-      for a in range(len(xq)):
-        xq[a] = np.exp(xq[a] - np.max(xq[a]))
-        xq[a]  = xq[a] / xq[a].sum()
+      keys = np.float32(keys)
+      xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
+      #for a in range(len(xq)):
+      #  xq[a] = exp(xq[a] - np.max(xq[a]))
+      #  xq[a] = xq[a] / xq[a].sum()
+      #kernel below
+      xq = openclk.minus_max(xq,(start_pos+1))
       xq = np.matmul(xq,values)
       xq = xq.reshape((1,1,self.dim))
       ret = self.c_proj(xq)
