@@ -52,11 +52,10 @@ def scaled_dot_product_attention(x, key, value, attn_mask=None,
   return qk
 
 class Linear():
-  def __init__(self, in_features, out_features, bias=True,key="0"):
+  def __init__(self, in_features, out_features, bias=True):
     # TODO: is this init good? torch inits to uniform(-1/sqrt(in_features), 1/sqrt(in_features))
-    self.key = key
     self.bias = None
-
+    self.weight = None
 
   def __call__(self,x):
     #rory this is terrible atm obv    
@@ -69,7 +68,7 @@ class Linear():
     return ret
   
 class LayerNorm:
-  def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True,key="0"):
+  def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True):
     self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else tuple(normalized_shape)
     self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
     self.bias = None
@@ -110,79 +109,86 @@ def encode(x):
   return ret
 
 class Attention:
-  def __init__(self, dim, n_heads,key="0"):
-    self.key = key
-    self.c_attn = Linear(dim, 3*dim, bias=True,key="at_0_"+self.key)
-    self.c_proj = Linear(dim, dim, bias=True,key="at_1_"+self.key)
+  def __init__(self, dim, n_heads):
+    self.c_attn = Linear(dim, 3*dim, bias=True)
+    self.c_proj = Linear(dim, dim, bias=True)
     self.n_heads = n_heads
     self.dim = dim
     self.head_dim = dim // n_heads
 
   def __call__(self, x, start_pos, mask):
-    xqkv = self.c_attn(x)
-
-    xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
-    for i in range(xq.shape[1]):
-      xq[0][i] = xqkv[0][i][0:self.dim]
-    xq = xq.reshape(1,xq.shape[1],self.n_heads,self.head_dim)
-    xk = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
-    for i in range(xk.shape[1]):
-      xk[0][i] = xqkv[0][i][self.dim:2*self.dim]
-    xk = xk.reshape(1,xk.shape[1],self.n_heads,self.head_dim)
-    xv = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
-    for i in range(xv.shape[1]):
-      xv[0][i] = xqkv[0][i][self.dim*2:3*self.dim]
-    xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
-    bsz, seqlen, _, _ = xq.shape
-    
-    # create kv cache
-    if not hasattr(self, "cache_kv"):
-      self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
+    #rory c_attn
+    x = np.float32(x)
+    self.c_attn.weight = np.float32(self.c_attn.weight)
+    self.c_attn.bias = np.float32(self.c_attn.bias)
 
     if start_pos > 0:
+      if np.shape(self.c_attn.weight) == (dim,dim*3):
+        self.c_attn.weight = self.c_attn.weight.reshape(dim*3,dim) #have to do this for opencl...took way too long to realize
+      xqkv = openclk.madd(x[0],self.c_attn.weight,self.c_attn.bias).reshape(dim*3) #todo make own kernel...
+      xq = xqkv[0:self.dim]
+      xk = xqkv[self.dim:2*self.dim]
+      xk = xk.reshape(self.n_heads,self.head_dim)
+      xv = xqkv[self.dim*2:]
+      xv = xv.reshape(self.n_heads,self.head_dim)
+      bsz, seqlen = 1,1
+      # create kv cache
+      if not hasattr(self, "cache_kv"):
+        self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
+
       keys = self.cache_kv[0]
       values = self.cache_kv[1]
-      ret = [keys,values]
-      #terrible loop
-      for a in range(len(ret)):
-          for b in range(len(ret[0])):
-              for c in range(start_pos+1,len(ret[0][0])):
-                  ret[a][b][c] = np.zeros_like(ret[a][b][c])
-          if start_pos > -1 and start_pos < len(ret[0][0]):
-              ret[0][b][start_pos] = xk[0][0]
-              ret[1][b][start_pos] = xv[0][0]
-      new_cache = ret
-      self.cache_kv = new_cache
-      #new_cache = None #todo not needed?
       
-      xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
+      keys[-1][start_pos] = xk
+      values[-1][start_pos] = xv
 
-      s = list(np.shape(keys))
-      s[1] = start_pos
-      keys_small = np.empty(s)
-      values_small = np.empty(s)
-      for i in range(len(keys_small[0])):
-        keys_small[0][i] = keys[0][i]
-        values_small[0][i] = values[0][i]
-      keys = keys_small
-      values = values_small
-      keys = np.concatenate([keys,xk],axis=1)
-      values = np.concatenate([values,xv],1)
-      keys, values = keys.transpose(0,2,1,3), values.transpose(0,2,1,3)
-      keys = keys.transpose(0,1,3,2)
-      qk2 = np.matmul(xq,keys)
+      xq = xq.reshape(self.n_heads,1,self.head_dim)
+      xk = xk.reshape(1,self.n_heads,self.head_dim)
+      xv = xv.reshape(1,self.n_heads,self.head_dim)
 
-      qk2 = qk2 / math.sqrt(xq.shape[-1])
+      keys = np.resize(keys,(start_pos,self.n_heads,self.head_dim))
+      values = np.resize(values,(start_pos,self.n_heads,self.head_dim))
+
+      keys = np.concatenate([keys,xk])
+      values = np.concatenate([values,xv])
+      keys = keys.transpose(1,2,0)
+      values = values.transpose(1,0,2)
+      qk2 = np.matmul(xq,[keys]) #todo extra dim
+
+      qk2 = qk2 / math.sqrt(self.head_dim)
+
       for a in range(len(qk2[0])):
         for b in range(len(qk2[0][a])):
           qk2[0][a][b] = np.exp(qk2[0][a][b]  - np.max(qk2[0][a][b] ))
           qk2[0][a][b]  = qk2[0][a][b]  / qk2[0][a][b] .sum()
       qk2 = np.matmul(qk2,values)
-      xq = qk2 
+      xq = qk2
+      xq = xq.reshape(1,self.n_heads,1,self.head_dim)
       xq = xq.transpose((0,2,1,3))
       xq = xq.reshape((bsz,seqlen,self.dim))
       ret = self.c_proj(xq)
       return ret
+    
+    else:
+      xqkv = np.matmul(x,self.c_attn.weight)
+      xqkv += self.c_attn.bias
+      xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
+      for i in range(xq.shape[1]):
+        xq[0][i] = xqkv[0][i][0:self.dim]
+      xq = xq.reshape(1,xq.shape[1],self.n_heads,self.head_dim)
+      xk = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
+      for i in range(xk.shape[1]):
+        xk[0][i] = xqkv[0][i][self.dim:2*self.dim]
+      xk = xk.reshape(1,xk.shape[1],self.n_heads,self.head_dim)
+      xv = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
+      for i in range(xv.shape[1]):
+        xv[0][i] = xqkv[0][i][self.dim*2:3*self.dim]
+      xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
+      bsz, seqlen, _, _ = xq.shape
+
+      # create kv cache
+      if not hasattr(self, "cache_kv"):
+        self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
 
     keys = xk
     values = xv
@@ -206,11 +212,9 @@ class Attention:
     return ret
   
 class FeedForward:
-  def __init__(self, dim, hidden_dim,key="0"):
-    print("rory feedforward init key =",key)
-    self.key = key
-    self.c_fc = Linear(dim, hidden_dim, bias=True,key="ff_0_"+self.key)
-    self.c_proj = Linear(hidden_dim, dim, bias=True,key="ff_1_"+self.key)
+  def __init__(self, dim, hidden_dim):
+    self.c_fc = Linear(dim, hidden_dim, bias=True)
+    self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
     x = self.c_fc(x)
@@ -264,11 +268,11 @@ class Embedding_2: #todo crutch
 
 
 class TransformerBlock:
-  def __init__(self, dim, n_heads, norm_eps,key="0"):
-    self.attn = Attention(dim,n_heads,key=key)
-    self.mlp = FeedForward(dim, 4*dim,key=key)
-    self.ln_1 = LayerNorm(dim,norm_eps,key="0_"+key)
-    self.ln_2 = LayerNorm(dim,norm_eps,key="1_"+key)
+  def __init__(self, dim, n_heads, norm_eps):
+    self.attn = Attention(dim,n_heads)
+    self.mlp = FeedForward(dim, 4*dim)
+    self.ln_1 = LayerNorm(dim,norm_eps)
+    self.ln_2 = LayerNorm(dim,norm_eps)
 
   def __call__(self, x, start_pos, mask):
     h = np.copy(x)
@@ -286,9 +290,6 @@ class Transformer:
     self.vocab_size = vocab_size
     self.wte = Embedding_2(vocab_size,dim)
     self.wpe = Embedding(max_seq_len,dim)
-    self.h = [TransformerBlock(dim, n_heads, norm_eps,key=str(i)) for i in range(n_layers)]
-    self.ln_f = LayerNorm(dim,norm_eps,key="3")
-    self.lm_head = Linear(dim, vocab_size, bias=False,key="transformer_linear")
 
   def forward(self, tokens, start_pos, temperature:float=0.0,v_in=False):
     if not hasattr(self, 'allpos'): 

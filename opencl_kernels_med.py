@@ -136,3 +136,10 @@ def divide(a,b,c,d):
     knl(queue, (1024,1), (256,1), a_g, b_g, c_g, d_g) #has to be multiple of 256
     cl.enqueue_copy(queue, a, a_g)
     return a
+
+def madd(a,b,c): #TODO DONT BOTHER WITH THIS KERNEL FOR TWO SIZES, WILL REMOVE ANYWAY
+    bt = b.reshape(np.shape(b)[1],np.shape(b)[0])
+    d = np.matmul(a,bt)
+    for i in range(np.shape(c)[0]):
+        d[0][i] += c[i]
+    return d
