@@ -36,17 +36,20 @@ def decode(index):
 def scaled_dot_product_attention(x, key, value, attn_mask=None,
                                   dropout_p:float=0.0, is_causal:bool=False):
   key = np.transpose(key,(0,1,3,2))
-  qk = np.matmul(x,key)
+  x = np.float32(x)
+  key = np.float32(key)
+  value = np.float32(value)
+  #qk = np.matmul(x,key)[0] # kernel below
+  qk = openclk.matmul_t_3d(np.copy(x[0]),np.copy(key[0]))
   qk = qk / math.sqrt(np.shape(x)[-1])
-  qk = qk[0]
   for x in range(len(qk)):
     for y in range(len(qk[0])):
       for z in range(len(qk[0][0])):
         if z > y: qk[x][y][z] -= np.inf
       qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
       qk[x][y] = qk[x][y] / qk[x][y].sum()
-  qk = [qk]
-  qk = np.matmul(qk,value)
+  #qk = np.matmul(qk,value)
+  qk = np.array([openclk.matmul_t_3d(np.copy(qk),np.copy(value[0]))])
   return qk
 
 class Linear():
@@ -68,22 +71,8 @@ class Linear():
       if len(np.shape(ret)) == 1:
         ret = [ret] #todo
     else:
-      #print("rory matmul shapes??? =",np.shape(x),np.shape(self.weight))
-      #print("types =",type(x),type(self.weight),type(self.bias))
-      #print("rory types =",type(x[0][0]),type(self.weight[0][0]),type(self.bias[0]))
-      ret = np.matmul(x,self.weight)
-
-      if np.shape(self.weight) == (dim,dim) or np.shape(self.weight) == (dim*4,dim*4):   
-        ret2 = openclk.matmulcr(x,self.weight)
-        '''
-        for j in range(len(ret2)):
-          for i in range(len(ret2[0])):
-            if abs(ret2[j][i] - ret[j][i]) > abs(ret[j][i])*0.1:
-              print(j,"\t",i,"\t\t",ret2[j][i],ret[j][i])
-        ''' 
-        ret = ret2
-        #np.testing.assert_allclose(ret,ret2,rtol=1e-4)
-
+      #ret = np.matmul(x,self.weight) kernel below
+      ret = openclk.matmul_t(x,self.weight)
       ret += self.bias
     ret = [ret]
     return ret
@@ -214,7 +203,8 @@ class Attention:
       return ret
     
     else:
-      xqkv = np.matmul(x,self.c_attn.weight)
+      #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
+      xqkv = [openclk.matmul_t(x[0],self.c_attn.weight)]
       xqkv += self.c_attn.bias
       xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim))
       for i in range(xq.shape[1]):
