@@ -138,11 +138,70 @@ def divide(a,b,c,d):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def madd(a,b,c): #TODO DONT BOTHER WITH THIS KERNEL FOR TWO SIZES, WILL REMOVE ANYWAY
-    bt = b.reshape(np.shape(b)[1],np.shape(b)[0])
-    d = np.matmul(a,bt)
-    for i in range(np.shape(c)[0]):
-        d[0][i] += c[i]
+def madd(a,b,c):
+    print(np.shape(a),np.shape(b),np.shape(c))
+    d = np.matmul(a.flatten(),b.reshape(np.shape(b)[1],np.shape(b)[0]))
+    d += c
+    return d
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d = np.zeros((1,768*3)).astype(np.float32)
+    d = np.float32(d)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
+
+    prg = cl.Program(ctx, f"""
+    __kernel void add(const __global float* data1, const __global float* data2, const __global float* data3, __global float* data0) {{
+  __attribute__ ((aligned (16))) __local float temp[128];
+    int gidx0 = get_group_id(0); /* 144 */
+    int lidx1 = get_local_id(1); /* 4 */
+    int lidx2 = get_local_id(0); /* 8 */
+    float acc0 = 0.0f;
+    float acc1 = 0.0f;
+    float acc2 = 0.0f;
+    float acc3 = 0.0f;
+    int alu0 = ((gidx0*16)+lidx1);
+    int alu1 = (lidx1*32);
+    float val0 = data3[alu0];
+    int alu2 = (alu0+4);
+    float val1 = data3[alu2];
+    int alu3 = (alu0+8);
+    float val2 = data3[alu3];
+    int alu4 = (alu0+12);
+    float val3 = data3[alu4];
+    for (int ridx0 = 0; ridx0 < 96; ridx0++) {{
+        float val4 = data1[lidx2+(ridx0*8)];
+        int alu5 = (alu0+(lidx2*2304)+(ridx0*18432));
+        float val5 = data2[alu5];
+        float val6 = data2[alu5+4];
+        float val7 = data2[alu5+8];
+        float val8 = data2[alu5+12];
+        acc0 = mad(val4,val5,acc0);
+        acc1 = mad(val4,val6,acc1);
+        acc2 = mad(val4,val7,acc2);
+        acc3 = mad(val4,val8,acc3);
+    }}
+    *((__local float4*)(temp+alu1+(lidx2*4))) = (float4)(float4)(acc0,acc1,acc2,acc3);
+    barrier(CLK_LOCAL_MEM_FENCE);
+    if ((lidx2<1)) {{
+        float4 acc4 = (float4)(0.0f,0.0f,0.0f,0.0f);
+        for (int ridx1 = 0; ridx1 < 8; ridx1++) {{
+        float4 val9 = (float4)(*((__local float4*)(temp+alu1+(ridx1*4))));
+        (acc4).x = ((val9).x+(acc4).x);
+        (acc4).y = ((val9).y+(acc4).y);
+        (acc4).z = ((val9).z+(acc4).z);
+        (acc4).w = ((val9).w+(acc4).w);
+        }}
+        data0[alu0] = ((float)((acc4).x)+val0);
+        data0[alu2] = ((float)((acc4).y)+val1);
+        data0[alu3] = ((float)((acc4).z)+val2);
+        data0[alu4] = ((float)((acc4).w)+val3);
+    }}
+    }}
+    """).build()
+    knl = prg.add
+    knl(queue, (1152,4,1), (8,4,1), a_g, b_g, c_g ,d_g) #todo check shape
+    cl.enqueue_copy(queue, d, d_g)
     return d
 
 def matmul2(a,b,s=112): #DONT BOTHER WITH THIS EITHER
@@ -225,7 +284,7 @@ def matvec(a,b,c):
     b = b.flatten()
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    d = np.zeros([1,1,1024])
+    d = np.zeros([1024])
     d = np.float32(d)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
     prg = cl.Program(ctx, f"""

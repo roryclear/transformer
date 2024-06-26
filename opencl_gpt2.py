@@ -57,7 +57,6 @@ class Linear():
     x = np.array(x)
     if self.bias is None:
       self.bias = np.zeros(np.shape(self.weight[1])).astype(np.float32)
-    x = x[0]
     if np.shape(x)[0] == 1:
       ret = openclk.matvec2(x,self.weight,self.bias)
       if len(np.shape(ret)) == 1:
@@ -82,7 +81,6 @@ class LayerNorm:
     self.weight = np.float32(self.weight)
     self.bias = np.float32(self.bias)
     if np.shape(x)[1] == 1:
-      x = x[0][0]
       #print("print rory x shape here =",np.shape(x))
       #mm = x - x.mean() #kernel below
       mm = openclk.minus_mean_multi(np.copy(x))
@@ -138,13 +136,12 @@ class Attention:
     self.head_dim = dim // n_heads
 
   def __call__(self, x, start_pos):
-    #rory c_attn
-    x = np.float32(x)
+    x = np.array(x)
 
     if start_pos > 0:
       if np.shape(self.c_attn.weight) == (dim,dim*3):
         self.c_attn.weight = self.c_attn.weight.reshape(dim*3,dim) #have to do this for opencl...took way too long to realize
-      xqkv = openclk.madd(x[0],self.c_attn.weight,self.c_attn.bias).reshape(dim*3) #todo make own kernel...
+      xqkv = openclk.madd(x,self.c_attn.weight,self.c_attn.bias).reshape(dim*3) #todo make own kernel...
       xq = xqkv[0:self.dim]
       xk = xqkv[self.dim:2*self.dim]
       xk = xk.reshape(self.n_heads,self.head_dim)
@@ -172,7 +169,6 @@ class Attention:
       values = np.concatenate([values,xv])
       keys = keys.transpose(1,2,0)
       values = values.transpose(1,0,2)
-      keys = np.float32(keys)
       xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
       #for a in range(len(xq)):
       #  xq[a] = exp(xq[a] - np.max(xq[a]))
@@ -180,11 +176,9 @@ class Attention:
       #kernel below
       xq = openclk.minus_max(xq,(start_pos+1))
 
-      values = values.astype(np.float32)
       #xq = np.matmul(xq,values) #kernel below
       xq = openclk.matmul3(xq,values,(start_pos+1))
 
-      xq = xq.reshape((1,1,self.dim))
 
       #ret = np.matmul(xq,self.c_proj.weight) + self.c_proj.bias kernel below
       ret = openclk.matvec(xq,self.c_proj.weight,self.c_proj.bias)
@@ -228,8 +222,8 @@ class Attention:
     
     xq = scaled_dot_product_attention(xq,keys,values)
     xq = xq.transpose((0,2,1,3))
-    #xq = xq.transpose(1, 2)
-    xq = xq.reshape(bsz, seqlen, self.dim) #todo !
+    xq = xq.reshape(seqlen, self.dim)
+
     ret = self.c_proj(xq)
     return ret
   
@@ -239,10 +233,11 @@ class FeedForward:
     self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
-    x = self.c_fc(x)
-    for i in range(np.shape(x)[1]):
+    x = self.c_fc(x[0]) #todo
+    x = x[0] #todo
+    for i in range(np.shape(x)[0]):   
       # gelu() activation
-      x[0][i] = 0.5 * x[0][i] * (1 + np.tanh(x[0][i] * 0.7978845608 * (1 + 0.044715 * x[0][i] * x[0][i])))
+      x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
     ret = self.c_proj(x)
     return ret
   
@@ -252,6 +247,17 @@ class Embedding:
 
   def __call__(self, idx):
     ret = np.resize(self.weight,new_shape=(len(idx[0]),dim))
+    return ret
+  
+class Mock_tg_rand:
+  def __init__(self):
+    self.index = 0
+    file1 = open('random_nums.txt', 'r')
+    self.lines = file1.readlines()
+
+  def rand(self):
+    ret = np.float32(self.lines[self.index])
+    self.index+=1
     return ret
   
 class Embedding_2: #todo crutch
@@ -347,7 +353,7 @@ class Transformer:
       #x = ((mm * self.h[0].ln_1.weight) / mm2) + self.h[0].ln_1.bias #kernel below
       x = openclk.divide(np.copy(mm), mm2, self.h[0].ln_1.weight, self.h[0].ln_1.bias)
       x = [[x]]
-      attn = self.h[0].attn(x,start_pos)
+      attn = self.h[0].attn([x],start_pos)
       h = h.reshape(1,1,dim)
       h += attn
       h2 = np.copy(h)
@@ -358,8 +364,7 @@ class Transformer:
       for i in range(1,len(self.h)):
         h = self.h[i](h, start_pos)
       h = self.ln_f(h)
-      logits = self.lm_head(h)
-      logits = np.float64(logits) #todo shouldnt need f64
+      logits = self.lm_head(h[0])
     else:
       tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))
@@ -375,7 +380,7 @@ class Transformer:
       for hi in self.h:
         h = hi(h, start_pos)
       h = self.ln_f(h)
-      logits = self.lm_head(h)
+      logits = self.lm_head(h[0]) #todo
     logits = [logits[0][-1]]
 
     if temperature < 1e-6:
@@ -390,7 +395,10 @@ class Transformer:
       #can't get around not using tg here for e2e test?
       #maybe store the output in a file
       #unif_samples = Tensor.rand(1, np.shape(logits)[0], 1)
-      unif_samples = np.random.rand(1, np.shape(logits)[0], 1).astype(np.float32)
+      if use_tg_rand:
+        unif_samples = [[[tg_rand.rand()]]]
+      else:
+        unif_samples = np.random.rand(1, 1, 1).astype(np.float32)
       #unif_samples = unif_samples.numpy()
       b = np.empty_like(logits,dtype=bool)
       for i in range(len(logits[0][0])):
@@ -417,6 +425,29 @@ class GPT2:
 
   def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):
     self.model.convert()
+
+    expected_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
+    893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
+    1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
+    1244, 1011, 257, 2392, 1570, 286, 262, 6881, 13,\
+    887, 329, 584, 661, 851, 1390, 5519, 11, 7912,\
+    11, 290, 584, 287, 12, 14108, 12, 2550, 661, 851,\
+    534, 3280, 1244, 307, 1290, 517, 588, 25, 5155, 1595,\
+    470, 2152, 379, 477, 13, 198, 198, 25153, 345, 389, 257,\
+    1862, 1048, 508, 655, 18303, 422, 3504, 1524, 290, 468,\
+    1239, 1107, 19189, 257, 3451, 287, 48782, 23154, 13, 921, 821, 319, 281, 3624]
+
+    expected_tokens_med = [198, 198, 1544, 468, 262, 2694,\
+    290, 262, 481, 284, 3853, 475, 339, 2391, 2314, 2222,\
+    2241, 284, 466, 340, 13, 679, 318, 7787, 284, 307,\
+    3436, 290, 7787, 284, 2222, 1854, 656, 340, 13, 679,\
+    318, 7787, 284, 307, 33046, 290, 7787, 284, 307, 8606,\
+    13, 198, 198, 4864, 11, 339, 318, 407, 3436, 287, 465,\
+    3252, 286, 5287, 13, 198, 198, 22210, 4952, 502, 326,\
+    3252, 2125, 470, 262, 6808, 2728, 286, 262, 1917, 13,\
+    198, 198, 2025, 37560, 198, 198, 4864, 11, 611, 356, 804,\
+    9211, 356, 1064, 326, 4213, 836, 470, 423, 284, 307, 7042, 287]
+
     prompt_tokens = encode(prompt)
     toks = [prompt_tokens[:] for _ in range(batch_size)]
     start_pos = 0
@@ -427,13 +458,22 @@ class GPT2:
         tokens = np.array(toks)
       tok = self.model(tokens, start_pos, temperature).tolist()
       start_pos = len(toks[0])
-      for i,t in enumerate(tok): toks[i].append(t)
+      for i,t in enumerate(tok):
+        if med == False:
+          np.testing.assert_equal(tok[0],expected_tokens[start_pos-13])
+        else:
+          np.testing.assert_equal(tok[0],expected_tokens_med[start_pos-13])
+        toks[i].append(t)
     ret = [decode(x) for x in toks]
     return ret
 
 # **** main code ****
 
 if __name__ == "__main__":
+  use_tg_rand = True
+
+  if use_tg_rand:
+    tg_rand = Mock_tg_rand()
 
   if os.path.exists("gpt2weights") == False:
     os.mkdir("gpt2weights")
@@ -532,20 +572,25 @@ if __name__ == "__main__":
     texts = gpt2_med.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
     print('Generating text...')
     for i,text in enumerate(texts): print((f"Response {i}:", "green"), text)
-    assert texts == [("What is the answer to life, the universe, and everything? There is no answer to life, the universe, and everything.\n\n"\
-    "Enter the free thought experiment. The universe is composed entirely of subatomic particles that orbit the sun (or gas cloud or something) at the speeds of 3.7 kilometers per second. These particles interact with each other, creating light from ultraviolet light and creating electrical charges from the muon particles in the sun. These charges also create heat, light, and radiation from which electricity can be produced. The energy of these interactions varies")]
+    assert texts == [("What is the answer to life, the universe, and everything?\n\n"
+    "He has the ability and the will to choose but he simply cannot bring himself to"
+    " do it. He is afraid to be alone and afraid to bring others into it. "
+    "He is afraid to be misunderstood and afraid to be rejected.\n\n"
+    "However, he is not alone in his fear of failure.\n\n"
+    "Something tells me that fear isn't the root cause of the problem.\n\n"
+    "An Idea\n\nHowever, if we look deeper we find that ideas don't have to be formed in")]
 
   if med == False:
     filehandler = open("weights_128.pickle", 'rb')  
     gpt2 = pickle.load(filehandler)
     texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
     for i,text in enumerate(texts): print((f"Response {i}:", "green"), text)
-    assert texts == [("What is the answer to life, the universe, and everything? "
-    "But what is the answer to the mystery of Enlightenment? Does the only "
-    "solution lie in a series of calls to agency? Do virtues and proper duties "
-    "need to separate? How does a patient become his or her own individual conscience?\n\n"
-    "What does the Universal Law mean? Why do some people do good and others contemptible? " 
-    "How does the Universal Law maximize the efficiency of the health system? How does the "
-    "Universal Law facilitate all of human virtue? What does it mean to be a man or a woman")]
+    assert texts == [("What is the answer to life, the universe, and everything?"
+    "\n\nIf you were an astrophysicist, or just a physicist, your answer might "
+    "be a bit different. For one, you might take a longer view of the universe. "
+    "But for other people — including scientists, artists, and other in-your-face "
+    "people — your answer might be far more like: Life doesn't exist at all.\n\n"
+    "Imagine you are a young person who just graduated from middle school and has "
+    "never really pursued a career in astrophysics. You're on an eight")]
 
   exit()
