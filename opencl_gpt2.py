@@ -134,7 +134,7 @@ class Attention:
       bsz, seqlen = 1,1
       # create kv cache
       if not hasattr(self, "cache_kv"):
-        self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim])
+        self.cache_kv = np.zeros(shape=[2, 1, MAX_CONTEXT, self.n_heads, self.head_dim])
 
       keys = self.cache_kv[0]
       values = self.cache_kv[1]
@@ -153,19 +153,13 @@ class Attention:
       values = np.concatenate([values,xv])
       keys = keys.transpose(1,2,0)
       values = values.transpose(1,0,2)
-      qk2 = np.matmul(xq,[keys]) #todo extra dim
-
-      qk2 = qk2 / math.sqrt(self.head_dim)
-
-      for a in range(len(qk2[0])):
-        for b in range(len(qk2[0][a])):
-          qk2[0][a][b] = np.exp(qk2[0][a][b]  - np.max(qk2[0][a][b] ))
-          qk2[0][a][b]  = qk2[0][a][b]  / qk2[0][a][b] .sum()
-      qk2 = np.matmul(qk2,values)
-      xq = qk2
-      xq = xq.reshape(1,self.n_heads,1,self.head_dim)
-      xq = xq.transpose((0,2,1,3))
-      xq = xq.reshape((bsz,seqlen,self.dim))
+      xq = np.matmul(xq,keys)
+      xq = xq / math.sqrt(self.head_dim)
+      for a in range(len(xq)):
+        xq[a] = np.exp(xq[a] - np.max(xq[a]))
+        xq[a]  = xq[a] / xq[a].sum()
+      xq = np.matmul(xq,values)
+      xq = xq.reshape((1,1,self.dim))
       ret = self.c_proj(xq)
       return ret
     
@@ -317,6 +311,7 @@ class Transformer:
       #ln1 = self.h[0].ln_1(h)
       mm = openclk.minus_mean_multi(h)
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+      x = ((mm * mm2) / self.h[0].ln_1.weight) + self.h[0].ln_1.bias
       x = openclk.divide(np.copy(mm),mm2,self.h[0].ln_1.weight,self.h[0].ln_1.bias)
       x = [[x]]
       attn = self.h[0].attn(x,start_pos,mask)
