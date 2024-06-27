@@ -377,3 +377,6 @@ def sq_mean_sqrt_b(a):
     knl(queue, (256,1), (256,1), a_g) #rory to test large stuff
     cl.enqueue_copy(queue, a, a_g)
     return a
+
+def matmul_t_b(a,b):
+    return np.matmul(a,b)

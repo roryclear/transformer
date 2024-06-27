@@ -11,7 +11,7 @@ import opencl_kernels as openclk
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 opencl = True
-med = False
+med = True
 dim = 768
 if med == True:
   import opencl_kernels_med as openclk
@@ -97,10 +97,7 @@ class Attention:
     x = np.array(x)
 
     if start_pos > 0:
-      x = np.array([x]) #todo
-      xqkv = openclk.matmul_t(x,self.c_attn.weight) + self.c_attn.bias
-      x = x[0] #todo
-      xqkv = xqkv.reshape(dim*3)
+      xqkv = openclk.matmul_t_b(x,self.c_attn.weight) + self.c_attn.bias
       xq = xqkv[0:self.dim]
       xk = xqkv[self.dim:2*self.dim]
       xk = xk.reshape(self.n_heads,self.head_dim)
