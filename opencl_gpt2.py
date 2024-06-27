@@ -325,8 +325,9 @@ class Transformer:
         self.h[i].attn.cache_kv[0] = keys
         self.h[i].attn.cache_kv[1] = values
         
-      h = openclk.kernel_0(h,self.ln_f.weight, self.ln_f.bias)
-      logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
+      h = openclk.kernel_3(h,self.ln_f.weight, self.ln_f.bias)
+      self.lm_head.weight = self.lm_head.weight.flatten()
+      logits = openclk.matvec2(h,self.lm_head.weight)
     else:
       tok_emb = self.wte(tokens) #rorys todo
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,dim))
