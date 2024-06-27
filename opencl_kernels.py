@@ -185,8 +185,48 @@ def madd(a,b,c):
     cl.enqueue_copy(queue, d, d_g)
     return d
 
-def matmul2(a,b,s=112): #DONT BOTHER WITH THIS EITHER
-    return np.matmul(a,b) / 8
+def matmul2(a,b,s=112):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten() #todo, shouldnt be needed
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([12,1,s])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+
+    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
+
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+    int x = get_global_id(0) % {s};
+    int k = get_global_id(0) / {s};
+    float acc0 = 0.0f;
+    float4 vals_a[16];
+    for(int i = 0; i < 16; i++) {{
+        vals_a[i] = (float4)(*((__global float4*)(a+i*4+64*k)));
+    }}
+                    
+    float vals_b[64];
+    for(int i = 0; i < 64; i++) {{
+        vals_b[i] = b[x+i*{s} + {s}*64*k]; // rory i*x
+    }}
+    
+    for(int i = 0; i < 16; i++) {{
+        acc0 = mad((vals_a[i]).x,vals_b[i*4],acc0);
+        acc0 = mad((vals_a[i]).y,vals_b[i*4 + 1],acc0);
+        acc0 = mad((vals_a[i]).z,vals_b[i*4 + 2],acc0);
+        acc0 = mad((vals_a[i]).w,vals_b[i*4 + 3],acc0);
+    }}
+    res[x + k*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
+    }}
+    """).build()
+    knl = prg.matmul
+    local0 = min(256,s*64*12)
+    group0 = math.ceil(12*s / local0) * local0
+    knl(queue, (group0,1), (local0,1), a_g, b_g,c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    return c
 
 def minus_max(a,s=112):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
