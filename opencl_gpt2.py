@@ -58,7 +58,7 @@ class Linear():
     if self.bias is None:
       self.bias = np.zeros(np.shape(self.weight[1])).astype(np.float32)
     if np.shape(x)[0] == 1:
-      ret = openclk.matvec2(x,self.weight,self.bias)
+      ret = openclk.matvec2(x,self.weight,np.zeros(np.shape(self.weight[1])).astype(np.float32))
     else:
       #ret = np.matmul(x,self.weight) kernel below
       ret = openclk.matmul_t(x,self.weight)
@@ -151,9 +151,10 @@ class Attention:
     x = np.array(x)
 
     if start_pos > 0:
-      if np.shape(self.c_attn.weight) == (dim,dim*3):
-        self.c_attn.weight = self.c_attn.weight.reshape(dim*3,dim) #have to do this for opencl...took way too long to realize
-      xqkv = openclk.madd(x,self.c_attn.weight,self.c_attn.bias).reshape(dim*3) #todo make own kernel...
+      x = np.array([x]) #todo
+      xqkv = openclk.matmul_t(x,self.c_attn.weight) + self.c_attn.bias
+      x = x[0] #todo
+      xqkv = xqkv.reshape(dim*3)
       xq = xqkv[0:self.dim]
       xk = xqkv[self.dim:2*self.dim]
       xk = xk.reshape(self.n_heads,self.head_dim)
@@ -228,7 +229,9 @@ class Attention:
     xq = xq.transpose((1,0,2))
     xq = xq.reshape(seqlen, self.dim)
 
-    ret = self.c_proj(xq)
+    #ret = np.matmul(x,self.weight) kernel below
+    ret = openclk.matmul_t(xq,self.c_proj.weight)
+    ret += self.c_proj.bias
     return ret
   
 class FeedForward:
@@ -237,15 +240,19 @@ class FeedForward:
     self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
-    x = self.c_fc(x)
-    if len(np.shape(x)) == 1:
-      x = [x] #todo
+    #ret = np.matmul(x,self.weight) kernel below
+    ret = openclk.matmul_t(x,self.c_fc.weight)
+    ret += self.c_fc.bias
+    x = ret
+    #x = self.c_fc(x) #above
     for i in range(np.shape(x)[0]):   
       # gelu() activation
       x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
-    ret = self.c_proj(x)
-    if len(np.shape(ret)) == 1:
-      ret = [ret]
+    x = np.array(x) #todo
+
+    #ret = np.matmul(x,self.weight) kernel below
+    ret = openclk.matmul_t(x,self.c_proj.weight)
+    ret += self.c_proj.bias
     return ret
   
 class Embedding:
@@ -374,24 +381,30 @@ class Transformer:
       x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
       x = openclk.matvec2(x,self.h[0].mlp.c_proj.weight,self.h[0].mlp.c_proj.bias)
       h = x + h
-      h = [[h]] 
 
       for i in range(1,len(self.h)):
         x = h
-        x = x[0] #todo
-        ln1 = self.h[i].ln_1(x)
+        #x = x[0][0] #todo
+        mm = openclk.minus_mean_multi(np.copy(x))
+        mm2 = openclk.sq_mean_sqrt_b(np.copy(mm))
+        ln1 = openclk.divide(np.copy(mm), mm2, self.h[i].ln_1.weight, self.h[i].ln_1.bias)
+        #ln1 = self.h[i].ln_1(x) above kernels
         attn = self.h[i].attn(ln1,start_pos)
         h += attn
-        h2 = np.copy(h)
-        h2 = h2[0] #todo
-        ln2 = self.h[i].ln_2(h2)
-        mlp = self.h[i].mlp(ln2) #todo
-        h = mlp + h
-      h = self.ln_f(h[0]) #todo
-      logits = self.lm_head(h)
-      if len(np.shape(logits)) == 1:
-        logits = [logits] #todo
-      logits = [logits] #todo
+        mm = openclk.minus_mean_multi(np.copy(h))
+        mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+        x = openclk.divide(np.copy(mm), mm2, self.h[i].ln_2.weight, self.h[i].ln_2.bias)
+        x = openclk.matvec2(x,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias)
+        x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
+        x = openclk.matvec2(x,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
+        #mlp = self.h[i].mlp(x) #above???
+        h += x
+
+      mm = openclk.minus_mean_multi(np.copy(h))
+      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+      h = openclk.divide(np.copy(mm), mm2, self.ln_f.weight, self.ln_f.bias)
+      logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
+      #logits = self.lm_head(h)
     else:
       tok_emb = self.wte(tokens) #rorys todo
       tok_emb = [tok_emb] #todo
@@ -405,38 +418,35 @@ class Transformer:
       for hi in self.h:
         h = hi(h, start_pos)
       h = self.ln_f(h[0]) #todo
-      logits = self.lm_head(h)
-      if len(np.shape(logits)) == 1:
-        logits = [logits] #todo
-      logits = [logits] #todo
-    logits = [logits[0][-1]]
+      ret = openclk.matmul_t(h,self.lm_head.weight)
+      logits = ret[-1] #todo
+      #logits = self.lm_head(h)[-1] #todo
 
     if temperature < 1e-6:
       ret = logits.argmax(-1)
     else:
       logits = np.array(logits) / temperature
-      logits[0] = np.exp(logits[0] - np.max(logits[0]))
-      logits[0] = logits[0] / logits[0].sum()
-      logits = logits.cumsum(1)
-      logits = logits / logits[0][-1]
-      logits = [logits]
+      logits = np.exp(logits - np.max(logits))
+      logits = logits / logits.sum()
+      logits = logits.cumsum(0)
+      logits = logits / logits[-1]
       #can't get around not using tg here for e2e test?
       #maybe store the output in a file
       #unif_samples = Tensor.rand(1, np.shape(logits)[0], 1)
       if use_tg_rand:
-        unif_samples = [[[tg_rand.rand()]]]
+        unif_samples = tg_rand.rand()
       else:
-        unif_samples = np.random.rand(1, 1, 1).astype(np.float32)
+        unif_samples = np.random.rand().astype(np.float32)
       #unif_samples = unif_samples.numpy()
       b = np.empty_like(logits,dtype=bool)
-      for i in range(len(logits[0][0])):
-        if unif_samples[0][0][0] >= logits[0][0][i]: #Tensor random gets [[[0.14280224]]] with 420 seed,
-          b[0][0][i] = True
+      for i in range(len(logits)):
+        if unif_samples >= logits[i]:
+          b[i] = True
         else:
-          b[0][0][i] = False
-      b = b.sum(2)[0]
-      ret = b
-    return ret #why the realize? what calls this? the h hi loop?
+          b[i] = False
+      b = b.sum()
+      ret = np.array([b])
+    return ret
 
   def __call__(self, tokens, start_pos, temperature:np.float32=0.0,v_in=False):
     return self.forward(tokens, start_pos, temperature)
