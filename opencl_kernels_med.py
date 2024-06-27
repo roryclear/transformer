@@ -860,3 +860,34 @@ def kernel_2(a,c,d,e,f,g,keys,start_pos): #g = size
     cl.enqueue_copy(queue, xv, xv_g)
     cl.enqueue_copy(queue, keys, keys_g)
     return xq,xv,keys
+
+def matmul2_b(a,b):
+    s = np.shape(b)[2]
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b = b.flatten() #todo, shouldnt be needed
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.zeros([16,1,s])
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+
+    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
+
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+    for(int k = 0; k < {16*s}; k++) {{
+        for(int x = 0; x < {s}; x++) {{
+            float acc0 = 0.0f;
+            for(int i = 0; i < 64; i++) {{
+                acc0 += a[i + 64*k] * b[x+i*{s} + {s}*64*k];
+            }}                  
+            res[x + k*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
+        }}
+    }}
+    }}
+    """).build()
+    knl = prg.matmul
+    knl(queue, (1,1), (1,1), a_g, b_g,c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    return c
