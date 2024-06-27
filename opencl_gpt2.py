@@ -424,6 +424,16 @@ class GPT2:
     1862, 1048, 508, 655, 18303, 422, 3504, 1524, 290, 468,\
     1239, 1107, 19189, 257, 3451, 287, 48782, 23154, 13, 921, 821, 319, 281, 3624]
 
+    expected_tokens_b = [198, 198,\
+    1026, 373, 257, 845, 46873, 1110, 13, 198, 198, 2215, 262,
+    19147, 12030, 12873, 287, 24414, 11, 262, 6771, 547, 407, 3142,\
+    284, 670, 287, 262, 17590, 11, 645, 2300, 703, 881, 484, 2227,\
+    284, 13, 383, 1917, 2627, 1598, 618, 262, 5103, 1664, 286, 262,\
+    309, 9116, 4623, 268, 4618, 11, 543, 925, 281, 3113, 329, 262,\
+    11908, 12, 1273, 14414, 41460, 11, 3414, 617, 19008, 284, 262,\
+    24718, 25931, 13, 198, 198, 464, 2551, 373, 2077, 706, 257, 1327,\
+    6531, 1022, 262, 7570, 4479, 338, 1964, 5531, 290, 12267, 7602, 11, 290, 373, 1912, 319, 262]
+
     expected_tokens_med = [198, 198, 1544, 468, 262, 2694,\
     290, 262, 481, 284, 3853, 475, 339, 2391, 2314, 2222,\
     2241, 284, 466, 340, 13, 679, 318, 7787, 284, 307,\
@@ -445,7 +455,10 @@ class GPT2:
       tok = self.model(tokens, start_pos, temperature).tolist()
       start_pos = len(toks)
       if med == False:
-        np.testing.assert_equal(tok,expected_tokens[start_pos-13])  
+        if default_prompt == "What is the answer to life, the universe, and everything?":
+          np.testing.assert_equal(tok,expected_tokens[start_pos-13])
+        else:
+          np.testing.assert_equal(tok,expected_tokens_b[start_pos-5])
       else:
         np.testing.assert_equal(tok,expected_tokens_med[start_pos-13])  
       toks.append(tok)
