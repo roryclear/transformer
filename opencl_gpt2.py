@@ -11,7 +11,7 @@ import opencl_kernels as openclk
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 opencl = True
-med = True
+med = False
 dim = 768
 if med == True:
   import opencl_kernels_med as openclk
@@ -34,9 +34,9 @@ def decode(index):
   return ret
 
 def scaled_dot_product_attention(x, key, value):
-  key = np.transpose(key,(0,1,3,2))
+  key = np.transpose(key,(0,2,1))
   #qk = np.matmul(x,key)[0] # kernel below
-  qk = openclk.matmul_t_3d(np.copy(x[0]),np.copy(key[0]))
+  qk = openclk.matmul_t_3d(np.copy(x),np.copy(key))
   qk = qk / math.sqrt(np.shape(x)[-1])
   for x in range(len(qk)):
     for y in range(len(qk[0])):
@@ -45,7 +45,7 @@ def scaled_dot_product_attention(x, key, value):
       qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
       qk[x][y] = qk[x][y] / qk[x][y].sum()
   #qk = np.matmul(qk,value)
-  qk = np.array([openclk.matmul_t_3d(np.copy(qk),np.copy(value[0]))])
+  qk = np.array([openclk.matmul_t_3d(np.copy(qk),np.copy(value))])
   return qk
 
 class Linear():
@@ -65,7 +65,6 @@ class Linear():
       #ret = np.matmul(x,self.weight) kernel below
       ret = openclk.matmul_t(x,self.weight)
       ret += self.bias
-    ret = [ret]
     return ret
   
 class LayerNorm:
@@ -165,13 +164,15 @@ class Attention:
       bsz, seqlen = 1,1
       # create kv cache
       if not hasattr(self, "cache_kv"):
-        self.cache_kv = np.zeros(shape=[2, 1, MAX_CONTEXT, self.n_heads, self.head_dim]).astype(np.float32)
+        exit() #todo never called?
+        self.cache_kv = np.zeros(shape=[2, MAX_CONTEXT, self.n_heads, self.head_dim]).astype(np.float32)
+      self.cache_kv = np.reshape(self.cache_kv,newshape=[2, MAX_CONTEXT, self.n_heads, self.head_dim]) #todo, resave file?
 
       keys = self.cache_kv[0]
       values = self.cache_kv[1]
       
-      keys[-1][start_pos] = xk
-      values[-1][start_pos] = xv
+      keys[start_pos] = xk
+      values[start_pos] = xv
 
       xq = xq.reshape(self.n_heads,1,self.head_dim)
       xk = xk.reshape(1,self.n_heads,self.head_dim)
@@ -201,25 +202,22 @@ class Attention:
     
     else:
       #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
-      xqkv = [openclk.matmul_t(x[0],self.c_attn.weight)]
+      xqkv = openclk.matmul_t(x,self.c_attn.weight)
       xqkv += self.c_attn.bias
-      xq = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim)).astype(np.float32)
-      for i in range(xq.shape[1]):
-        xq[0][i] = xqkv[0][i][0:self.dim]
-      xq = xq.reshape(1,xq.shape[1],self.n_heads,self.head_dim)
-      xk = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim)).astype(np.float32)
-      for i in range(xk.shape[1]):
-        xk[0][i] = xqkv[0][i][self.dim:2*self.dim]
-      xk = xk.reshape(1,xk.shape[1],self.n_heads,self.head_dim)
-      xv = np.zeros(shape=(1,np.shape(xqkv)[1],self.dim)).astype(np.float32)
+      xq = np.zeros(shape=(np.shape(xqkv)[0],self.dim)).astype(np.float32)
+      for i in range(xq.shape[0]):
+        xq[i] = xqkv[i][0:self.dim]
+      xq = xq.reshape(xq.shape[0],self.n_heads,self.head_dim)
+      xk = np.zeros(shape=(np.shape(xqkv)[0],self.dim)).astype(np.float32)
+      for i in range(xk.shape[0]):
+        xk[i] = xqkv[i][self.dim:2*self.dim]
+      xk = xk.reshape(1,xk.shape[0],self.n_heads,self.head_dim)
+      xv = np.zeros(shape=(1,np.shape(xqkv)[0],self.dim)).astype(np.float32)
       for i in range(xv.shape[1]):
-        xv[0][i] = xqkv[0][i][self.dim*2:3*self.dim]
+        xv[0][i] = xqkv[i][self.dim*2:3*self.dim]
       xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
-      bsz, seqlen, _, _ = xq.shape
-
-      # create kv cache
-      if not hasattr(self, "cache_kv"):
-        self.cache_kv = np.zeros(shape=[2, bsz, MAX_CONTEXT, self.n_heads, self.head_dim]).astype(np.float32)
+      bsz = 1
+      seqlen, _, _ = xq.shape
 
     keys = xk
     values = xv
@@ -231,12 +229,12 @@ class Attention:
       new_cache[0][0][i] = keys[0][i]
       new_cache[1][0][i] = values[0][i]       
     self.cache_kv = new_cache
-    xq = xq.transpose((0,2,1,3)) # same as (1,2) in tinygrad
+    xq = xq.transpose((1,0,2)) # same as (1,2) in tinygrad
     #can't numpy them outside this if!
     keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
     
-    xq = scaled_dot_product_attention(xq,keys,values)
-    xq = xq.transpose((0,2,1,3))
+    xq = scaled_dot_product_attention(xq,keys[0],values[0]) #todo
+    xq = xq.transpose((0,2,1,3)) #todo
     xq = xq.reshape(seqlen, self.dim)
 
     ret = self.c_proj(xq)
@@ -248,8 +246,7 @@ class FeedForward:
     self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
-    x = self.c_fc(x[0]) #todo
-    x = x[0] #todo
+    x = self.c_fc(x) #todo
     for i in range(np.shape(x)[0]):   
       # gelu() activation
       x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
@@ -296,12 +293,12 @@ class TransformerBlock:
   def __call__(self, x, start_pos):
     h = np.copy(x)
     ln1 = self.ln_1(x[0]) #todo
-    attn = self.attn([ln1],start_pos) #todo
+    attn = self.attn(ln1,start_pos) #todo
     h += attn
     h2 = np.copy(h)
     ln2 = self.ln_2(h2[0]) #todo
-    mlp = self.mlp([ln2]) #todo
-    ret = mlp + h
+    mlp = self.mlp(ln2) #todo
+    ret = [mlp] + h #todo
     return ret
     
 class Transformer:
@@ -369,13 +366,14 @@ class Transformer:
       h += attn
       h2 = np.copy(h)
       ln2 = self.h[0].ln_2(h2[0]) #todo
-      mlp = self.h[0].mlp([ln2]) #todo
+      mlp = self.h[0].mlp(ln2) #todo
       h = mlp + h  
 
       for i in range(1,len(self.h)):
         h = self.h[i](h, start_pos)
       h = self.ln_f(h[0]) #todo
-      logits = self.lm_head(h) #todo
+      logits = self.lm_head(h)
+      logits = [logits] #todo
     else:
       tok_emb = self.wte(tokens[0]) #rorys todo
       tok_emb = [tok_emb] #todo
@@ -389,7 +387,8 @@ class Transformer:
       for hi in self.h:
         h = hi(h, start_pos)
       h = self.ln_f(h[0]) #todo
-      logits = self.lm_head(h) #todo
+      logits = self.lm_head(h)
+      logits = [logits] #todo
     logits = [logits[0][-1]]
 
     if temperature < 1e-6:
