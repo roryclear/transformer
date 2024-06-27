@@ -308,22 +308,18 @@ class Transformer:
     if start_pos > 0:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
-        #inlined att
-        keys = self.h[i].attn.cache_kv[0]
-        values = self.h[i].attn.cache_kv[1]
-        keys = np.resize(keys,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        keys,values,h = openclk.kernel_2(h,self.h[i].ln_1.weight,\
+        self.h[i].attn.c_proj.weight = self.h[i].attn.c_proj.weight.flatten()
+        self.h[i].mlp.c_proj.weight = self.h[i].mlp.c_proj.weight.flatten()
+        self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten()
+      for i in range(len(self.h)):
+        h = openclk.kernel_2(h,self.h[i].ln_1.weight,\
         self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
-        self.h[i].attn.c_attn.bias,self.h[i].attn.dim,keys,values,start_pos,\
-        self.h[i].attn.c_proj.weight,self.h[i].attn.c_proj.bias,h,\
+        self.h[i].attn.c_attn.bias,self.h[i].attn.dim,\
+        self.h[i].attn.cache_kv[0],self.h[i].attn.cache_kv[1],start_pos,\
+        self.h[i].attn.c_proj.weight,self.h[i].attn.c_proj.bias,\
         self.h[i].ln_2.weight, self.h[i].ln_2.bias,\
         self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias,\
         self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
-
-        self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten() #todo why 
-        self.h[i].attn.cache_kv[0] = keys
-        self.h[i].attn.cache_kv[1] = values
         
       h = openclk.kernel_3(h,self.ln_f.weight, self.ln_f.bias)
       self.lm_head.weight = self.lm_head.weight.flatten()

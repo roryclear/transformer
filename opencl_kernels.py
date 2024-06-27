@@ -802,20 +802,18 @@ def matvec2_b(h,weight2): #pass bias in instead of adding to zero, todo for othe
     cl.enqueue_copy(queue, res, res_g)
     return res
 
-def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
+def kernel_2(h,c,d,e,f,g,keys,values,start_pos,weight,bias,\
     weight2,bias2,weight3,bias3,weight4,bias4): #g = size
     ls = 256
-    temp = np.zeros(12*(start_pos+1)).astype(np.float32)
+    zeros = np.zeros(np.shape(bias4)[0]).astype(np.float32)
+    zeros2 = np.zeros(12*(start_pos+1)).astype(np.float32)
     xq = f[0:g]
     xk = f[g:2*g]
     xv = f[2*g:]
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
-    h_temp = np.copy(h)
-    weight = weight.flatten()
-    weight4 = weight4.flatten()
-    bias4 = bias4.flatten()
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    bias4 = bias4.flatten() #todo why is this needed?
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
     e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
@@ -824,28 +822,28 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
     keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
     values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=values)
-    temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=temp)
     weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
     bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
-    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h_temp)
     weight2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
     bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias2)
     weight3_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight3)
     bias3_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias3)
     weight4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight4)
     bias4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias4)
-    values = values.flatten()
+    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
+    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
+    temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros2)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
         __global float *xq, __global const float *xk, __global const float *xv, __global float *keys,
-        __global float *values, __global float *temp3,
-        __global const float *weight,__global const float *bias, __global float *h, __global float *h_temp,
+        __global float *values,
+        __global const float *weight,__global const float *bias,
         __global const float *weight2, __global const float *bias2,
         __global const float *weight3, __global float *bias3,
         __global const float *weight4,
-        __global float *bias4)
+        __global float *bias4, __global float *h_temp, __global float *h,
+        __global float *temp3)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
@@ -937,7 +935,7 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
             for(int x = 0; x < {dim}; x++) {{
                 acc += xq[x] * weight[x*{dim} + lidx0*{seg} + i];
             }}
-            h[lidx0*{seg} + i] += acc + bias[lidx0*{seg} + i];
+            h[lidx0*{seg} + i] = a[lidx0*{seg} + i] + acc + bias[lidx0*{seg} + i];
             h_temp[lidx0*{seg} + i] = h[lidx0*{seg} + i];
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -983,18 +981,18 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
             for(int j = 0; j < {dim*4}; j++) {{
                 bias4[lidx0 + i*{ls}] += bias3[j] * weight4[lidx0 + i*{ls} + j*{dim}];
             }}
-            bias4[lidx0 + i*{ls}] += h_temp[lidx0 + i*{ls}];
+            a[lidx0 + i*{ls}] = bias4[lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
         }}
     }}
     """).build()
     knl = prg.mm
-    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,xq_g,xk_g,xv_g\
-    ,keys_g,values_g,temp_g,weight_g,bias_g,\
-    h_g,h_temp_g,weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g)
+    knl(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xq_g,xk_g,xv_g\
+    ,keys_g,values_g,weight_g,bias_g,\
+    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,h_g,h_temp_g,temp_g)
     cl.enqueue_copy(queue, keys, keys_g)
     cl.enqueue_copy(queue, values, values_g)
-    cl.enqueue_copy(queue, bias4, bias4_g)
-    return keys,values,bias4
+    cl.enqueue_copy(queue, h, a_g)
+    return h
 
 def minus_max_b(a):
     s = np.shape(a)[2] #todo remove dim
