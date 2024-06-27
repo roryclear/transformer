@@ -11,7 +11,7 @@ import opencl_kernels as openclk
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 opencl = True
-med = True
+med = False
 dim = 768
 if med == True:
   import opencl_kernels_med as openclk
@@ -70,9 +70,7 @@ class LayerNorm:
 
   def __call__(self, x):
     for i in range(len(x)):
-      mm = openclk.minus_mean_multi(np.copy(x[i]))
-      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-      x[i] = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
+      x[i] = openclk.kernel_0(np.copy(x[i]),self.weight, self.bias)
     return x
 
 def encode(x):
@@ -145,7 +143,6 @@ class Attention:
       xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
       xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
       xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
-      seqlen = len(xq)
 
       keys = xk
       values = xv
@@ -157,7 +154,10 @@ class Attention:
         new_cache[0][i] = keys[i]
         new_cache[1][i] = values[i]       
       self.cache_kv = new_cache
-      xq = scaled_dot_product_attention_b(xq[-1],keys[-1],values[-1]) #todo x3
+      xq = xq[-1] #todo
+      keys = keys[-1] #todo
+      values = values[-1] #todo
+      xq = scaled_dot_product_attention_b(xq,keys,values)
       #ret = np.matmul(x,self.weight) kernel below
       ret = openclk.matmul_t_c(xq,self.c_proj.weight)
       ret += self.c_proj.bias
@@ -307,24 +307,17 @@ class Transformer:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
         x = h
-        #x = x[0][0] #todo
-        mm = openclk.minus_mean_multi(np.copy(x))
-        mm2 = openclk.sq_mean_sqrt_b(np.copy(mm))
-        ln1 = openclk.divide(np.copy(mm), mm2, self.h[i].ln_1.weight, self.h[i].ln_1.bias)
+        ln1 = openclk.kernel_0(np.copy(x),self.h[i].ln_1.weight, self.h[i].ln_1.bias)
         #ln1 = self.h[i].ln_1(x) above kernels
         attn = self.h[i].attn(ln1,start_pos)
         h = x + attn
-        mm = openclk.minus_mean_multi(np.copy(h))
-        mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-        x = openclk.divide(np.copy(mm), mm2, self.h[i].ln_2.weight, self.h[i].ln_2.bias)
+        x = openclk.kernel_0(np.copy(h),self.h[i].ln_2.weight, self.h[i].ln_2.bias)
         x = openclk.matvec2(x,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias)
         x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
         x = openclk.matvec2(x,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
         h += x
 
-      mm = openclk.minus_mean_multi(np.copy(h))
-      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-      h = openclk.divide(np.copy(mm), mm2, self.ln_f.weight, self.ln_f.bias)
+      h = openclk.kernel_0(np.copy(h),self.ln_f.weight, self.ln_f.bias)
       logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
     else:
       tok_emb = self.wte(tokens) #rorys todo
@@ -335,17 +328,13 @@ class Transformer:
       for i in range(len(self.h)-1):
         h = np.copy(x) #todo
         for j in range(len(x)): #todo, kernel instead of loop
-          mm = openclk.minus_mean_multi(np.copy(x[j]))
-          mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-          x[j] = openclk.divide(np.copy(mm), mm2, self.h[i].ln_1.weight, self.h[i].ln_1.bias)
+          x[j] = openclk.kernel_0(np.copy(x[j]),self.h[i].ln_1.weight, self.h[i].ln_1.bias)
         attn = self.h[i].attn(x,start_pos)
         h += attn
         x = np.copy(h)
 
         for j in range(len(x)):
-          mm = openclk.minus_mean_multi(np.copy(x[j]))
-          mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-          x[j] = openclk.divide(np.copy(mm), mm2, self.h[i].ln_2.weight, self.h[i].ln_2.bias)
+          x[j] = openclk.kernel_0(np.copy(x[j]),self.h[i].ln_2.weight, self.h[i].ln_2.bias)
 
         x = openclk.matmul_t(x,self.h[i].mlp.c_fc.weight)
         x += self.h[i].mlp.c_fc.bias
@@ -355,22 +344,15 @@ class Transformer:
         x += self.h[i].mlp.c_proj.bias
         x += h
         ############
-      h = np.copy(x) #todo
+      h = np.copy(x[-1]) #todo
       for j in range(len(x)): #todo, kernel instead of loop
-        mm = openclk.minus_mean_multi(np.copy(x[j]))
-        mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-        x[j] = openclk.divide(np.copy(mm), mm2, self.h[-1].ln_1.weight, self.h[-1].ln_1.bias)
-      attn = self.h[-1].attn(x,start_pos,od_out=True)
-
-      h = h[-1]
+        x[j] = openclk.kernel_0(np.copy(x[j]),self.h[-1].ln_1.weight, self.h[-1].ln_1.bias)
+      attn = self.h[-1].attn(x,start_pos,od_out=True)   
       attn = attn[-1]
       h += attn
       x = np.copy(h)
 
-      print("rory attn shape =",np.shape(attn),"vs",np.shape(x))
-      mm = openclk.minus_mean_multi(np.copy(x))
-      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-      x = openclk.divide(np.copy(mm), mm2, self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
+      x = openclk.kernel_0(np.copy(x),self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
 
       x = openclk.matmul_t_c(x,self.h[-1].mlp.c_fc.weight)
 
@@ -381,9 +363,7 @@ class Transformer:
       x += self.h[-1].mlp.c_proj.bias
       x += h
 
-      mm = openclk.minus_mean_multi(np.copy(x)) #todo
-      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-      x = openclk.divide(np.copy(mm), mm2, self.ln_f.weight, self.ln_f.bias)
+      x = openclk.kernel_0(np.copy(x),self.ln_f.weight, self.ln_f.bias)
 
       logits = openclk.matmul_t_c(x,self.lm_head.weight)
 
