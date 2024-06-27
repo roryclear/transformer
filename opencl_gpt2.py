@@ -11,7 +11,7 @@ import opencl_kernels as openclk
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 opencl = True
-med = False
+med = True
 dim = 768
 if med == True:
   import opencl_kernels_med as openclk
@@ -320,10 +320,11 @@ class Transformer:
         values[start_pos] = xv
         keys = np.resize(keys,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
         values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        h = openclk.kernel_3(xq,keys,values,self.h[i].attn.c_proj.weight,\
-        self.h[i].attn.c_proj.bias,h)
+        h,h_temp = openclk.kernel_3(xq,keys,values,self.h[i].attn.c_proj.weight,\
+        self.h[i].attn.c_proj.bias,h,\
+        self.h[i].ln_2.weight, self.h[i].ln_2.bias)
 
-        h = openclk.kernel_1(h,self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias\
+        h = openclk.kernel_1(h,h_temp,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias\
         ,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
         
       h = openclk.kernel_0(h,self.ln_f.weight, self.ln_f.bias)

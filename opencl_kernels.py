@@ -628,40 +628,25 @@ def kernel_0(a,c,d):
     cl.enqueue_copy(queue, a, a_g)
     return a
 
-def kernel_1(a,c,d,e,f,g,h):
-    rows = 768
-    cols = 3072
-    size = np.shape(a)[0]
+def kernel_1b(h_in,c,d,f):
+    size = np.shape(h_in)[0]
     ls = 256
-    seg = int(size / ls)
-    f = f.flatten()
-    f = np.float32(f)
-    g_rows = np.shape(g)[0]
-    g_cols = np.shape(g)[1]
-    g = g.flatten()
-    g = np.float32(g)
-    h = h.flatten()
-    h = np.float32(h)
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    seg5 = int(size / ls)
+    h_in_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h_in)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
-    e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
     f_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
-    g_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=g)
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
-    l_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.copy(a))
     prg = cl.Program(ctx, f"""
     __kernel void knl(
-        __global float *a, __global const float *c, __global const float *d,
-        __global const float *e, __global float *f, __global const float *g,
-        __global float *h, __global const float *l)
+        __global float *h_in, __global const float *c, __global const float *d,
+        __global float *f)
     {{
-        __attribute__ ((aligned (16))) __local float temp[{seg}];
+        __attribute__ ((aligned (16))) __local float temp[{seg5}];
         __attribute__ ((aligned (16))) __local float mean;
         int lidx0 = get_local_id(0);
         float total = 0;
-        for(int i = 0; i < {seg}; i++) {{
-            total += a[lidx0*{seg} + i];
+        for(int i = 0; i < {seg5}; i++) {{
+            total += h_in[lidx0*{seg5} + i];
         }}
         temp[lidx0] = total;
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -673,13 +658,13 @@ def kernel_1(a,c,d,e,f,g,h):
             mean = total / {size};  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {seg}; i++) {{
-            a[i + lidx0*{seg}] -= mean;
+        for(int i = 0; i < {seg5}; i++) {{
+            h_in[i + lidx0*{seg5}] -= mean;
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         total = 0;
-        for(int i = 0; i < {seg}; i++) {{
-            total += pow(a[lidx0*{seg} + i],2);
+        for(int i = 0; i < {seg5}; i++) {{
+            total += pow(h_in[lidx0*{seg5} + i],2);
         }}
         temp[lidx0] = total;
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -691,38 +676,123 @@ def kernel_1(a,c,d,e,f,g,h):
             mean = pow(total / {size} + 1e-5,0.5);
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {seg}; i++) {{
-            a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * c[i + lidx0*{seg}]) / mean + d[i + lidx0*{seg}];
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);    
-        for(int i = 0; i < {int(cols / ls)}; i++) {{
-            for(int j = 0; j < {rows}; j++) {{
-                f[i + lidx0*{int(cols / ls)}] += a[j] * e[(i + lidx0*{int(cols / ls)})*{rows} + j];
-            }}
-        }} 
-        barrier(CLK_LOCAL_MEM_FENCE);  
-        for(int i = 0; i < {int(cols / ls)}; i++) {{
-            f[i + lidx0*{int(cols / ls)}] = 0.5 * f[i + lidx0*{int(cols / ls)}]\
-            * (1 + tanh(f[i + lidx0*{int(cols / ls)}] * 0.7978845608\
-            * (1 + 0.044715 * pow(f[i + lidx0*{int(cols / ls)}],2))));
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);  //TODO this is probably slower than it should be
-        for(int i = 0; i < {int(np.shape(h)[0] / ls)}; i++) {{
-            for(int j = 0; j < {g_rows}; j++) {{
-                h[lidx0 + i*{ls}] += f[j] * g[lidx0 + i*{ls} + j*{g_cols}];
-            }}
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {int(np.shape(h)[0] / ls)}; i++) {{
-            h[i + lidx0*{int(np.shape(h)[0] / ls)}] += l[i + lidx0*{int(np.shape(h)[0] / ls)}];
+        for(int i = 0; i < {seg5}; i++) {{
+            h_in[i + lidx0*{seg5}] = (h_in[i + lidx0*{seg5}] * c[i + lidx0*{seg5}]) / mean + d[i + lidx0*{seg5}];
         }}
     }}
     """).build()
     knl = prg.knl
-    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g,\
-    g_g,h_g,l_g)
-    cl.enqueue_copy(queue, h, h_g)
-    return h
+    knl(queue, (ls,1), (ls,1), h_in_g, c_g, d_g,f_g)
+    cl.enqueue_copy(queue, h_in, h_in_g)
+    return h_in
+
+def kernel_1b(h_in,c,d,f):
+    size = np.shape(h_in)[0]
+    ls = 256
+    seg5 = int(size / ls)
+    h_in_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h_in)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
+    f_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
+    prg = cl.Program(ctx, f"""
+    __kernel void knl(
+        __global float *h_in, __global const float *c, __global const float *d,
+        __global float *f)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{seg5}];
+        __attribute__ ((aligned (16))) __local float mean;
+        int lidx0 = get_local_id(0);
+        float total = 0;
+        for(int i = 0; i < {seg5}; i++) {{
+            total += h_in[lidx0*{seg5} + i];
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = total / {size};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg5}; i++) {{
+            h_in[i + lidx0*{seg5}] -= mean;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        total = 0;
+        for(int i = 0; i < {seg5}; i++) {{
+            total += pow(h_in[lidx0*{seg5} + i],2);
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = pow(total / {size} + 1e-5,0.5);
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg5}; i++) {{
+            h_in[i + lidx0*{seg5}] = (h_in[i + lidx0*{seg5}] * c[i + lidx0*{seg5}]) / mean + d[i + lidx0*{seg5}];
+        }}
+    }}
+    """).build()
+    knl = prg.knl
+    knl(queue, (ls,1), (ls,1), h_in_g, c_g, d_g,f_g)
+    cl.enqueue_copy(queue, h_in, h_in_g)
+    return h_in
+
+def kernel_1(h_in,h_temp,e,f,g,h_out):
+    f_len = np.shape(f)[0]
+    e_rows = np.shape(e)[0] #f also same
+    e_cols = np.shape(e)[1]
+    size = np.shape(h_in)[0]
+    ls = 256
+    seg = int(size / ls)
+    g_rows = np.shape(g)[0]
+    g_cols = np.shape(g)[1]
+    g = g.flatten()
+    h_out = h_out.flatten()
+    h_in_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h_in)
+    e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
+    f_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
+    g_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=g)
+    h_out_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h_out)
+    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.copy(h_temp))
+    prg = cl.Program(ctx, f"""
+    __kernel void knl(
+        __global float *h_in,
+        __global const float *e, __global float *f, __global const float *g,
+        __global float *h_out, __global const float *h_temp)
+    {{
+        int lidx0 = get_local_id(0);
+        for(int i = 0; i < {int(e_cols / ls)}; i++) {{
+            for(int j = 0; j < {e_rows}; j++) {{
+                f[i + lidx0*{int(f_len / ls)}] += h_in[j] * e[(i + lidx0*{int(e_cols / ls)})*{e_rows} + j];
+            }}
+        }} 
+        barrier(CLK_LOCAL_MEM_FENCE);  
+        for(int i = 0; i < {int(e_cols / ls)}; i++) {{
+            f[i + lidx0*{int(f_len / ls)}] = 0.5 * f[i + lidx0*{int(f_len / ls)}]\
+            * (1 + tanh(f[i + lidx0*{int(f_len / ls)}] * 0.7978845608\
+            * (1 + 0.044715 * pow(f[i + lidx0*{int(f_len / ls)}],2))));
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);  //TODO this is probably slower than it should be
+        for(int i = 0; i < {int(np.shape(h_out)[0] / ls)}; i++) {{
+            for(int j = 0; j < {g_rows}; j++) {{
+                h_out[lidx0 + i*{ls}] += f[j] * g[lidx0 + i*{ls} + j*{g_cols}];
+            }}
+            h_out[lidx0 + i*{ls}] += h_temp[lidx0 + i*{ls}];
+        }}
+    }}
+    """).build()
+    knl = prg.knl
+    knl(queue, (ls,1), (ls,1), h_in_g, e_g,f_g,\
+    g_g,h_out_g,h_temp_g)
+    cl.enqueue_copy(queue, h_out, h_out_g)
+    return h_out
 
 def matvec_b(a,b,c):
     ls = 256
@@ -866,7 +936,7 @@ def kernel_2(a,c,d,e,f,g,keys,start_pos): #g = size
     cl.enqueue_copy(queue, keys, keys_g)
     return xq,xv,keys
 
-def kernel_3(xq,keys,values,weight,bias,h):
+def kernel_3(xq,keys,values,weight,bias,h,c,d):
     s = np.shape(keys)[0]
     s2 = np.shape(keys)[0]
     keyst = np.zeros_like(keys).astype(np.float32)
@@ -875,7 +945,8 @@ def kernel_3(xq,keys,values,weight,bias,h):
     keys = keys.flatten() #todo, shouldnt be needed
     values = values.flatten()
     weight = weight.flatten()
-    keys_len = np.shape(keys)[0]    
+    keys_len = np.shape(keys)[0]
+    h_temp = np.copy(h)
     xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
     keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
     keyst_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keyst)
@@ -885,18 +956,29 @@ def kernel_3(xq,keys,values,weight,bias,h):
     weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
     bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
+    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h_temp)
     seg2 = math.ceil((np.shape(values)[0] / 64) / 256)
     ls = 256
     seg = int((12*64) / ls)
     seg3 = math.ceil(12*s*s / ls)
     s4 = np.shape(bias)[0]
     seg4 = int(s4 / ls)
+
+    size = np.shape(h)[0]
+    ls = 256
+    seg5 = int(size / ls)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
+
     prg = cl.Program(ctx, f"""
     __kernel void k(
         __global float *xq, __global const float *keys, __global float *keyst, __global const float *values,
-        __global float *valuest, __global float *temp, __global const float *weight,
-        __global const float *bias, __global float *h)
+        __global float *valuest, __global float *temp3, __global const float *weight,
+        __global const float *bias, __global float *h, __global float *h_temp,
+        __global const float *c, __global const float *d)
     {{
+    __attribute__ ((aligned (16))) __local float temp[{seg5}];
+    __attribute__ ((aligned (16))) __local float mean;
     int lidx0 = get_local_id(0);              
     for(int i = 0; i < {seg2}; i++) {{
             if((lidx0*{seg2} + i) < {12*s*s}) {{
@@ -917,28 +999,28 @@ def kernel_3(xq,keys,values,weight,bias,h):
         for(int i = 0; i < 64; i++) {{
             acc0 += xq[i + 64*k] * keyst[x+i*{s} + {s}*64*k];
         }}                  
-        temp[x + k*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
+        temp3[x + k*{s}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
     if(lidx0 < 12){{
     float m = -INFINITY;
     for(int i = 0; i < {s}; i++) {{
-        float val = temp[i + lidx0*{s}];
+        float val = temp3[i + lidx0*{s}];
         m = max(m,val);
     }}
     for(int i = 0; i < {s}; i++) {{
-        temp[i + lidx0*{s}] = exp(temp[i + lidx0*{s}] - m);
+        temp3[i + lidx0*{s}] = exp(temp3[i + lidx0*{s}] - m);
     }}
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
     if(lidx0 < 12) {{
     float t = 0;
     for(int i = 0; i < {s}; i++) {{
-        float val = temp[i + lidx0*{s}];
+        float val = temp3[i + lidx0*{s}];
         t = t+val;
     }}
     for(int i = 0; i < {s}; i++) {{
-        temp[i + lidx0*{s}] = temp[i + lidx0*{s}] / t;
+        temp3[i + lidx0*{s}] = temp3[i + lidx0*{s}] / t;
     }}
     }}
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -957,7 +1039,7 @@ def kernel_3(xq,keys,values,weight,bias,h):
         int x = (g + lidx0*{seg}) % 64;
         float acc0 = 0;
         for(int i = 0; i < {s}; i++) {{
-            acc0 += temp[i + {s}*y] * valuest[i*64 + x + y*{s}*64];
+            acc0 += temp3[i + {s}*y] * valuest[i*64 + x + y*{s}*64];
         }}
         xq[x + y*64] = acc0;
     }}
@@ -968,14 +1050,52 @@ def kernel_3(xq,keys,values,weight,bias,h):
             acc += xq[x] * weight[x*{s4} + lidx0*{seg4} + i];
         }}
         h[lidx0*{seg4} + i] += acc + bias[lidx0*{seg4} + i];
+        h_temp[lidx0*{seg4} + i] = h[lidx0*{seg4} + i];
+    }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+    float total = 0;
+    for(int i = 0; i < {seg5}; i++) {{
+        total += h[lidx0*{seg5} + i];
+    }}
+    temp[lidx0] = total;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    if(lidx0==0) {{
+        total = 0;
+        for(int i = 0; i < {ls}; i++) {{
+            total += temp[i];
+        }}
+        mean = total / {size};  
+    }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for(int i = 0; i < {seg5}; i++) {{
+        h[i + lidx0*{seg5}] -= mean;
+    }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+    total = 0;
+    for(int i = 0; i < {seg5}; i++) {{
+        total += pow(h[lidx0*{seg5} + i],2);
+    }}
+    temp[lidx0] = total;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    if(lidx0==0) {{
+        total = 0;
+        for(int i = 0; i < {ls}; i++) {{
+            total += temp[i];
+        }}
+        mean = pow(total / {size} + 1e-5,0.5);
+    }}
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for(int i = 0; i < {seg5}; i++) {{
+        h[i + lidx0*{seg5}] = (h[i + lidx0*{seg5}] * c[i + lidx0*{seg5}]) / mean + d[i + lidx0*{seg5}];
     }}
     }}
     """).build()
     knl = prg.k
     knl(queue, (ls,1), (ls,1), xq_g, keys_g, keyst_g, values_g, valuest_g, temp_g,\
-    weight_g, bias_g,h_g)
+    weight_g, bias_g,h_g,h_temp_g,c_g,d_g)
     cl.enqueue_copy(queue, h, h_g)
-    return h
+    cl.enqueue_copy(queue, h_temp, h_temp_g)
+    return h,h_temp
 
 def minus_max_b(a):
     s = np.shape(a)[2] #todo remove dim
