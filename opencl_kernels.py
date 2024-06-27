@@ -284,10 +284,81 @@ def matvec2(a,b,c): #pass bias in instead of adding to zero, todo for other kern
     return c
 
 def matmul_t(a,b):
-    return np.matmul(a,b)
+    a_rows = np.shape(a)[0]
+    b_cols = np.shape(b)[1]
+    b_rows = np.shape(b)[0]
+    c = np.zeros([a_rows,b_cols])
+    ####TRANSPOSED, this replicates it for a test. todo: fix 
+    '''
+    b2 = np.copy(b)
+    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
+    print("SHAPE =",np.shape(b)) 
+    for j in range(np.shape(b)[0]):
+        for i in range(np.shape(b)[1]):
+            b[j][i] = np.copy(b2[i][j])
+    '''
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int x = get_global_id(0);
+        if(x < {b_cols}) {{
+            for(int y = 0; y < {a_rows}; y++) {{
+                float total = 0;
+                for(int k = 0; k < {b_rows}; k++) {{
+                    total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
+                }}
+                res[y*{b_cols} + x] = total;
+            }}  
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    group_size = math.ceil(b_cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
 
 def matmul_t_3d(a,b):
-    return np.matmul(a,b)
+    a_rows = np.shape(a)[1]
+    a_cols = np.shape(a)[2]
+    b_cols = np.shape(b)[2]
+    b_rows = np.shape(b)[1]
+    c = np.zeros([np.shape(a)[0],a_rows,b_cols])
+    
+    a = a.flatten()
+    b = b.flatten()
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int x = get_global_id(0);
+        for(int z = 0; z < {np.shape(a)[0]}; z++) {{
+            if(x < {b_cols}) {{
+                for(int y = 0; y < {a_rows}; y++) {{
+                    float total = 0;
+                    for(int k = 0; k < {b_rows}; k++) {{
+                        total += a[y*{b_rows} + k + z*{a_rows}*{a_cols}] * b[x + k*{b_cols} + z*{b_rows}*{b_cols}]; 
+                    }}
+                    res[y*{b_cols} + x + z*{b_cols}*{a_rows}] = total;
+                }}  
+            }}
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    group_size = math.ceil(b_cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
 
 def matmulcr(a,b): #column-row weight (b) #column-row weight (b) #todo different from main, row-column order or opposite
     cols = np.shape(b)[0]
@@ -379,4 +450,64 @@ def sq_mean_sqrt_b(a):
     return a
 
 def matmul_t_b(a,b):
-    return np.matmul(a,b)
+    b_cols = np.shape(b)[1]
+    b_rows = np.shape(b)[0]
+    c = np.zeros([b_cols])
+    ####TRANSPOSED, this replicates it for a test. todo: fix 
+    '''
+    b2 = np.copy(b)
+    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
+    print("SHAPE =",np.shape(b)) 
+    for j in range(np.shape(b)[0]):
+        for i in range(np.shape(b)[1]):
+            b[j][i] = np.copy(b2[i][j])
+    '''
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int x = get_global_id(0);
+        if(x < {b_cols}) {{
+            float total = 0;
+            for(int k = 0; k < {b_rows}; k++) {{
+                total += a[k] * b[x*{b_rows} + k]; 
+            }}
+            res[x] = total; 
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    group_size = math.ceil(b_cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def test_equal(a,b):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    a = a.flatten()
+    b = b.flatten()
+    if type(a[0]) != type(b[0]):
+        exit()
+    x = np.shape(a)[0]
+    c = np.zeros(x).astype(np.float32)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void equal(
+        __global const float *a, __global const float *b, __global float *c)
+    {{
+        for(int i = 0; i < {x}; i++) {{
+            c[i] = a[i] - b[i];
+        }}
+    }}
+    """).build()
+
+    knl = prg.equal
+    knl(queue, (1,1), (1,1), a_g, b_g, c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    np.testing.assert_allclose(c,np.zeros(x).astype(np.float32))
+    return

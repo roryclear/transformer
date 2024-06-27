@@ -11,7 +11,7 @@ import opencl_kernels as openclk
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 opencl = True
-med = True
+med = False
 dim = 768
 if med == True:
   import opencl_kernels_med as openclk
@@ -368,8 +368,6 @@ class GPT2:
     self.model = model
 
   def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):
-    self.model.convert()
-
     expected_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
     893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
     1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
@@ -510,6 +508,14 @@ if __name__ == "__main__":
   if med:
     filehandler = open("weights_med.pickle", 'rb')  
     gpt2_med = pickle.load(filehandler)
+    gpt2_med.model.convert()
+
+    for i in range(24):
+      gpt2_med.model.h[i].attn.c_attn.weight = np.asfortranarray(gpt2_med.model.h[i].attn.c_attn.weight)
+      gpt2_med.model.h[i].attn.c_proj.weight = np.asfortranarray(gpt2_med.model.h[i].attn.c_proj.weight)
+      gpt2_med.model.h[i].mlp.c_fc.weight = np.asfortranarray(gpt2_med.model.h[i].mlp.c_fc.weight)
+      gpt2_med.model.h[i].mlp.c_proj.weight = np.asfortranarray(gpt2_med.model.h[i].mlp.c_proj.weight)
+
     text = gpt2_med.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
     print('Generating text...')
     print((f"Response:", "green"), text)
@@ -524,6 +530,17 @@ if __name__ == "__main__":
   if med == False:
     filehandler = open("weights_128.pickle", 'rb')  
     gpt2 = pickle.load(filehandler)
+    gpt2.model.convert()
+    filehandler = open("weights.pickle", 'rb')  
+    gpt2_og = pickle.load(filehandler)
+
+
+    for i in range(12):
+      gpt2.model.h[i].attn.c_attn.weight = np.asfortranarray(gpt2.model.h[i].attn.c_attn.weight)
+      gpt2.model.h[i].attn.c_proj.weight = np.asfortranarray(gpt2.model.h[i].attn.c_proj.weight)
+      gpt2.model.h[i].mlp.c_fc.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_fc.weight)
+      gpt2.model.h[i].mlp.c_proj.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_proj.weight)
+
     text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
     print((f"Response:", "green"), text)
     assert text == ("What is the answer to life, the universe, and everything?"
