@@ -35,7 +35,7 @@ def decode(index):
 
 def scaled_dot_product_attention(x, key, value):
   key = np.transpose(key,(0,2,1))
-  qk = openclk.matmul_t_3d(np.copy(x),np.copy(key))
+  qk = openclk.matmul_t_3d(x,key)
   qk = qk / math.sqrt(np.shape(x)[-1])
   for x in range(len(qk)):
     for y in range(len(qk[0])):
@@ -43,13 +43,13 @@ def scaled_dot_product_attention(x, key, value):
         if z > y: qk[x][y][z] -= np.inf
       qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
       qk[x][y] = qk[x][y] / qk[x][y].sum()
-  qk = np.array(openclk.matmul_t_3d(np.copy(qk),np.copy(value)))
+  qk = np.array(openclk.matmul_t_3d(qk,value))
   return qk
 
 def scaled_dot_product_attention_b(x, key, value):
-  qk = openclk.matvec4(np.copy(x),np.copy(key))
+  qk = openclk.matvec4(x,key)
   qk = qk / math.sqrt(np.shape(x)[-1])
-  qk = np.array(openclk.matmul_t(np.copy(qk),np.copy(value)))
+  qk = np.array(openclk.matmul_t(qk,value))
   return qk
 
 class Linear():
@@ -70,6 +70,7 @@ class LayerNorm:
 
   def __call__(self, x):
     for i in range(len(x)):
+      exit()
       x[i] = openclk.kernel_0(np.copy(x[i]),self.weight, self.bias)
     return x
 
@@ -311,26 +312,21 @@ class Transformer:
         keys = self.h[i].attn.cache_kv[0]
         values = self.h[i].attn.cache_kv[1]
         keys = np.resize(keys,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        xq,xv,keys = openclk.kernel_2(np.copy(h),self.h[i].ln_1.weight,\
+        xq,xv,keys = openclk.kernel_2(h,self.h[i].ln_1.weight,\
         self.h[i].ln_1.bias,self.h[i].attn.c_attn.weight,\
-        np.copy(self.h[i].attn.c_attn.bias),self.h[i].attn.dim,np.copy(keys),start_pos)
+        np.copy(self.h[i].attn.c_attn.bias),self.h[i].attn.dim,keys,start_pos)
         self.h[i].attn.cache_kv[0] = keys
         xv = xv.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         values[start_pos] = xv
         keys = np.resize(keys,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
         values = np.resize(values,((start_pos+1),self.h[i].attn.n_heads,self.h[i].attn.head_dim))
-        values[start_pos] = xv
-        keys = keys.transpose(1,2,0) #todo, can we not do this?
-        xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
-        xq = openclk.minus_max(xq,(start_pos+1))
-        values = values.transpose(1,0,2)
-        xq = openclk.matmul3(xq,values,(start_pos+1))
-        attn = openclk.matvec_b(xq,self.h[i].attn.c_proj.weight,np.copy(self.h[i].attn.c_proj.bias))
-        h += attn
-        #inlined attn
-        h = openclk.kernel_1(h,self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,np.copy(self.h[i].mlp.c_fc.bias)\
-        ,self.h[i].mlp.c_proj.weight,np.copy(self.h[i].mlp.c_proj.bias))
-      h = openclk.kernel_0(np.copy(h),self.ln_f.weight, self.ln_f.bias)
+        h = openclk.kernel_3(xq,keys,values,self.h[i].attn.c_proj.weight,\
+        self.h[i].attn.c_proj.bias,h)
+
+        h = openclk.kernel_1(h,self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias\
+        ,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
+        
+      h = openclk.kernel_0(h,self.ln_f.weight, self.ln_f.bias)
       logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
     else:
       tok_emb = self.wte(tokens) #rorys todo
@@ -341,13 +337,13 @@ class Transformer:
       for i in range(len(self.h)-1):
         h = np.copy(x) #todo
         for j in range(len(x)): #todo, kernel instead of loop
-          x[j] = openclk.kernel_0(np.copy(x[j]),self.h[i].ln_1.weight, self.h[i].ln_1.bias)
+          x[j] = openclk.kernel_0(x[j],self.h[i].ln_1.weight, self.h[i].ln_1.bias)
         attn = self.h[i].attn(x,start_pos)
         h += attn
         x = np.copy(h)
 
         for j in range(len(x)):
-          x[j] = openclk.kernel_0(np.copy(x[j]),self.h[i].ln_2.weight, self.h[i].ln_2.bias)
+          x[j] = openclk.kernel_0(x[j],self.h[i].ln_2.weight, self.h[i].ln_2.bias)
 
         x = openclk.matmul_t(x,self.h[i].mlp.c_fc.weight)
         x += self.h[i].mlp.c_fc.bias
@@ -359,13 +355,13 @@ class Transformer:
         ############
       h = np.copy(x[-1]) #todo
       for j in range(len(x)): #todo, kernel instead of loop
-        x[j] = openclk.kernel_0(np.copy(x[j]),self.h[-1].ln_1.weight, self.h[-1].ln_1.bias)
+        x[j] = openclk.kernel_0(x[j],self.h[-1].ln_1.weight, self.h[-1].ln_1.bias)
       attn = self.h[-1].attn(x,start_pos,od_out=True)   
       attn = attn[-1]
       h += attn
       x = np.copy(h)
 
-      x = openclk.kernel_0(np.copy(x),self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
+      x = openclk.kernel_0(x,self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
 
       x = openclk.matmul_t_c(x,self.h[-1].mlp.c_fc.weight)
 
@@ -376,7 +372,7 @@ class Transformer:
       x += self.h[-1].mlp.c_proj.bias
       x += h
 
-      x = openclk.kernel_0(np.copy(x),self.ln_f.weight, self.ln_f.bias)
+      x = openclk.kernel_0(x,self.ln_f.weight, self.ln_f.bias)
 
       logits = openclk.matmul_t_c(x,self.lm_head.weight)
 
