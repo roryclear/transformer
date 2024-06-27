@@ -11,7 +11,7 @@ import opencl_kernels as openclk
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 opencl = True
-med = False
+med = True
 dim = 768
 if med == True:
   import opencl_kernels_med as openclk
@@ -279,11 +279,10 @@ class Embedding_2: #todo crutch
     self.vocab_size, self.embed_size = vocab_size, embed_size
 
   def __call__(self, idx):
-    ret = np.empty((len(idx[0]),self.embed_size)).astype(np.float32)
+    ret = np.empty((len(idx),self.embed_size)).astype(np.float32)
     for i in range(len(ret)):
       for j in range(len(ret[0])):
-        ret[i][j] = self.weight[idx[0][i]][j]
-    ret = [ret]
+        ret[i][j] = self.weight[idx[i]][j]
     return ret
 
 
@@ -355,8 +354,6 @@ class Transformer:
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
     seqlen = tokens.shape[1]
-    
-    tok_emb = self.wte(tokens) #rorys todo
 
     if start_pos > 0 and opencl:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0])
@@ -380,7 +377,8 @@ class Transformer:
       h = self.ln_f(h[0]) #todo
       logits = self.lm_head(h) #todo
     else:
-      tok_emb = self.wte(tokens) #rorys todo
+      tok_emb = self.wte(tokens[0]) #rorys todo
+      tok_emb = [tok_emb] #todo
       s = list(np.shape(self.allpos))
       s[1] = seqlen
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,dim))
