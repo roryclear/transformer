@@ -451,39 +451,29 @@ def sq_mean_sqrt(a):
     return a[0]
 
 def matmul_t_b(a,b):
-    b_cols = np.shape(b)[1]
-    b_rows = np.shape(b)[0]
-    c = np.zeros([b_cols])
-    ####TRANSPOSED, this replicates it for a test. todo: fix 
-    '''
-    b2 = np.copy(b)
-    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
-    print("SHAPE =",np.shape(b)) 
-    for j in range(np.shape(b)[0]):
-        for i in range(np.shape(b)[1]):
-            b[j][i] = np.copy(b2[i][j])
-    '''
+    ls = 256
+    seg = int(np.shape(b)[1] / ls)
+    rows = np.shape(b)[0]
+    c = np.zeros([np.shape(b)[1]]).astype(np.float32)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
         __global const float *a, __global const float *b, __global float *res)
     {{
-        int x = get_global_id(0);
-        if(x < {b_cols}) {{
+        int lidx0 = get_local_id(0);
+        for(int i = 0; i < {seg}; i++) {{
             float total = 0;
-            for(int k = 0; k < {b_rows}; k++) {{
-                total += a[k] * b[x*{b_rows} + k]; 
+            for(int k = 0; k < {rows}; k++) {{
+                total += a[k] * b[(lidx0*{seg} + i)*{rows} + k]; 
             }}
-            res[x] = total; 
+        res[lidx0*{seg} + i] = total;
         }}
     }}
     """).build()
     knl = prg.matmul
-    group_size = math.ceil(b_cols / 16) * 16
-    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    knl(queue, (256,1), (256,1), a_g, b_g,c_g) #todo, this is arbitrary
     cl.enqueue_copy(queue, c, c_g)
     return c
 
@@ -791,3 +781,87 @@ def matvec2_b(a,b,c): #pass bias in instead of adding to zero, todo for other ke
     knl(queue, (256,1), (256,1), a_g, b_g,c_g)
     cl.enqueue_copy(queue, c, c_g)
     return c
+
+def kernel_2(a,c,d,e,f,g,keys,start_pos): #g = size
+    size = np.shape(a)[0]
+    ls = 256
+    seg_e = int(np.shape(e)[1] / ls)
+    rows_e = np.shape(e)[0]
+    xq = f[0:g]
+    xk = f[g:2*g]
+    xv = f[2*g:]
+    seg = int(size / ls) #todo
+    keys_shape = np.shape(keys)[1] * np.shape(keys)[2]
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
+    e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
+    f_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
+    xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
+    xk_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xk)
+    xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
+    keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
+    prg = cl.Program(ctx, f"""
+    __kernel void mm(
+        __global float *a, __global const float *c, __global const float *d, __global const float *e,
+        __global const float *f, __global float *xq, __global float *xk, __global float *xv, __global float *keys)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{seg}];
+        __attribute__ ((aligned (16))) __local float mean;
+        int lidx0 = get_local_id(0);
+        float total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += a[lidx0*{seg} + i];
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = total / {size};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] -= mean;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += pow(a[lidx0*{seg} + i],2);
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = pow(total / {size} + 1e-5,0.5);
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * c[i + lidx0*{seg}]) / mean + d[i + lidx0*{seg}];
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg_e}; i++) {{
+            float total = 0;
+            for(int k = 0; k < {rows_e}; k++) {{
+                total += a[k] * e[(lidx0*{seg_e} + i)*{rows_e} + k]; 
+            }}
+        if((lidx0*{seg_e} + i) < {g}) {{xq[lidx0*{seg_e} + i] += total;}}
+        if((lidx0*{seg_e} + i) >= {g} && (lidx0*{seg_e} + i) < {2*g}) {{
+            xk[lidx0*{seg_e} + i - {g}] += total; //TODO don't need this?
+            keys[{start_pos}*{keys_shape} + lidx0*{seg_e} + i - {g}] = xk[lidx0*{seg_e} + i - {g}];
+        }}
+        if((lidx0*{seg_e} + i) >= {2*g}) {{xv[lidx0*{seg_e} + i - {2*g}] += total;}}
+        }}
+    }}
+    """).build()
+    knl = prg.mm
+    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g,xq_g,xk_g,xv_g,keys_g)
+    cl.enqueue_copy(queue, xq, xq_g)
+    cl.enqueue_copy(queue, xv, xv_g)
+    cl.enqueue_copy(queue, keys, keys_g)
+    return xq,xv,keys
