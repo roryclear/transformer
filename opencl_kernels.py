@@ -812,10 +812,8 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     xq = f[0:g]
     xk = f[g:2*g]
     xv = f[2*g:]
-    valuest = np.zeros_like(values).astype(np.float32)
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
-    keyst = np.zeros_like(keys)
     h_temp = np.copy(h)
     weight = weight.flatten()
     weight4 = weight4.flatten()
@@ -828,10 +826,8 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     xk_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xk)
     xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
     keys_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys)
-    keyst_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keyst)
     values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=values)
     temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=temp)
-    valuest_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=valuest)
     weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
     bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
@@ -842,14 +838,12 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
     bias3_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias3)
     weight4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight4)
     bias4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias4)
-    seg2 = math.ceil((np.shape(values.flatten())[0] / 64) / 256)
-    keys_len = np.shape(keys.flatten())[0]
     values = values.flatten()
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
         __global float *xq, __global const float *xk, __global const float *xv, __global float *keys,
-        __global float *keyst, __global float *values, __global float *valuest, __global float *temp3,
+        __global float *values, __global float *temp3,
         __global const float *weight,__global const float *bias, __global float *h, __global float *h_temp,
         __global const float *weight2, __global const float *bias2,
         __global const float *weight3, __global float *bias3,
@@ -873,12 +867,9 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
             mean = total / {dim};  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {seg}; i++) {{
-            a[i + lidx0*{seg}] -= mean;
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
         total = 0;
         for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] -= mean;
             total += pow(a[lidx0*{seg} + i],2);
         }}
         temp[lidx0] = total;
@@ -900,147 +891,122 @@ def kernel_2(a,c,d,e,f,g,keys,values,start_pos,weight,bias,h,\
             for(int k = 0; k < {dim}; k++) {{
                 total += a[k] * e[(lidx0*{int(dim*3 / ls)} + i)*{dim} + k]; 
             }}
-        if((lidx0*{int(dim*3 / ls)} + i) < {g}) {{xq[lidx0*{int(dim*3 / ls)} + i] += total;}}
-        if((lidx0*{int(dim*3 / ls)} + i) >= {g} && (lidx0*{int(dim*3 / ls)} + i) < {2*g}) {{
-            keys[{start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {g}] = xk[lidx0*{int(dim*3 / ls)} + i - {g}] + total;
-        }}
-        if((lidx0*{int(dim*3 / ls)} + i) >= {2*g}) {{
-            values[{start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {2*g}] = xv[lidx0*{int(dim*3 / ls)} + i - {2*g}] + total;
+            if((lidx0*{int(dim*3 / ls)} + i) < {g}) {{
+                xq[lidx0*{int(dim*3 / ls)} + i] += total;
+                }}
+            if((lidx0*{int(dim*3 / ls)} + i) >= {g} && (lidx0*{int(dim*3 / ls)} + i) < {2*g}) {{
+                keys[{start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {g}] = xk[lidx0*{int(dim*3 / ls)} + i - {g}] + total;
+            }}
+            if((lidx0*{int(dim*3 / ls)} + i) >= {2*g}) {{
+                values[{start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {2*g}] = xv[lidx0*{int(dim*3 / ls)} + i - {2*g}] + total;
             }}
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        for(int i = 0; i < {seg2}; i++) {{
-            if((lidx0*{seg2} + i) < {12*(start_pos+1)*(start_pos+1)}) {{
-                int y = (lidx0*{seg2} + i) / 12;
-                int x = (lidx0*{seg2} + i) % 12;
-                for(int k = 0; k < 64; k++) {{
-                    if((y*12*64 + x*64 + k) < {keys_len}) {{
-                        keyst[x*64*{start_pos+1} + y + k*{start_pos+1}] = keys[y*12*64 + x*64 + k];
-                    }}
-                }}
-            }}
+        for(int z = 0; z < {seg3}; z++) {{
+            int x = (z + lidx0*{seg3}) % {start_pos+1};
+            int k = (z + lidx0*{seg3}) / {start_pos+1};
+            float acc0 = 0;
+            for(int i = 0; i < 64; i++) {{
+                acc0 += xq[i + 64*k] * keys[x*12*64 + i + 64*k];
+            }}                  
+            temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
         }}
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for(int z = 0; z < {seg3}; z++) {{
-        int x = (z + lidx0*{seg3}) % {start_pos+1};
-        int k = (z + lidx0*{seg3}) / {start_pos+1};
-        float acc0 = 0;
-        for(int i = 0; i < 64; i++) {{
-            acc0 += xq[i + 64*k] * keyst[x+i*{start_pos+1} + {start_pos+1}*64*k];
-        }}                  
-        temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
-    }}
-    barrier(CLK_LOCAL_MEM_FENCE);
-    if(lidx0 < 12){{
-    float m = -INFINITY;
-    for(int i = 0; i < {start_pos+1}; i++) {{
-        float val = temp3[i + lidx0*{start_pos+1}];
-        m = max(m,val);
-    }}
-    for(int i = 0; i < {start_pos+1}; i++) {{
-        temp3[i + lidx0*{start_pos+1}] = exp(temp3[i + lidx0*{start_pos+1}] - m);
-    }}
-    }}
-    barrier(CLK_LOCAL_MEM_FENCE);
-    if(lidx0 < 12) {{
-    float t = 0;
-    for(int i = 0; i < {start_pos+1}; i++) {{
-        float val = temp3[i + lidx0*{start_pos+1}];
-        t = t+val;
-    }}
-    for(int i = 0; i < {start_pos+1}; i++) {{
-        temp3[i + lidx0*{start_pos+1}] = temp3[i + lidx0*{start_pos+1}] / t;
-    }}
-    }}
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for(int i = 0; i < {seg2}; i++) {{
-            int y = (lidx0*{seg2} + i) / 12;
-            int x = (lidx0*{seg2} + i) % 12;
-            for(int k = 0; k < 64; k++) {{
-            if((y*12*64 + x*64 + k) < {np.shape(values)[0]}) {{
-                valuest[x*64*{start_pos+1} + y*64 + k] = values[y*12*64 + x*64 + k];
-            }}
-        }}
-    }}
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for(int g = 0; g < {seg}; g++) {{
-        int y = (g + lidx0*{seg}) / 64;
-        int x = (g + lidx0*{seg}) % 64;
-        float acc0 = 0;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0 < 12){{
+        float m = -INFINITY;
         for(int i = 0; i < {start_pos+1}; i++) {{
-            acc0 += temp3[i + {start_pos+1}*y] * valuest[i*64 + x + y*{start_pos+1}*64];
+            float val = temp3[i + lidx0*{start_pos+1}];
+            m = max(m,val);
         }}
-        xq[x + y*64] = acc0;
-    }}
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for(int i = 0; i < {seg}; i++) {{
-        float acc = 0;
-        for(int x = 0; x < {dim}; x++) {{
-            acc += xq[x] * weight[x*{dim} + lidx0*{seg} + i];
+        for(int i = 0; i < {start_pos+1}; i++) {{
+            temp3[i + lidx0*{start_pos+1}] = exp(temp3[i + lidx0*{start_pos+1}] - m);
         }}
-        h[lidx0*{seg} + i] += acc + bias[lidx0*{seg} + i];
-        h_temp[lidx0*{seg} + i] = h[lidx0*{seg} + i];
-    }}
-    barrier(CLK_LOCAL_MEM_FENCE);
-    total = 0;
-    for(int i = 0; i < {seg}; i++) {{
-        total += h[lidx0*{seg} + i];
-    }}
-    temp[lidx0] = total;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    if(lidx0==0) {{
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0 < 12) {{
+        float t = 0;
+        for(int i = 0; i < {start_pos+1}; i++) {{
+            float val = temp3[i + lidx0*{start_pos+1}];
+            t = t+val;
+        }}
+        for(int i = 0; i < {start_pos+1}; i++) {{
+            temp3[i + lidx0*{start_pos+1}] = temp3[i + lidx0*{start_pos+1}] / t;
+        }}
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int g = 0; g < {seg}; g++) {{
+            int y = (g + lidx0*{seg}) / 64;
+            int x = (g + lidx0*{seg}) % 64;
+            float acc0 = 0;
+            for(int i = 0; i < {start_pos+1}; i++) {{
+                acc0 += temp3[i + {start_pos+1}*y] * values[i*12*64 + x + y*64];
+            }}
+            xq[x + y*64] = acc0;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            float acc = 0;
+            for(int x = 0; x < {dim}; x++) {{
+                acc += xq[x] * weight[x*{dim} + lidx0*{seg} + i];
+            }}
+            h[lidx0*{seg} + i] += acc + bias[lidx0*{seg} + i];
+            h_temp[lidx0*{seg} + i] = h[lidx0*{seg} + i];
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
         total = 0;
-        for(int i = 0; i < {ls}; i++) {{
-            total += temp[i];
+        for(int i = 0; i < {seg}; i++) {{
+            total += h[lidx0*{seg} + i];
         }}
-        mean = total / {dim};  
-    }}
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for(int i = 0; i < {seg}; i++) {{
-        h[i + lidx0*{seg}] -= mean;
-    }}
-    barrier(CLK_LOCAL_MEM_FENCE);
-    total = 0;
-    for(int i = 0; i < {seg}; i++) {{
-        total += pow(h[lidx0*{seg} + i],2);
-    }}
-    temp[lidx0] = total;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    if(lidx0==0) {{
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = total / {dim};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
         total = 0;
-        for(int i = 0; i < {ls}; i++) {{
-            total += temp[i];
+        for(int i = 0; i < {seg}; i++) {{
+            h[i + lidx0*{seg}] = h[i + lidx0*{seg}] - mean;
+            total += pow(h[lidx0*{seg} + i],2);
+            h[i + lidx0*{seg}] = h[i + lidx0*{seg}] * weight2[i + lidx0*{seg}];
+        }}        
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = pow(total / {dim} + 1e-5,0.5);
         }}
-        mean = pow(total / {dim} + 1e-5,0.5);
-    }}
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for(int i = 0; i < {seg}; i++) {{
-        h[i + lidx0*{seg}] = (h[i + lidx0*{seg}] * weight2[i + lidx0*{seg}]) / mean + bias2[i + lidx0*{seg}];
-    }}
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for(int i = 0; i < {int(dim*4 / ls)}; i++) {{
-        for(int j = 0; j < {dim}; j++) {{
-            bias3[i + lidx0*{int(dim*4 / ls)}] += h[j] * weight3[(i + lidx0*{int(dim*4 / ls)})*{dim} + j];
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            h[i + lidx0*{seg}] = (h[i + lidx0*{seg}]) / mean + bias2[i + lidx0*{seg}];
         }}
-    }} 
-    barrier(CLK_LOCAL_MEM_FENCE);  
-    for(int i = 0; i < {int(dim*4 / ls)}; i++) {{
-        bias3[i + lidx0*{int(dim*4 / ls)}] = 0.5 * bias3[i + lidx0*{int(dim*4 / ls)}]\
-        * (1 + tanh(bias3[i + lidx0*{int(dim*4 / ls)}] * 0.7978845608\
-        * (1 + 0.044715 * pow(bias3[i + lidx0*{int(dim*4 / ls)}],2))));
-    }}
-    barrier(CLK_LOCAL_MEM_FENCE);  
-    for(int i = 0; i < {int(np.shape(bias4)[0] / ls)}; i++) {{
-        for(int j = 0; j < {dim*4}; j++) {{
-            bias4[lidx0 + i*{ls}] += bias3[j] * weight4[lidx0 + i*{ls} + j*{dim}];
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {int(dim*4 / ls)}; i++) {{
+            for(int j = 0; j < {dim}; j++) {{
+                bias3[i + lidx0*{int(dim*4 / ls)}] += h[j] * weight3[(i + lidx0*{int(dim*4 / ls)})*{dim} + j];
+            }}
+            bias3[i + lidx0*{int(dim*4 / ls)}] = 0.5 * bias3[i + lidx0*{int(dim*4 / ls)}]\
+            * (1 + tanh(bias3[i + lidx0*{int(dim*4 / ls)}] * 0.7978845608\
+            * (1 + 0.044715 * pow(bias3[i + lidx0*{int(dim*4 / ls)}],2))));
         }}
-        bias4[lidx0 + i*{ls}] += h_temp[lidx0 + i*{ls}];
-    }}
+        barrier(CLK_LOCAL_MEM_FENCE);  
+        for(int i = 0; i < {int(np.shape(bias4)[0] / ls)}; i++) {{
+            for(int j = 0; j < {dim*4}; j++) {{
+                bias4[lidx0 + i*{ls}] += bias3[j] * weight4[lidx0 + i*{ls} + j*{dim}];
+            }}
+            bias4[lidx0 + i*{ls}] += h_temp[lidx0 + i*{ls}];
+        }}
     }}
     """).build()
     knl = prg.mm
     knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,xq_g,xk_g,xv_g\
-    ,keys_g,keyst_g,values_g, valuest_g,temp_g,weight_g,bias_g,\
+    ,keys_g,values_g,temp_g,weight_g,bias_g,\
     h_g,h_temp_g,weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g)
     cl.enqueue_copy(queue, keys, keys_g)
     cl.enqueue_copy(queue, values, values_g)
