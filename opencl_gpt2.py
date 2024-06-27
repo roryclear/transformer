@@ -273,12 +273,10 @@ class Transformer:
       print(type(hi.ln_2.bias[0]))
 
   def forward(self, tokens, start_pos, temperature:float=0.0,v_in=False):
-    if not hasattr(self, 'allpos'): 
-      self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
     seqlen = len(tokens)
 
-    if start_pos > 0 and opencl:
+    if start_pos > 0:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
         x = h
@@ -303,8 +301,6 @@ class Transformer:
       logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
     else:
       tok_emb = self.wte(tokens) #rorys todo
-      s = list(np.shape(self.allpos))
-      s[1] = seqlen
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,dim))
       x = tok_emb + pos_emb
 
