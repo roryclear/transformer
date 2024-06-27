@@ -104,8 +104,6 @@ class Attention:
       xv = xqkv[self.dim*2:]
       xv = xv.reshape(self.n_heads,self.head_dim)
 
-      self.cache_kv = np.reshape(self.cache_kv,newshape=[2, MAX_CONTEXT, self.n_heads, self.head_dim]) #todo, resave file?
-
       keys = self.cache_kv[0]
       values = self.cache_kv[1]
       
@@ -325,10 +323,14 @@ class Transformer:
         x += self.h[i].mlp.c_proj.bias
         x += h
 
-      h = self.ln_f(x)
+      mm = openclk.minus_mean_multi(np.copy(x[-1])) #todo
+      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+      x = openclk.divide(np.copy(mm), mm2, self.ln_f.weight, self.ln_f.bias)
 
-      ret = openclk.matmul_t(h,self.lm_head.weight)
-      logits = ret[-1] #todo
+      ret = openclk.matmul_t_c(x,self.lm_head.weight) #todo
+      print("shapes =",np.shape(x),np.shape(self.lm_head.weight),np.shape(ret))
+      #logits = ret[-1] #todo
+      logits = ret
       ret = None
 
     if temperature < 1e-6:
