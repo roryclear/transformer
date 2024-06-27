@@ -11,7 +11,7 @@ import opencl_kernels as openclk
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 opencl = True
-med = True
+med = False
 dim = 768
 if med == True:
   import opencl_kernels_med as openclk
@@ -35,7 +35,6 @@ def decode(index):
 
 def scaled_dot_product_attention(x, key, value):
   key = np.transpose(key,(0,2,1))
-  #qk = np.matmul(x,key)[0] # kernel below
   qk = openclk.matmul_t_3d(np.copy(x),np.copy(key))
   qk = qk / math.sqrt(np.shape(x)[-1])
   for x in range(len(qk)):
@@ -44,7 +43,6 @@ def scaled_dot_product_attention(x, key, value):
         if z > y: qk[x][y][z] -= np.inf
       qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
       qk[x][y] = qk[x][y] / qk[x][y].sum()
-  #qk = np.matmul(qk,value) # kernel below
   qk = np.array(openclk.matmul_t_3d(np.copy(qk),np.copy(value)))
   return qk
 
@@ -65,53 +63,10 @@ class LayerNorm:
     self.weight = None
 
   def __call__(self, x):
-    if np.shape(x)[0] == 1:
-      #print("print rory x shape here =",np.shape(x))
-      #mm = x - x.mean() #kernel below
-      mm = openclk.minus_mean_multi(np.copy(x))
-      #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.h[0].ln_1.eps)) #kernel below
+    for i in range(len(x)):
+      mm = openclk.minus_mean_multi(np.copy(x[i]))
       mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-
-      #x = ((mm * self.h[0].ln_1.weight) / mm2) + self.h[0].ln_1.bias #kernel below
-      x = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
-    else:
-      assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
-      #x = x.layernorm(eps=self.eps, axis=self.axis)
-      #if not self.elementwise_affine: return x
-      #return x * self.weight + self.bias
-      #it doesnt work still with actual copy?
-      for i in range(len(x)):
-        #x[0][i] = (x[0][i] - np.mean(x[0][i])) / np.sqrt(np.mean((x[0][i] - np.mean(x[0][i]))**2) + self.eps)\
-        #* self.weight + self.bias
-
-        # todo all in one kernel instead of loop
-        #mm = x[0][i] - np.mean(x[0][i]) #kernel below
-        #mm = x[0][i] - np.mean(x[0][i]) # this causes an error, not sure why
-        mm = openclk.minus_mean_multi(np.copy(x[i]))
-        #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.eps)) #kernel below
-        mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-
-        #x = ((mm * self.weight) / mm2) + self.bias #kernel below
-        x[i] = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
-    return x #todo
-    assert self.normalized_shape == x.shape[-len(self.normalized_shape):], f"last dimensions of {x.shape} must match {self.normalized_shape}"
-    #x = x.layernorm(eps=self.eps, axis=self.axis)
-    #if not self.elementwise_affine: return x
-    #return x * self.weight + self.bias
-    #it doesnt work still with actual copy?
-    for i in range(len(x[0])):
-      #x[0][i] = (x[0][i] - np.mean(x[0][i])) / np.sqrt(np.mean((x[0][i] - np.mean(x[0][i]))**2) + self.eps)\
-      #* self.weight + self.bias
-
-      # todo all in one kernel instead of loop
-      #mm = x[0][i] - np.mean(x[0][i]) #kernel below
-      #mm = x[0][i] - np.mean(x[0][i]) # this causes an error, not sure why
-      mm = openclk.minus_mean_multi(np.copy(x[0][i]))
-      #mm2 = np.float32(np.sqrt(np.mean(np.copy(mm)**2) + self.eps)) #kernel below
-      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
-
-      #x = ((mm * self.weight) / mm2) + self.bias #kernel below
-      x[0][i] = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)  
+      x[i] = openclk.divide(np.copy(mm), mm2, self.weight, self.bias)
     return x
 
 def encode(x):
@@ -151,11 +106,7 @@ class Attention:
       xk = xk.reshape(self.n_heads,self.head_dim)
       xv = xqkv[self.dim*2:]
       xv = xv.reshape(self.n_heads,self.head_dim)
-      bsz, seqlen = 1,1
-      # create kv cache
-      if not hasattr(self, "cache_kv"):
-        exit() #todo never called?
-        self.cache_kv = np.zeros(shape=[2, MAX_CONTEXT, self.n_heads, self.head_dim]).astype(np.float32)
+
       self.cache_kv = np.reshape(self.cache_kv,newshape=[2, MAX_CONTEXT, self.n_heads, self.head_dim]) #todo, resave file?
 
       keys = self.cache_kv[0]
@@ -173,20 +124,13 @@ class Attention:
       keys = keys.transpose(1,2,0) #todo, can we not do this?
 
       xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
-      #for a in range(len(xq)):
-      #  xq[a] = exp(xq[a] - np.max(xq[a]))
-      #  xq[a] = xq[a] / xq[a].sum()
-      #kernel below
-      xq = openclk.minus_max(xq,(start_pos+1))
 
-      #xq = np.matmul(xq,values) #kernel below
+      xq = openclk.minus_max(xq,(start_pos+1))
 
       values = values.transpose(1,0,2)
 
       xq = openclk.matmul3(xq,values,(start_pos+1))
 
-
-      #ret = np.matmul(xq,self.c_proj.weight) + self.c_proj.bias kernel below
       ret = openclk.matvec(xq,self.c_proj.weight,self.c_proj.bias)
       return ret
     
@@ -194,7 +138,7 @@ class Attention:
       #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
       xqkv = openclk.matmul_t(x,self.c_attn.weight)
       xqkv += self.c_attn.bias
-      #xq = np.zeros(shape=(len(xqkv),self.dim)).astype(np.float32)
+
       xq = xqkv[:,:self.dim]
       xk = xqkv[:,self.dim:2*self.dim]
       xv = xqkv[:,2*self.dim:]
@@ -220,7 +164,6 @@ class Attention:
     xq = xq.transpose((1,0,2))
     xq = xq.reshape(seqlen, self.dim)
 
-    #ret = np.matmul(x,self.weight) kernel below
     ret = openclk.matmul_t(xq,self.c_proj.weight)
     ret += self.c_proj.bias
     return ret
@@ -231,17 +174,15 @@ class FeedForward:
     self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
-    #ret = np.matmul(x,self.weight) kernel below
     ret = openclk.matmul_t(x,self.c_fc.weight)
     ret += self.c_fc.bias
     x = ret
     #x = self.c_fc(x) #above
-    for i in range(np.shape(x)[0]):   
+    for i in range(len(x)):  
       # gelu() activation
       x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
     x = np.array(x) #todo
 
-    #ret = np.matmul(x,self.weight) kernel below
     ret = openclk.matmul_t(x,self.c_proj.weight)
     ret += self.c_proj.bias
     return ret
@@ -284,17 +225,7 @@ class TransformerBlock:
     self.ln_2 = LayerNorm(dim,norm_eps)
 
   def __call__(self, x, start_pos):
-    h = np.copy(x)
-    x = x[0] #todo
-    ln1 = self.ln_1(x)
-    attn = self.attn(ln1,start_pos)
-    h += attn
-    h2 = np.copy(h)
-    h2 = h2[0] #todo
-    ln2 = self.ln_2(h2)
-    mlp = self.mlp(ln2) #todo
-    ret = mlp + h
-    return ret
+    return None
     
 class Transformer:
   def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
@@ -342,7 +273,6 @@ class Transformer:
       print(type(hi.ln_2.bias[0]))
 
   def forward(self, tokens, start_pos, temperature:float=0.0,v_in=False):
-    tokens = tokens[0] #todo
     if not hasattr(self, 'allpos'): 
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
@@ -407,7 +337,6 @@ class Transformer:
       ret = openclk.matmul_t(h,self.lm_head.weight)
       logits = ret[-1] #todo
       ret = None
-      #logits = self.lm_head(h)[-1] #todo
 
     if temperature < 1e-6:
       ret = logits.argmax(-1)
@@ -417,9 +346,6 @@ class Transformer:
       logits = logits / logits.sum()
       logits = logits.cumsum(0)
       logits = logits / logits[-1]
-      #can't get around not using tg here for e2e test?
-      #maybe store the output in a file
-      #unif_samples = Tensor.rand(1, np.shape(logits)[0], 1)
       if use_tg_rand:
         unif_samples = tg_rand.rand()
       else:
@@ -432,7 +358,7 @@ class Transformer:
         else:
           b[i] = False
       b = b.sum()
-      ret = np.array([b])
+      ret = np.array(b)
     return ret
 
   def __call__(self, tokens, start_pos, temperature:np.float32=0.0,v_in=False):
@@ -473,24 +399,21 @@ class GPT2:
     198, 198, 2025, 37560, 198, 198, 4864, 11, 611, 356, 804,\
     9211, 356, 1064, 326, 4213, 836, 470, 423, 284, 307, 7042, 287]
 
-    prompt_tokens = encode(prompt)
-    toks = [prompt_tokens[:] for _ in range(batch_size)]
+    toks = encode(prompt)
     start_pos = 0
     for _ in trange(max_length, disable=(timing==True)):
-      if batch_size == 1 and len(toks[0][start_pos:]) == 1:
-        tokens = np.array([[toks[0][start_pos]]])
+      if batch_size == 1 and len(toks[start_pos:]) == 1:
+        tokens = np.array([toks[start_pos]])
       else:
         tokens = np.array(toks)
       tok = self.model(tokens, start_pos, temperature).tolist()
-      start_pos = len(toks[0])
-      for i,t in enumerate(tok):
-        if med == False:
-          np.testing.assert_equal(tok[0],expected_tokens[start_pos-13])
-        else:
-          np.testing.assert_equal(tok[0],expected_tokens_med[start_pos-13])
-        toks[i].append(t)
-    ret = [decode(x) for x in toks]
-    return ret
+      start_pos = len(toks)
+      if med == False:
+        np.testing.assert_equal(tok,expected_tokens[start_pos-13])  
+      else:
+        np.testing.assert_equal(tok,expected_tokens_med[start_pos-13])  
+      toks.append(tok)
+    return decode(toks)
 
 # **** main code ****
 
@@ -594,28 +517,28 @@ if __name__ == "__main__":
   if med:
     filehandler = open("weights_med.pickle", 'rb')  
     gpt2_med = pickle.load(filehandler)
-    texts = gpt2_med.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
+    text = gpt2_med.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
     print('Generating text...')
-    for i,text in enumerate(texts): print((f"Response {i}:", "green"), text)
-    assert texts == [("What is the answer to life, the universe, and everything?\n\n"
+    print((f"Response:", "green"), text)
+    assert text == ("What is the answer to life, the universe, and everything?\n\n"
     "He has the ability and the will to choose but he simply cannot bring himself to"
     " do it. He is afraid to be alone and afraid to bring others into it. "
     "He is afraid to be misunderstood and afraid to be rejected.\n\n"
     "However, he is not alone in his fear of failure.\n\n"
     "Something tells me that fear isn't the root cause of the problem.\n\n"
-    "An Idea\n\nHowever, if we look deeper we find that ideas don't have to be formed in")]
+    "An Idea\n\nHowever, if we look deeper we find that ideas don't have to be formed in")
 
   if med == False:
     filehandler = open("weights_128.pickle", 'rb')  
     gpt2 = pickle.load(filehandler)
-    texts = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
-    for i,text in enumerate(texts): print((f"Response {i}:", "green"), text)
-    assert texts == [("What is the answer to life, the universe, and everything?"
+    text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
+    print((f"Response:", "green"), text)
+    assert text == ("What is the answer to life, the universe, and everything?"
     "\n\nIf you were an astrophysicist, or just a physicist, your answer might "
     "be a bit different. For one, you might take a longer view of the universe. "
     "But for other people — including scientists, artists, and other in-your-face "
     "people — your answer might be far more like: Life doesn't exist at all.\n\n"
     "Imagine you are a young person who just graduated from middle school and has "
-    "never really pursued a career in astrophysics. You're on an eight")]
+    "never really pursued a career in astrophysics. You're on an eight")
 
   exit()
