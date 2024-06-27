@@ -572,3 +572,40 @@ def matmul_t_c(a,b):
     knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
     cl.enqueue_copy(queue, c, c_g)
     return c
+
+def matmul4(a,b):
+    a_rows = np.shape(a)[0]
+    a_cols = np.shape(a)[1]
+    b_cols = np.shape(b)[1]
+    b_rows = np.shape(b)[0]
+    c = np.zeros([a_rows,b_cols])
+
+    a = a.flatten()
+    b = b.flatten()
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global float *res)
+    {{
+        int x = get_global_id(0);
+        for(int z = 0; z < {1}; z++) {{
+            if(x < {b_cols}) {{
+                for(int y = 0; y < {a_rows}; y++) {{
+                    float total = 0;
+                    for(int k = 0; k < {b_rows}; k++) {{
+                        total += a[y*{b_rows} + k + z*{a_rows}*{a_cols}] * b[x + k*{b_cols} + z*{b_rows}*{b_cols}]; 
+                    }}
+                    res[y*{b_cols} + x + z*{b_cols}*{a_rows}] = total;
+                }}  
+            }}
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    group_size = math.ceil(b_cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
