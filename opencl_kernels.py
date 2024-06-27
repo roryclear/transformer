@@ -68,7 +68,6 @@ def minus_mean_multi(a):
     return a
 
 def sq_mean_sqrt(a):
-    a = a.flatten()
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     prg = cl.Program(ctx, f"""
     __kernel void sq_mean_sqrt(

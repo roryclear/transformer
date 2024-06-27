@@ -44,8 +44,8 @@ def scaled_dot_product_attention(x, key, value):
         if z > y: qk[x][y][z] -= np.inf
       qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
       qk[x][y] = qk[x][y] / qk[x][y].sum()
-  #qk = np.matmul(qk,value)
-  qk = np.array([openclk.matmul_t_3d(np.copy(qk),np.copy(value))])
+  #qk = np.matmul(qk,value) # kernel below
+  qk = np.array(openclk.matmul_t_3d(np.copy(qk),np.copy(value)))
   return qk
 
 class Linear():
@@ -59,8 +59,6 @@ class Linear():
       self.bias = np.zeros(np.shape(self.weight[1])).astype(np.float32)
     if np.shape(x)[0] == 1:
       ret = openclk.matvec2(x,self.weight,self.bias)
-      if len(np.shape(ret)) == 1:
-        ret = [ret] #todo
     else:
       #ret = np.matmul(x,self.weight) kernel below
       ret = openclk.matmul_t(x,self.weight)
@@ -179,8 +177,9 @@ class Attention:
 
       keys = np.concatenate([keys,[xk]]) #todo
       values = np.concatenate([values,[xv]]) #todo
-      keys = keys.transpose(1,2,0)
-      values = values.transpose(1,0,2)
+
+      keys = keys.transpose(1,2,0) #todo, can we not do this?
+
       xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
       #for a in range(len(xq)):
       #  xq[a] = exp(xq[a] - np.max(xq[a]))
@@ -189,6 +188,9 @@ class Attention:
       xq = openclk.minus_max(xq,(start_pos+1))
 
       #xq = np.matmul(xq,values) #kernel below
+
+      values = values.transpose(1,0,2)
+
       xq = openclk.matmul3(xq,values,(start_pos+1))
 
 
@@ -200,37 +202,30 @@ class Attention:
       #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
       xqkv = openclk.matmul_t(x,self.c_attn.weight)
       xqkv += self.c_attn.bias
-      xq = np.zeros(shape=(np.shape(xqkv)[0],self.dim)).astype(np.float32)
-      for i in range(xq.shape[0]):
-        xq[i] = xqkv[i][0:self.dim]
-      xq = xq.reshape(xq.shape[0],self.n_heads,self.head_dim)
-      xk = np.zeros(shape=(np.shape(xqkv)[0],self.dim)).astype(np.float32)
-      for i in range(xk.shape[0]):
-        xk[i] = xqkv[i][self.dim:2*self.dim]
-      xk = xk.reshape(1,xk.shape[0],self.n_heads,self.head_dim)
-      xv = np.zeros(shape=(1,np.shape(xqkv)[0],self.dim)).astype(np.float32)
-      for i in range(xv.shape[1]):
-        xv[0][i] = xqkv[i][self.dim*2:3*self.dim]
-      xv = xv.reshape(1,xv.shape[1],self.n_heads,self.head_dim)
-      bsz = 1
-      seqlen, _, _ = xq.shape
+      #xq = np.zeros(shape=(len(xqkv),self.dim)).astype(np.float32)
+      xq = xqkv[:,:self.dim]
+      xk = xqkv[:,self.dim:2*self.dim]
+      xv = xqkv[:,2*self.dim:]
+
+      xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
+      xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
+      xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
+      seqlen = len(xq)
 
     keys = xk
     values = xv
     s = list(np.shape(keys))
-    s[1] = MAX_CONTEXT
+    s[0] = MAX_CONTEXT
     new_cache = np.zeros(shape=s).astype(np.float32)
     new_cache = [np.copy(new_cache),np.copy(new_cache)]
-    for i in range(len(keys[0])):
-      new_cache[0][0][i] = keys[0][i]
-      new_cache[1][0][i] = values[0][i]       
+    for i in range(len(keys)):
+      new_cache[0][i] = keys[i]
+      new_cache[1][i] = values[i]       
     self.cache_kv = new_cache
-    xq = xq.transpose((1,0,2)) # same as (1,2) in tinygrad
-    #can't numpy them outside this if!
-    keys, values = keys.transpose((0,2,1,3)), values.transpose((0,2,1,3))
-    
-    xq = scaled_dot_product_attention(xq,keys[0],values[0]) #todo
-    xq = xq.transpose((0,2,1,3)) #todo
+    xq = xq.transpose((1,0,2))
+    keys, values = keys.transpose((1,0,2)), values.transpose((1,0,2))
+    xq = scaled_dot_product_attention(xq,keys,values)
+    xq = xq.transpose((1,0,2))
     xq = xq.reshape(seqlen, self.dim)
 
     ret = self.c_proj(xq)
@@ -242,11 +237,15 @@ class FeedForward:
     self.c_proj = Linear(hidden_dim, dim, bias=True)
 
   def __call__(self, x):
-    x = self.c_fc(x) #todo
+    x = self.c_fc(x)
+    if len(np.shape(x)) == 1:
+      x = [x] #todo
     for i in range(np.shape(x)[0]):   
       # gelu() activation
       x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
     ret = self.c_proj(x)
+    if len(np.shape(ret)) == 1:
+      ret = [ret]
     return ret
   
 class Embedding:
@@ -288,13 +287,15 @@ class TransformerBlock:
 
   def __call__(self, x, start_pos):
     h = np.copy(x)
-    ln1 = self.ln_1(x[0]) #todo
-    attn = self.attn(ln1,start_pos) #todo
+    x = x[0] #todo
+    ln1 = self.ln_1(x)
+    attn = self.attn(ln1,start_pos)
     h += attn
     h2 = np.copy(h)
-    ln2 = self.ln_2(h2[0]) #todo
+    h2 = h2[0] #todo
+    ln2 = self.ln_2(h2)
     mlp = self.mlp(ln2) #todo
-    ret = [mlp] + h #todo
+    ret = mlp + h
     return ret
     
 class Transformer:
@@ -343,13 +344,14 @@ class Transformer:
       print(type(hi.ln_2.bias[0]))
 
   def forward(self, tokens, start_pos, temperature:float=0.0,v_in=False):
+    tokens = tokens[0] #todo
     if not hasattr(self, 'allpos'): 
       self.allpos = np.arange(0, MAX_CONTEXT).reshape(1,-1)
 
-    seqlen = tokens.shape[1]
+    seqlen = len(tokens)
 
     if start_pos > 0 and opencl:
-      h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0][0])
+      h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       #h = self.h[0](h,start_pos,mask)
       #ln1 = self.h[0].ln_1(h)
       mm = openclk.minus_mean_multi(h)
@@ -358,20 +360,40 @@ class Transformer:
       x = openclk.divide(np.copy(mm), mm2, self.h[0].ln_1.weight, self.h[0].ln_1.bias)
       x = [[x]]
       attn = self.h[0].attn([x],start_pos)
-      h = h.reshape(1,1,dim)
+      h = h.reshape(dim)
+      h = np.array(h)
       h += attn
-      h2 = np.copy(h)
-      ln2 = self.h[0].ln_2(h2[0]) #todo
-      mlp = self.h[0].mlp(ln2) #todo
-      h = mlp + h  
+      h = np.array(h)
+
+      mm = openclk.minus_mean_multi(np.copy(h))
+      mm2 = openclk.sq_mean_sqrt(np.copy(mm))
+      x = openclk.divide(np.copy(mm), mm2, self.h[0].ln_2.weight, self.h[0].ln_2.bias)
+      x = openclk.matvec2(x,self.h[0].mlp.c_fc.weight,self.h[0].mlp.c_fc.bias)
+
+      # gelu() activation
+      x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
+      x = openclk.matvec2(x,self.h[0].mlp.c_proj.weight,self.h[0].mlp.c_proj.bias)
+      h = x + h
+      h = [[h]] 
 
       for i in range(1,len(self.h)):
-        h = self.h[i](h, start_pos)
+        x = h
+        x = x[0] #todo
+        ln1 = self.h[i].ln_1(x)
+        attn = self.h[i].attn(ln1,start_pos)
+        h += attn
+        h2 = np.copy(h)
+        h2 = h2[0] #todo
+        ln2 = self.h[i].ln_2(h2)
+        mlp = self.h[i].mlp(ln2) #todo
+        h = mlp + h
       h = self.ln_f(h[0]) #todo
       logits = self.lm_head(h)
+      if len(np.shape(logits)) == 1:
+        logits = [logits] #todo
       logits = [logits] #todo
     else:
-      tok_emb = self.wte(tokens[0]) #rorys todo
+      tok_emb = self.wte(tokens) #rorys todo
       tok_emb = [tok_emb] #todo
       s = list(np.shape(self.allpos))
       s[1] = seqlen
@@ -384,6 +406,8 @@ class Transformer:
         h = hi(h, start_pos)
       h = self.ln_f(h[0]) #todo
       logits = self.lm_head(h)
+      if len(np.shape(logits)) == 1:
+        logits = [logits] #todo
       logits = [logits] #todo
     logits = [logits[0][-1]]
 
