@@ -258,11 +258,10 @@ class FeedForward:
   
 class Embedding:
   def __init__(self, vocab_size:int, embed_size:int):
-    self.vocab_size, self.embed_size = vocab_size, embed_size
+    self = self
 
   def __call__(self, idx):
-    ret = np.resize(self.weight,new_shape=(len(idx[0]),dim))
-    return ret
+    return None
   
 class Mock_tg_rand:
   def __init__(self):
@@ -384,10 +383,7 @@ class Transformer:
       tok_emb = self.wte(tokens) #rorys todo
       s = list(np.shape(self.allpos))
       s[1] = seqlen
-      allpos_s = np.empty(s,dtype=np.int32)
-      for i in range(seqlen):
-        allpos_s[0][i] = self.allpos[0][start_pos + i]
-      pos_emb = self.wpe(allpos_s)
+      pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,dim))
       h = tok_emb + pos_emb
 
 
