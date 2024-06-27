@@ -607,7 +607,8 @@ def matvec4(a,b):
     
 def kernel_0(a,c,d):
     size = np.shape(a)[0]
-    seg = int(size / 32) #todo
+    ls = 256
+    seg = int(size / ls) #todo
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
@@ -626,7 +627,7 @@ def kernel_0(a,c,d):
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
             total = 0;
-            for(int i = 0; i < 32; i++) {{ //rory todo 32
+            for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
             mean = total / {size};  
@@ -644,7 +645,7 @@ def kernel_0(a,c,d):
         barrier(CLK_LOCAL_MEM_FENCE);
         if(lidx0==0) {{
             total = 0;
-            for(int i = 0; i < 32; i++) {{ //rory todo 32
+            for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
             mean = pow(total / {size} + 1e-5,0.5);
@@ -656,6 +657,132 @@ def kernel_0(a,c,d):
     }}
     """).build()
     knl = prg.mm
-    knl(queue, (32,1), (32,1), a_g, c_g, d_g) #rory to test large stuff
+    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g) #rory to test large stuff
     cl.enqueue_copy(queue, a, a_g)
     return a
+
+def kernel_1(a,c,d,e,f,g,h):
+    rows = 1024
+    cols = 1024*4
+    size = np.shape(a)[0]
+    ls = 256
+    seg = int(size / ls)
+    f = f.flatten()
+    f = np.float32(f)
+    g_rows = np.shape(g)[0]
+    g_cols = np.shape(g)[1]
+    g = g.flatten()
+    g = np.float32(g)
+    h = h.flatten()
+    h = np.float32(h)
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
+    e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
+    f_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
+    g_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=g)
+    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
+    l_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.copy(a))
+    prg = cl.Program(ctx, f"""
+    __kernel void knl(
+        __global float *a, __global const float *c, __global const float *d,
+        __global const float *e, __global float *f, __global const float *g,
+        __global float *h, __global const float *l)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{seg}];
+        __attribute__ ((aligned (16))) __local float mean;
+        int lidx0 = get_local_id(0);
+        float total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += a[lidx0*{seg} + i];
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = total / {size};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] -= mean;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += pow(a[lidx0*{seg} + i],2);
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = pow(total / {size} + 1e-5,0.5);
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * c[i + lidx0*{seg}]) / mean + d[i + lidx0*{seg}];
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);    
+        for(int i = 0; i < {int(cols / ls)}; i++) {{
+            for(int j = 0; j < {rows}; j++) {{
+                f[i + lidx0*{int(cols / ls)}] += a[j] * e[(i + lidx0*{int(cols / ls)})*{rows} + j];
+            }}
+        }} 
+        barrier(CLK_LOCAL_MEM_FENCE);  
+        for(int i = 0; i < {int(cols / ls)}; i++) {{
+            f[i + lidx0*{int(cols / ls)}] = 0.5 * f[i + lidx0*{int(cols / ls)}]\
+            * (1 + tanh(f[i + lidx0*{int(cols / ls)}] * 0.7978845608\
+            * (1 + 0.044715 * pow(f[i + lidx0*{int(cols / ls)}],2))));
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);  //TODO this is probably slower than it should be
+        for(int i = 0; i < {int(np.shape(h)[0] / ls)}; i++) {{
+            for(int j = 0; j < {g_rows}; j++) {{
+                h[lidx0 + i*{ls}] += f[j] * g[lidx0 + i*{ls} + j*{g_cols}];
+            }}
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {int(np.shape(h)[0] / ls)}; i++) {{
+            h[i + lidx0*{int(np.shape(h)[0] / ls)}] += l[i + lidx0*{int(np.shape(h)[0] / ls)}];
+        }}
+    }}
+    """).build()
+    knl = prg.knl
+    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g, e_g,f_g,\
+    g_g,h_g,l_g)
+    cl.enqueue_copy(queue, h, h_g)
+    return h
+
+def matvec_b(a,b,c):
+    ls = 256
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    a = a.flatten()
+    b = b.flatten()
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d = np.zeros([1024])
+    d = np.float32(d)
+    len_mv = np.shape(a)[0]
+    prg = cl.Program(ctx, f"""
+    __kernel void matvec(
+        __global const float *a, __global const float *b, __global float *c)
+    {{
+        int lidx0 = get_local_id(0);
+        for(int i = 0; i < {int(len_mv / ls)}; i++) {{
+            float acc = 0;
+            for(int x = 0; x < {len_mv}; x++) {{
+                acc += a[x] * b[x*{len_mv} + lidx0*{int(len_mv / ls)} + i];
+            }}
+            c[lidx0*{int(len_mv / ls)} + i] = acc + c[lidx0*{int(len_mv / ls)} + i];
+        }}
+    }}
+    """).build()
+    knl = prg.matvec
+    knl(queue, (256,1), (256,1), a_g, b_g,c_g)
+    cl.enqueue_copy(queue, d, c_g)
+    cl.enqueue_copy(queue, c, c_g)
+    return c

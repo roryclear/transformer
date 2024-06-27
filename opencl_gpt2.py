@@ -306,17 +306,32 @@ class Transformer:
     if start_pos > 0:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
-        x = h
-        ln1 = openclk.kernel_0(np.copy(x),self.h[i].ln_1.weight, self.h[i].ln_1.bias)
-        #ln1 = self.h[i].ln_1(x) above kernels
-        attn = self.h[i].attn(ln1,start_pos)
-        h = x + attn
-        x = openclk.kernel_0(np.copy(h),self.h[i].ln_2.weight, self.h[i].ln_2.bias)
-        x = openclk.matvec2(x,self.h[i].mlp.c_fc.weight,self.h[i].mlp.c_fc.bias)
-        x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
-        x = openclk.matvec2(x,self.h[i].mlp.c_proj.weight,self.h[i].mlp.c_proj.bias)
-        h += x
-
+        #inlined att
+        ln1 = openclk.kernel_0(np.copy(h),self.h[i].ln_1.weight, self.h[i].ln_1.bias)
+        xqkv = openclk.matmul_t_b(ln1,self.h[i].attn.c_attn.weight) + self.h[i].attn.c_attn.bias
+        xq = xqkv[0:self.h[i].attn.dim]
+        xk = xqkv[dim:2*dim]
+        xk = xk.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
+        xv = xqkv[self.h[i].attn.dim*2:]
+        xv = xv.reshape(self.h[i].attn.n_heads,self.h[i].attn.head_dim)
+        keys = self.h[i].attn.cache_kv[0]
+        values = self.h[i].attn.cache_kv[1]
+        keys[start_pos] = xk
+        values[start_pos] = xv  
+        keys = np.resize(keys,(start_pos,self.h[i].attn.n_heads,self.h[i].attn.head_dim))
+        values = np.resize(values,(start_pos,self.h[i].attn.n_heads,self.h[i].attn.head_dim))
+        keys = np.concatenate([keys,[xk]]) #todo
+        values = np.concatenate([values,[xv]]) #todo  
+        keys = keys.transpose(1,2,0) #todo, can we not do this?
+        xq = openclk.matmul2(xq,keys,np.shape(keys)[2])
+        xq = openclk.minus_max(xq,(start_pos+1))
+        values = values.transpose(1,0,2)
+        xq = openclk.matmul3(xq,values,(start_pos+1))
+        attn = openclk.matvec_b(xq,self.h[i].attn.c_proj.weight,np.copy(self.h[i].attn.c_proj.bias))
+        h += attn
+        #inlined attn
+        h = openclk.kernel_1(h,self.h[i].ln_2.weight, self.h[i].ln_2.bias,self.h[i].mlp.c_fc.weight,np.copy(self.h[i].mlp.c_fc.bias)\
+        ,self.h[i].mlp.c_proj.weight,np.copy(self.h[i].mlp.c_proj.bias))
       h = openclk.kernel_0(np.copy(h),self.ln_f.weight, self.ln_f.bias)
       logits = openclk.matvec2(h,self.lm_head.weight,np.zeros(np.shape(self.lm_head.weight[1])).astype(np.float32))
     else:
