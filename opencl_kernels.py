@@ -259,12 +259,10 @@ def matvec(a,b,c):
     cl.enqueue_copy(queue, d, d_g)
     return d
 
-def matvec2(h,weight2): #pass bias in instead of adding to zero, todo for other kernels
+def matvec2(h_g,weight2_g):
     rows = 768
     cols = 50257
     res = np.zeros(cols).astype(np.float32)
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
-    bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     prg = cl.Program(ctx, f"""
     __kernel void matvec(
@@ -278,7 +276,30 @@ def matvec2(h,weight2): #pass bias in instead of adding to zero, todo for other 
     """).build()
     knl = prg.matvec
     gidx = math.ceil(cols / 16) * 16
-    knl(queue, (gidx,1), (16,1), h_g, bias2_g,res_g)
+    knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
+    cl.enqueue_copy(queue, res, res_g)
+    return res
+
+def matvec3(h_g,weight2_g,temperature): #pass bias in instead of adding to zero, todo for other kernels
+    rows = 768
+    cols = 50257
+    res = np.zeros(cols).astype(np.float32)
+    #weight2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
+    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
+    prg = cl.Program(ctx, f"""
+    __kernel void matvec(
+        __global const float *h, __global const float *weight2 , __global float *res)
+    {{
+        int gidx0 = get_global_id(0);
+        for(int j = 0; j < {rows}; j++) {{
+            res[gidx0] += h[j] * weight2[gidx0 + j*{cols}];
+        }}
+        res[gidx0] = res[gidx0] / {temperature};
+    }}
+    """).build()
+    knl = prg.matvec
+    gidx = math.ceil(cols / 16) * 16
+    knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
     cl.enqueue_copy(queue, res, res_g)
     return res
 
@@ -929,14 +950,14 @@ def kernel_3(h,weight_g,bias_g):
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
-        __global float *h, __global const float *weight, __global const float *bias)
+        __global float *a, __global const float *weight5, __global const float *bias5)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
         int lidx0 = get_local_id(0);
         float total = 0;
         for(int i = 0; i < {seg}; i++) {{
-            total += h[lidx0*{seg} + i];
+            total += a[lidx0*{seg} + i];
         }}
         temp[lidx0] = total;
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -949,12 +970,12 @@ def kernel_3(h,weight_g,bias_g):
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
-            h[i + lidx0*{seg}] -= mean;
+            a[i + lidx0*{seg}] -= mean;
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         total = 0;
         for(int i = 0; i < {seg}; i++) {{
-            total += pow(h[lidx0*{seg} + i],2);
+            total += pow(a[lidx0*{seg} + i],2);
         }}
         temp[lidx0] = total;
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -967,7 +988,7 @@ def kernel_3(h,weight_g,bias_g):
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
-            h[i + lidx0*{seg}] = (h[i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / mean + bias[i + lidx0*{seg}];
+            a[i + lidx0*{seg}] = (h[i + lidx0*{seg}] * weight5[i + lidx0*{seg}]) / mean + bias5[i + lidx0*{seg}];
         }}
     }}
     """).build()
@@ -978,7 +999,7 @@ def kernel_3(h,weight_g,bias_g):
 
 def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
     weight2_g,bias2_g,bias3_g,\
-    e_g,keys_values,weight_g,weight3_g,weight4_g,bias4_g): #g = size
+    e_g,keys_values,weight_g,weight3_g,weight4_g,bias4_g,weight5_g,bias5_g): #g 
     ls = 256
     zeros = np.zeros(12*(start_pos+1)).astype(np.float32)
     seg = int(dim / ls) #todo
@@ -997,9 +1018,10 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         __global const float *weight3, __global const float *bias3,
         __global const float *weight4,
         __global const float *bias4,
-        __global float *temp3, __global const float *a2, __global const float *b2)
+        __global float *temp3, __global const float *a2, __global const float *b2,
+        __global const float *weight5, __global const float *bias5)
     {{
-        __attribute__ ((aligned (16))) __local float temp[{seg}];
+        __attribute__ ((aligned (16))) __local float temp[{ls}];
         __attribute__ ((aligned (16))) __local float mean;
         __attribute__ ((aligned (16))) __local float tempb3[3072];
         __attribute__ ((aligned (16))) __local float tempb4[768];
@@ -1150,12 +1172,71 @@ def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
         }}
         barrier(CLK_LOCAL_MEM_FENCE);  
         }}
+        float total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += a[lidx0*{seg} + i];
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = total / {dim};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] -= mean;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        total = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            total += pow(a[lidx0*{seg} + i],2);
+        }}
+        temp[lidx0] = total;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            total = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                total += temp[i];
+            }}
+            mean = pow(total / {dim} + 1e-5,0.5);
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * weight5[i + lidx0*{seg}]) / mean + bias5[i + lidx0*{seg}];
+        }}
     }}
     """).build()
     knl = prg.mm
     knl(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
     ,keys_values_g,weight_g,bias_g,\
-    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g,a_g_2,b_g_2)
+    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g,a_g_2,b_g_2,weight5_g,bias5_g)
     cl.enqueue_copy(queue, keys_values, keys_values_g)
     cl.enqueue_copy(queue, h, a_g)
-    return h
+    return a_g
+
+def kernel_5(a):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    ls = 1
+    seg = {np.shape(a)[0] / ls}
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global float *a)
+    {{
+        int lidx0 = get_local_id(0);
+        float 
+        float m = -INFINITY;
+        for(int i = 0; i < {seg}; i++) {{
+            m = max(m,a[i]);
+        }}
+        for(int i = 0; i < {seg}; i++) {{
+            a[i] = a[i] - m;
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    knl(queue, (1,1), (1,1), a_g)
+    cl.enqueue_copy(queue, a, a_g)
+    return a

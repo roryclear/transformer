@@ -420,22 +420,64 @@ class Transformer:
             self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[i].attn.cache_kv[0].flatten()))
             self.attn_cache_kv = np.concatenate((self.attn_cache_kv,self.h[i].attn.cache_kv[1].flatten()))
 
-      h = openclk.kernel_4(self.wte_weight,self.wpe_weight,tokens[0],self.ln_1_weights,\
-      self.ln_1_bias,\
-      self.attn_c_attn_bias,self.h[0].attn.dim,\
-      start_pos,\
-      self.attn_c_proj_bias,\
-      self.ln_2_weight, self.ln_2_bias,\
-      self.mlp_c_fc_bias,\
-      self.attn_c_attn_weight,\
-      self.attn_cache_kv,
-      self.attn_c_proj_weight,
-      self.mlp_c_fc_weight,
-      self.mlp_c_proj_weight,self.mlp_c_proj_bias)
-      h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
+
         
       self.lm_head.weight = self.lm_head.weight.flatten()
-      logits = openclk.matvec2(h,self.lm_head.weight)
+      if hasattr(self, 'lm_head_weight') == False:
+        self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head.weight)
+
+
+      #h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
+      if temperature < 1e-6:
+        h = openclk.kernel_4(self.wte_weight,self.wpe_weight,tokens[0],self.ln_1_weights,\
+        self.ln_1_bias,\
+        self.attn_c_attn_bias,self.h[0].attn.dim,\
+        start_pos,\
+        self.attn_c_proj_bias,\
+        self.ln_2_weight, self.ln_2_bias,\
+        self.mlp_c_fc_bias,\
+        self.attn_c_attn_weight,\
+        self.attn_cache_kv,
+        self.attn_c_proj_weight,
+        self.mlp_c_fc_weight,
+        self.mlp_c_proj_weight,self.mlp_c_proj_bias,
+        self.ln_f_weight, self.ln_f_bias)
+        logits = openclk.matvec2(h,self.lm_head_weight)
+        ret = logits.argmax(-1)
+        return ret
+      else: #temp
+        h = openclk.kernel_4(self.wte_weight,self.wpe_weight,tokens[0],self.ln_1_weights,\
+        self.ln_1_bias,\
+        self.attn_c_attn_bias,self.h[0].attn.dim,\
+        start_pos,\
+        self.attn_c_proj_bias,\
+        self.ln_2_weight, self.ln_2_bias,\
+        self.mlp_c_fc_bias,\
+        self.attn_c_attn_weight,\
+        self.attn_cache_kv,
+        self.attn_c_proj_weight,
+        self.mlp_c_fc_weight,
+        self.mlp_c_proj_weight,self.mlp_c_proj_bias,
+        self.ln_f_weight, self.ln_f_bias)
+        logits = openclk.matvec3(h,self.lm_head_weight,temperature)
+        logits = np.exp(logits - np.max(logits))
+        logits = logits / logits.sum()
+        logits = logits.cumsum(0)
+        logits = logits / logits[-1]
+        if use_tg_rand:
+          unif_samples = tg_rand.rand()
+        else:
+          unif_samples = np.random.rand().astype(np.float32)
+        b = np.empty_like(logits,dtype=bool)
+        for i in range(len(logits)):
+          if unif_samples >= logits[i]:
+            b[i] = True
+          else:
+            b[i] = False
+        b = b.sum()
+        ret = np.array(b)
+        return ret
+
     else:
       tok_emb = self.wte(tokens) #rorys todo
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,dim))
