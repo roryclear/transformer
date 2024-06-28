@@ -11,24 +11,22 @@ mf = cl.mem_flags
 dim = 768
 n_heads = 12
 
-def add(a,b,b_s=0,a_s=0):
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-
-    res_np = np.zeros(768).astype(np.float32).flatten()
+def add(a_g,b_g,start_pos=0,b_s=0):
+    ls = 256
+    res_np = np.zeros(768).astype(np.float32)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res_np)
-    #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
-
     prg = cl.Program(ctx, f"""
     __kernel void add(
         __global const float *a, __global const float *b, __global float *res)
     {{
-    int gidx0 = get_global_id(0);
-        res[gidx0] = a[{a_s*768} + gidx0] + b[gidx0 + {b_s}*768];    
+    int lidx0 = get_global_id(0);
+        for(int i = 0; i < 3; i++) {{
+            res[lidx0*3 + i] = a[{b_s*768} + lidx0*3 + i] + b[lidx0*3 + i + {start_pos*768}];   
+        }}
     }}
     """).build()
     knl = prg.add
-    knl(queue, (768,1), (256,1), a_g, b_g,res_g) #todo check shape
+    knl(queue, (ls,1), (ls,1), a_g, b_g,res_g) #todo check shape
     cl.enqueue_copy(queue, res_np, res_g)
     return res_np
 
@@ -925,13 +923,10 @@ def transpose_f(a):
     cl.enqueue_copy(queue, at, at_g)
     return at.reshape(12,64,s)
 
-def kernel_3(h,weight,bias):
-    size = np.shape(h)[0]
+def kernel_3(h,weight_g,bias_g):
     ls = 256
-    seg = int(size / ls) #todo
+    seg = int(dim / ls) #todo
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
-    weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
-    bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *h, __global const float *weight, __global const float *bias)
@@ -950,7 +945,7 @@ def kernel_3(h,weight,bias):
             for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
-            mean = total / {size};  
+            mean = total / {dim};  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
@@ -968,7 +963,7 @@ def kernel_3(h,weight,bias):
             for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
-            mean = pow(total / {size} + 1e-5,0.5);
+            mean = pow(total / {dim} + 1e-5,0.5);
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
@@ -981,31 +976,17 @@ def kernel_3(h,weight,bias):
     cl.enqueue_copy(queue, h, h_g)
     return h
 
-def kernel_4(h,c,d,f,g,start_pos,bias,\
-    weight2,bias2,bias3,\
-    e,keys_values,weight,weight3,weight4,bias4): #g = size
+def kernel_4(a_g_2,b_g_2,b_s,c_g,d_g,f,g,start_pos,bias_g,\
+    weight2_g,bias2_g,bias3_g,\
+    e_g,keys_values,weight_g,weight3_g,weight4_g,bias4_g): #g = size
     ls = 256
-    zeros = np.zeros(np.shape(bias4)[0]).astype(np.float32)
-    zeros2 = np.zeros(12*(start_pos+1)).astype(np.float32)
+    zeros = np.zeros(12*(start_pos+1)).astype(np.float32)
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
+    h = np.zeros(768).astype(np.float32)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
-    e_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=e)
-    keys_values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys_values) #AND VALUES NOW
-    weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
-    bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
-    weight2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
-    bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias2)
-    weight3_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight3)
-    bias3_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias3)
-    weight4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight4)
-    bias4_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias4)
-
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
-    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
-    temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros2)
+    keys_values_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=keys_values)
+    temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
     xqkv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=f)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
@@ -1013,14 +994,21 @@ def kernel_4(h,c,d,f,g,start_pos,bias,\
         __global float *xqkv, __global float *keys_values,
         __global const float *weight,__global const float *bias,
         __global const float *weight2, __global const float *bias2,
-        __global const float *weight3, __global float *bias3,
+        __global const float *weight3, __global const float *bias3,
         __global const float *weight4,
-        __global float *bias4, __global float *h_temp, __global float *h,
-        __global float *temp3)
+        __global const float *bias4,
+        __global float *temp3, __global const float *a2, __global const float *b2)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
         __attribute__ ((aligned (16))) __local float mean;
+        __attribute__ ((aligned (16))) __local float tempb3[3072];
+        __attribute__ ((aligned (16))) __local float tempb4[768];
+        __attribute__ ((aligned (16))) __local float h_temp[768];
+        __attribute__ ((aligned (16))) __local float h[768];
         int lidx0 = get_local_id(0);
+        for(int i = 0; i < {seg}; i++) {{
+            a[lidx0*{seg} + i] = a2[{b_s*768} + lidx0*{seg} + i] + b2[lidx0*{seg} + i + {start_pos*768}];   
+        }}
         for(int r = 0; r < 12; r++) {{
         barrier(CLK_LOCAL_MEM_FENCE);  
         float total = 0;
@@ -1144,19 +1132,21 @@ def kernel_4(h,c,d,f,g,start_pos,bias,\
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {int(dim*4 / ls)}; i++) {{
+            tempb3[i + lidx0*{int(dim*4 / ls)}] = bias3[3072*r + i + lidx0*{int(dim*4 / ls)}];
             for(int j = 0; j < {dim}; j++) {{
-                bias3[3072*r + i + lidx0*{int(dim*4 / ls)}] += ((h[j] * weight2[768*r + j]) / mean + bias2[768*r + j]) * weight3[768*3072*r + (i + lidx0*{int(dim*4 / ls)})*{dim} + j];
+                tempb3[i + lidx0*{int(dim*4 / ls)}] += ((h[j] * weight2[768*r + j]) / mean + bias2[768*r + j]) * weight3[768*3072*r + (i + lidx0*{int(dim*4 / ls)})*{dim} + j];
             }}
-            bias3[3072*r + i + lidx0*{int(dim*4 / ls)}] = 0.5 * bias3[3072*r + i + lidx0*{int(dim*4 / ls)}]\
-            * (1 + tanh(bias3[3072*r + i + lidx0*{int(dim*4 / ls)}] * 0.7978845608\
-            * (1 + 0.044715 * pow(bias3[3072*r + i + lidx0*{int(dim*4 / ls)}],2))));
+            tempb3[i + lidx0*{int(dim*4 / ls)}] = 0.5 * tempb3[i + lidx0*{int(dim*4 / ls)}]\
+            * (1 + tanh(tempb3[i + lidx0*{int(dim*4 / ls)}] * 0.7978845608\
+            * (1 + 0.044715 * pow(tempb3[i + lidx0*{int(dim*4 / ls)}],2))));
         }}
         barrier(CLK_LOCAL_MEM_FENCE);  
-        for(int i = 0; i < {math.ceil(np.shape(bias4)[0] / 12 / ls)}; i++) {{ //todo because there's 2 now
+        for(int i = 0; i < {math.ceil(768 / ls)}; i++) {{ //todo because there's 2 now...now 12..bias4 shape
+            tempb4[lidx0 + i*{ls}] = bias4[768*r + lidx0 + i*{ls}];
             for(int j = 0; j < {dim*4}; j++) {{
-                bias4[768*r + lidx0 + i*{ls}] += bias3[3072*r + j] * weight4[3072*768*r + lidx0 + i*{ls} + j*{dim}];
+                tempb4[lidx0 + i*{ls}] += tempb3[j] * weight4[3072*768*r + lidx0 + i*{ls} + j*{dim}];
             }}
-            a[lidx0 + i*{ls}] = bias4[768*r + lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
+            a[lidx0 + i*{ls}] = tempb4[lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
         }}
         barrier(CLK_LOCAL_MEM_FENCE);  
         }}
@@ -1165,7 +1155,7 @@ def kernel_4(h,c,d,f,g,start_pos,bias,\
     knl = prg.mm
     knl(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
     ,keys_values_g,weight_g,bias_g,\
-    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,h_g,h_temp_g,temp_g)
+    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g,a_g_2,b_g_2)
     cl.enqueue_copy(queue, keys_values, keys_values_g)
     cl.enqueue_copy(queue, h, a_g)
     return h
