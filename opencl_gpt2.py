@@ -117,7 +117,7 @@ class GPT2:
     return None
 
   def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):    
-    excepted_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
+    expected_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
     893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
     1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
     1244, 1011, 257, 2392, 1570, 286, 262, 6881, 13,\
@@ -128,7 +128,7 @@ class GPT2:
     1862, 1048, 508, 655, 18303, 422, 3504, 1524, 290, 468,\
     1239, 1107, 19189, 257, 3451, 287, 48782, 23154, 13, 921, 821, 319, 281, 3624]
 
-    excepted_tokens_b = [198, 198,\
+    expected_tokens_b = [198, 198,\
     1026, 373, 257, 845, 46873, 1110, 13, 198, 198, 2215, 262,
     19147, 12030, 12873, 287, 24414, 11, 262, 6771, 547, 407, 3142,\
     284, 670, 287, 262, 17590, 11, 645, 2300, 703, 881, 484, 2227,\
@@ -149,9 +149,9 @@ class GPT2:
       tok = self.model(tokens, start_pos, temperature, n_tokens).tolist()
       start_pos = len(toks)
       if default_prompt == "What is the answer to life, the universe, and everything?":
-        np.testing.assert_equal(tok,excepted_tokens[start_pos-13])
+        np.testing.assert_equal(tok,expected_tokens[start_pos-13])
       else:
-        np.testing.assert_equal(tok,excepted_tokens_b[start_pos-5])
+        np.testing.assert_equal(tok,expected_tokens_b[start_pos-5])
       toks.append(tok)
     return decode(toks)
 
