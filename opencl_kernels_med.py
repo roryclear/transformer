@@ -24,7 +24,7 @@ def add(a,b,b_s=0,a_s=0):
         __global const float *a, __global const float *b, __global float *res)
     {{
     int gidx0 = get_global_id(0);
-        res[gidx0] = a[{a_s*1024} + gidx0] + b[gidx0 + {b_s}*1024];    
+        res[gidx0] = a[{int(a_s)*1024} + gidx0] + b[gidx0 + {b_s}*1024];   
     }}
     """).build()
     knl = prg.add
@@ -260,7 +260,7 @@ def matvec(a,b,c):
     cl.enqueue_copy(queue, d, d_g)
     return d
 
-def matvec2(h_g,weight2_g,temperatue):
+def matvec2(h_g,weight2_g,temperatue): #pass bias in instead of adding to zero, todo for other kernels
     rows = 1024
     cols = 50257
     res = np.zeros(cols).astype(np.float32)
@@ -279,8 +279,7 @@ def matvec2(h_g,weight2_g,temperatue):
     knl = prg.matvec
     gidx = math.ceil(cols / 16) * 16
     knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
-    cl.enqueue_copy(queue, res, res_g)
-    return res
+    return res_g
 
 def matmul_t(a,b):
     a_rows = np.shape(a)[0]
@@ -1496,8 +1495,7 @@ def kernel_4(h,c,d,f,g,start_pos,bias,\
     return h
 
 
-def kernel_6(a):
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+def kernel_6(a_g,random_num):
     res = np.zeros(1).astype(np.float32)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     ls = 256
@@ -1571,7 +1569,42 @@ def kernel_6(a):
             res[0] = t;
         }}
     }}
-    
+     __kernel void mm6(
+    __global float *a)
+    {{
+        for(int i = 1; i < 50257; i++) {{
+            a[i] += a[i-1];
+        }}
+    }}
+    __kernel void mm7(
+    __global float *a)
+    {{
+        int gidx0 = get_global_id(0);
+        if((a[gidx0] / a[50256]) < {random_num}) {{
+            a[gidx0] = 1;
+        }} else {{
+            a[gidx0] = 0;
+        }}
+    }}
+    __kernel void mm8(
+    __global float *a, __global float *res)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{ls}];
+        int lidx0 = get_local_id(0);
+        float t = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            t += a[lidx0*{seg} + i];
+        }}
+        temp[lidx0] = t;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0 == 0) {{
+            t = 0;
+            for(int i = 0; i < {ls}; i++) {{
+               t += temp[i]; 
+            }}
+            res[0] = t;
+        }}
+    }}
     """).build()
     knl = prg.mm
     knl(queue, (ls,1), (ls,1), a_g, res_g) 
@@ -1584,5 +1617,15 @@ def kernel_6(a):
     knl5 = prg.mm5
     knl5(queue, (ls,1), (ls,1), a_g, res_g)
     knl4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
-    cl.enqueue_copy(queue, a, a_g)
-    return a
+    knl6 = prg.mm6
+    knl6(queue, (1,1), (1,1), a_g)
+    knl7 = prg.mm7
+    knl7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g)
+    ##
+    knl8 = prg.mm8
+    knl8(queue, (ls,1), (ls,1), a_g, res_g)
+    cl.enqueue_copy(queue, res, res_g)
+    #print(res)
+    ##
+    #cl.enqueue_copy(queue, a, a_g)
+    return res

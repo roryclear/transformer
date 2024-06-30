@@ -433,21 +433,8 @@ class Transformer:
         ret = logits.argmax(-1)
       else:
         logits = openclk.matvec2(h,self.lm_head_weight,temperature)
-        logits = openclk.kernel_6(logits)
-        logits = logits.cumsum(0)
-        logits = logits / logits[-1]
-        if use_tg_rand:
-          unif_samples = tg_rand.rand()
-        else:
-          unif_samples = np.random.rand().astype(np.float32)
-        b = np.empty_like(logits,dtype=bool)
-        for i in range(len(logits)):
-          if unif_samples >= logits[i]:
-            b[i] = True
-          else:
-            b[i] = False
-        b = b.sum()
-        ret = np.array(b)
+        unif_samples = tg_rand.rand()
+        ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
         return ret
     else:
       tok_emb = self.wte(tokens) #rorys todo
@@ -504,11 +491,7 @@ class Transformer:
       logits = np.exp(logits - np.max(logits))
       logits = logits / logits.sum()
       logits = logits.cumsum(0)
-      logits = logits / logits[-1]
-      if use_tg_rand:
-        unif_samples = tg_rand.rand()
-      else:
-        unif_samples = np.random.rand().astype(np.float32)
+      unif_samples = tg_rand.rand()
       #unif_samples = unif_samples.numpy()
       b = np.empty_like(logits,dtype=bool)
       for i in range(len(logits)):
