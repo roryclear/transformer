@@ -9,6 +9,7 @@ ctx = cl.Context(devices=my_gpu_devices)
 queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
 dim = 768
+prg = None
 n_heads = 12
 
 def add(a,b,b_s=0,a_s=0):
@@ -260,7 +261,7 @@ def matvec(a,b,c):
     cl.enqueue_copy(queue, d, d_g)
     return d
 
-def matvec2(h_g,weight2_g):
+def matvec2(h_g,weight2_g,temperatue):
     rows = 768
     cols = 50257
     res = np.zeros(cols).astype(np.float32)
@@ -273,6 +274,7 @@ def matvec2(h_g,weight2_g):
         for(int j = 0; j < {rows}; j++) {{
             res[gidx0] += h[j] * weight2[gidx0 + j*{cols}];
         }}
+        res[gidx0] /= {temperatue};
     }}
     """).build()
     knl = prg.matvec
@@ -1112,11 +1114,10 @@ def transpose_f(a):
     return at.reshape(12,64,s)
 
 def kernel_3(h_g,weight_g,bias_g):
-    size = 768 #todo
     ls = 256
-    seg = int(size / ls) #todo
+    seg = int(dim / ls) #todo
     prg = cl.Program(ctx, f"""
-    __kernel void mm(
+    __kernel void mm4(
         __global float *h, __global const float *weight, __global const float *bias)
     {{
         __attribute__ ((aligned (16))) __local float temp[{seg}];
@@ -1133,7 +1134,7 @@ def kernel_3(h_g,weight_g,bias_g):
             for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
-            mean = total / {size};  
+            mean = total / {dim};  
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
@@ -1151,7 +1152,7 @@ def kernel_3(h_g,weight_g,bias_g):
             for(int i = 0; i < {ls}; i++) {{
                 total += temp[i];
             }}
-            mean = pow(total / {size} + 1e-5,0.5);
+            mean = pow(total / {dim} + 1e-5,0.5);
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
         for(int i = 0; i < {seg}; i++) {{
@@ -1159,7 +1160,7 @@ def kernel_3(h_g,weight_g,bias_g):
         }}
     }}
     """).build()
-    knl = prg.mm
+    knl = prg.mm4
     knl(queue, (ls,1), (ls,1), h_g, weight_g, bias_g) #rory to test large stuff
     return h_g
 

@@ -260,7 +260,7 @@ def matvec(a,b,c):
     cl.enqueue_copy(queue, d, d_g)
     return d
 
-def matvec2(h_g,weight2_g):
+def matvec2(h_g,weight2_g,temperatue):
     rows = 1024
     cols = 50257
     res = np.zeros(cols).astype(np.float32)
@@ -273,6 +273,7 @@ def matvec2(h_g,weight2_g):
         for(int j = 0; j < {rows}; j++) {{
             res[gidx0] += h[j] * weight2[gidx0 + j*{cols}];
         }}
+        res[gidx0] /= {temperatue};
     }}
     """).build()
     knl = prg.matvec
@@ -779,19 +780,16 @@ def matvec2_b(h,weight2): #pass bias in instead of adding to zero, todo for othe
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
-    d = 1
-    gidx = math.ceil((cols/d) / 256) * 256
+    gidx = math.ceil((cols) / 256) * 256
     prg = cl.Program(ctx, f"""
     __kernel void matvec(
         __global const float *h, __global const float *weight2 , __global float *res)
     {{
         int gidx0 = get_global_id(0);
-        for(int i = 0; i < {d}; i++) {{
             for(int j = 0; j < {rows}; j++) {{
-                res[gidx0 + {math.ceil((cols/d) / 256) * 256}*i] += 
-                h[j] * weight2[gidx0 + {math.ceil((cols/d) / 256) * 256}*i + j*{cols}];
+                res[gidx0 + {cols}*i] += 
+                h[j] * weight2[gidx0 + {cols}*i + j*{cols}];
             }}
-        }}
     }}
     """).build()
     knl = prg.matvec
