@@ -395,6 +395,10 @@ class Transformer:
       for i in range(len(self.h)):
         self.mlp_c_fc_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].mlp.c_fc.weight.transpose(1,0).flatten()))
 
+    if hasattr(self, 'lm_head_weight') == False:
+      print("copying lm_head_weight")
+      self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head.weight.flatten())
+
     # 2D !
     #if hasattr(self, 'attn_c_attn_weight') == False:
       #print("FFFFFFSSSS attn_c_attn_weight")
@@ -414,18 +418,18 @@ class Transformer:
         self.h[i].mlp.c_proj.weight = self.h[i].mlp.c_proj.weight.flatten()
         self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten()
 
+      attn_dim = dim
       for i in range(0,len(self.h)):
         h = openclk.kernel_2(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
-        self.attn_c_attn_bias[i],self.h[i].attn.dim,\
+        self.attn_c_attn_bias[i],attn_dim,\
         self.attn_cache_kv[i],start_pos,\
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
       h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
-      self.lm_head.weight = self.lm_head.weight.flatten()
-      logits = openclk.matvec2(h,self.lm_head.weight)
+      logits = openclk.matvec2(h,self.lm_head_weight)
     else:
       tok_emb = self.wte(tokens) #rorys todo
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,dim))

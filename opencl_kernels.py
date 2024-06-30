@@ -260,11 +260,10 @@ def matvec(a,b,c):
     cl.enqueue_copy(queue, d, d_g)
     return d
 
-def matvec2(h_g,weight2): #pass bias in instead of adding to zero, todo for other kernels
+def matvec2(h_g,weight2_g):
     rows = 768
     cols = 50257
     res = np.zeros(cols).astype(np.float32)
-    bias2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     prg = cl.Program(ctx, f"""
     __kernel void matvec(
@@ -278,7 +277,7 @@ def matvec2(h_g,weight2): #pass bias in instead of adding to zero, todo for othe
     """).build()
     knl = prg.matvec
     gidx = math.ceil(cols / 16) * 16
-    knl(queue, (gidx,1), (16,1), h_g, bias2_g,res_g)
+    knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
     cl.enqueue_copy(queue, res, res_g)
     return res
 
@@ -803,29 +802,20 @@ def matvec2_b(h,weight2): #pass bias in instead of adding to zero, todo for othe
 def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
     weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g): #g = size
     ls = 256
-    zeros = np.zeros(dim).astype(np.float32)
+    xq_temp = np.zeros(768).astype(np.float32)
     zeros2 = np.zeros(12*(start_pos+1)).astype(np.float32)
     seg = int(dim / ls) #todo
     seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
-    h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
-    h_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros)
     temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros2)
+    xq_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq_temp)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
         __global const float *xqkv, __global float *keys_values,
-        __global const float *weight,__global const float *bias,
-        __global const float *weight2, __global const float *bias2,
-        __global const float *weight3, __global const float *bias3,
-        __global const float *weight4,
-        __global float *bias4, __global float *h_temp, __global float *h,
-        __global float *temp3)
+        __global float *xq_temp)
     {{
-        __attribute__ ((aligned (16))) __local float temp[{seg}];
+        __attribute__ ((aligned (16))) __local float temp[{ls}];
         __attribute__ ((aligned (16))) __local float mean;
-        __attribute__ ((aligned (16))) __local float xq_temp[768];
-        __attribute__ ((aligned (16))) __local float bias3_temp[3072];
-        __attribute__ ((aligned (16))) __local float bias4_temp[2304];
         int lidx0 = get_local_id(0);
         float total = 0;
         for(int i = 0; i < {seg}; i++) {{
@@ -872,17 +862,37 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
                 keys_values[12*64*128 + {start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {2*g}] = xqkv[{768*2} + lidx0*{int(dim*3 / ls)} + i - {2*g}] + total;
             }}
         }}
-        barrier(CLK_LOCAL_MEM_FENCE);
-        for(int z = 0; z < {seg3}; z++) {{
-            int x = (z + lidx0*{seg3}) % {start_pos+1};
-            int k = (z + lidx0*{seg3}) / {start_pos+1};
+    }}
+    __kernel void mm2(
+        __global float *keys_values,
+        __global float *temp3, __global float *xq_temp)
+    {{
+        int lidx0 = get_global_id(0);
+            int x = (lidx0) % {start_pos+1};
+            int k = (lidx0) / {start_pos+1};
             float acc0 = 0;
             for(int i = 0; i < 64; i++) {{
                 acc0 += xq_temp[i + 64*k] * keys_values[x*12*64 + i + 64*k];
             }}                  
             temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
-        }}
-        barrier(CLK_LOCAL_MEM_FENCE);
+    }}
+        __kernel void mm3(
+        __global float *a,
+        __global float *keys_values,
+        __global const float *weight,__global const float *bias,
+        __global const float *weight2, __global const float *bias2,
+        __global const float *weight3, __global const float *bias3,
+        __global const float *weight4,
+        __global float *bias4,
+        __global float *temp3, __global float *xq_temp)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{ls}];
+        __attribute__ ((aligned (16))) __local float mean;
+        __attribute__ ((aligned (16))) __local float bias3_temp[3072];
+        __attribute__ ((aligned (16))) __local float bias4_temp[2304];
+        __attribute__ ((aligned (16))) __local float h_temp[768];
+        __attribute__ ((aligned (16))) __local float h[768];
+        int lidx0 = get_local_id(0);
         if(lidx0 < 12){{
         float m = -INFINITY;
         for(int i = 0; i < {start_pos+1}; i++) {{
@@ -919,7 +929,7 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
             h_temp[lidx0*{seg} + i] = h[lidx0*{seg} + i];
         }}
         barrier(CLK_LOCAL_MEM_FENCE);
-        total = 0;
+        float total = 0;
         for(int i = 0; i < {seg}; i++) {{
             total += h[lidx0*{seg} + i];
         }}
@@ -968,9 +978,14 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
     }}
     """).build()
     knl = prg.mm
+    knl2 = prg.mm2
+    knl3 = prg.mm3
     knl(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
+    ,keys_values_g,xq_temp_g)
+    knl2(queue, (ls*seg3,1), (ls,1),keys_values_g,temp_g, xq_temp_g)
+    knl3(queue, (ls,1), (ls,1),a_g\
     ,keys_values_g,weight_g,bias_g,\
-    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,h_g,h_temp_g,temp_g)
+    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g, xq_temp_g)
     return a_g
 
 def minus_max_b(a):
