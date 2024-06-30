@@ -1497,3 +1497,95 @@ def kernel_4(h,c,d,f,g,start_pos,bias,\
     cl.enqueue_copy(queue, values_1, values_g_1)
     cl.enqueue_copy(queue, h, a_g)
     return h
+
+
+def kernel_6(a):
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    res = np.zeros(1).astype(np.float32)
+    res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
+    ls = 256
+    seg = math.ceil(50257 / ls)
+    prg = cl.Program(ctx, f"""
+    __kernel void mm(
+        __global const float *a, __global float *res)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{ls}];
+        int lidx0 = get_local_id(0);
+        float t = -INFINITY;
+        for(int i = 0; i < {seg}; i++) {{
+            t = max(a[i],t);
+        }}
+        temp[lidx0] = t;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0 == 0) {{
+            for(int i = 0; i < {ls}; i++) {{
+                t = max(t,temp[i]);
+            }}
+            res[0] = t;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }}
+    __kernel void mm2(
+    __global float *a, __global const float *res)
+    {{
+        int gidx0 = get_global_id(0);
+        a[gidx0] = exp(a[gidx0] - res[0]);
+    }}
+        __kernel void mm3(
+        __global const float *a, __global float *res)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{ls}];
+        int lidx0 = get_local_id(0);
+        float t = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            t = a[i] + t;
+        }}
+        temp[lidx0] = t;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0 == 0) {{
+            for(int i = 0; i < {ls}; i++) {{
+                t = t + temp[i];
+            }}
+            res[0] = t;
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }}
+    __kernel void mm4(
+    __global float *a, __global const float *res)
+    {{
+        int gidx0 = get_global_id(0);
+        a[gidx0] = a[gidx0] / res[0];
+    }}
+    __kernel void mm5(
+    __global const float *a, __global float *res)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{ls}];
+        int lidx0 = get_local_id(0);
+        float t = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            t = a[lidx0*{seg} + i] + t;
+        }}
+        temp[lidx0] = t;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0 == 0) {{
+            for(int i = 0; i < {ls}; i++) {{
+                t = t + temp[i];
+            }}
+            res[0] = t;
+        }}
+    }}
+    
+    """).build()
+    knl = prg.mm
+    knl(queue, (ls,1), (ls,1), a_g, res_g) 
+    knl2 = prg.mm2
+    knl2(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
+    knl3 = prg.mm3
+    knl3(queue, (ls,1), (ls,1), a_g, res_g)
+    knl4 = prg.mm4
+    knl4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
+    knl5 = prg.mm5
+    knl5(queue, (ls,1), (ls,1), a_g, res_g)
+    knl4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
+    cl.enqueue_copy(queue, a, a_g)
+    return a
