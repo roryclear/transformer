@@ -387,7 +387,6 @@ class Transformer:
         xq = xq.reshape(len(xq),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xk = xk.reshape(len(xk),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         xv = xv.reshape(len(xv),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        seqlen = len(xq)
         keys = xk
         values = xv
         s = list(np.shape(keys))
@@ -404,29 +403,19 @@ class Transformer:
         xq = openclk.matmul_t_3d_c(xq,keys)
         xq = openclk.minus_sum_3d(xq)
         xq = openclk.matmul_t_3d(xq,values)
-        xq = xq.transpose((1,0,2))
-        xq = xq.reshape(seqlen, dim)
-        #ret = np.matmul(x,self.weight) kernel below
-        ret = openclk.matmul_t(xq,self.h[i].attn.c_proj.weight)
-        ret += self.h[i].attn.c_proj.bias
-        attn = ret
-        h += attn
+        xq = openclk.transpose(xq)
+        h = openclk.matmul_t_e(xq,self.h[i].attn.c_proj.weight,self.attn_c_proj_bias[i],n_tokens,h)
+        xq = None
+        attn = None
         x = np.copy(h)
 
-        for j in range(len(x)):
-          x[j] = openclk.kernel_0(x[j],self.h[i].ln_2.weight, self.h[i].ln_2.bias)
-
-        x = openclk.matmul_t(x,self.h[i].mlp.c_fc.weight)
-        x += self.h[i].mlp.c_fc.bias
-        for j in range(len(x)):
-          x[j] = 0.5 * x[j] * (1 + np.tanh(x[j] * 0.7978845608 * (1 + 0.044715 * x[j] * x[j])))
-        x = openclk.matmul_t(x,self.h[i].mlp.c_proj.weight)
-        x += self.h[i].mlp.c_proj.bias
+        x = openclk.kernel_0_b(x,self.h[i].ln_2.weight, self.h[i].ln_2.bias,n_tokens,True)
+        x = openclk.matmul_t_d2(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i])
+        x = openclk.matmul_t_d(x,self.h[i].mlp.c_proj.weight,self.mlp_c_proj_bias[i])
         x += h
         ############
       h = np.copy(x[-1]) #todo
-      for j in range(len(x)): #todo, kernel instead of loop
-        x[j] = openclk.kernel_0(x[j],self.h[-1].ln_1.weight, self.h[-1].ln_1.bias)
+      x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
       attn = self.h[-1].attn(x,start_pos,od_out=True)   
       attn = attn[-1]
       h += attn
