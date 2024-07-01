@@ -448,33 +448,6 @@ def sq_mean_sqrt(a):
     cl.enqueue_copy(queue, a, a_g)
     return a[0]
 
-def matmul_t_b(a,b):
-    ls = 256
-    seg = int(np.shape(b)[1] / ls)
-    rows = np.shape(b)[0]
-    c = np.zeros([np.shape(b)[1]]).astype(np.float32)
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    prg = cl.Program(ctx, f"""
-    __kernel void matmul(
-        __global const float *a, __global const float *b, __global float *res)
-    {{
-        int lidx0 = get_local_id(0);
-        for(int i = 0; i < {seg}; i++) {{
-            float total = 0;
-            for(int k = 0; k < {rows}; k++) {{
-                total += a[k] * b[(lidx0*{seg} + i)*{rows} + k]; 
-            }}
-        res[lidx0*{seg} + i] = total;
-        }}
-    }}
-    """).build()
-    knl = prg.matmul
-    knl(queue, (256,1), (256,1), a_g, b_g,c_g) #todo, this is arbitrary
-    cl.enqueue_copy(queue, c, c_g)
-    return c
-
 def test_equal(a,b):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
@@ -1586,9 +1559,10 @@ def kernel_6(a_g,random_num):
     #cl.enqueue_copy(queue, a, a_g)
     return res
 
-def tok_emb(tokens,weight):
+def tok_emb(tokens,weight,weight2):
     tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
     weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
+    weight_2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight2)
     no_tokens = np.shape(tokens)[0]
     tok_emb = np.zeros((no_tokens,dim)).astype(np.float32)
     ls = 256
@@ -1597,15 +1571,161 @@ def tok_emb(tokens,weight):
     tok_emb_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tok_emb)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
-        __global int *tokens, __global float *weight, __global float *tok_emb)
+        __global int *tokens, __global const float *weight, __global const float *weight2,  __global float *tok_emb)
     {{
         int gidx0 = get_global_id(0);
         int i = gidx0 / {dim};
         int j = gidx0 % {dim};
-        tok_emb[i*{dim} + j] = weight[tokens[i]*{dim} + j];
+        tok_emb[i*{dim} + j] = weight[tokens[i]*{dim} + j] + weight2[i*{dim} + j];
     }}
     """).build()
     knl = prg.mm
-    knl(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, tok_emb_g)
+    knl(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, weight_2_g,tok_emb_g)
     cl.enqueue_copy(queue, tok_emb, tok_emb_g)
     return tok_emb
+
+def kernel_0_12(a,c,d):
+    size = 768 #todo hardcoded
+    ls = 256
+    seg = int(size / ls) #todo
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
+    prg = cl.Program(ctx, f"""
+    __kernel void mm(
+        __global float *a, __global const float *c, __global const float *d)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{ls}];
+        __attribute__ ((aligned (16))) __local float temp2[12];
+        int lidx0 = get_local_id(0);
+        temp2[0] = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            temp2[0] += a[lidx0*{seg} + i];
+        }}
+        temp[lidx0] = temp2[0];
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            temp2[0] = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                temp2[0] += temp[i];
+            }}
+            temp2[0] = temp2[0] / {size};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] -= temp2[0];
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        temp2[0] = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            temp2[0] += pow(a[lidx0*{seg} + i],2);
+        }}
+        temp[lidx0] = temp2[0];
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0==0) {{
+            temp2[0] = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                temp2[0] += temp[i];
+            }}
+            temp2[0] = pow(temp2[0] / {size} + 1e-5,0.5);
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            a[i + lidx0*{seg}] = (a[i + lidx0*{seg}] * c[i + lidx0*{seg}]) / temp2[0] + d[i + lidx0*{seg}];
+        }}
+    }}
+    """).build()
+    knl = prg.mm
+    knl(queue, (ls,1), (ls,1), a_g, c_g, d_g) #rory to test large stuff
+    cl.enqueue_copy(queue, a, a_g)
+    a = a.flatten()[:768]
+    return a
+
+def kernel_0_b(x,weight,bias,n_tokens):
+    size = 768 #todo hardcoded
+    ls = 256
+    seg = int(size / ls) #todo
+    x_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
+    weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
+    bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
+    prg = cl.Program(ctx, f"""
+    __kernel void mm(
+        __global float *x, __global const float *weight, __global const float *bias)
+    {{
+        __attribute__ ((aligned (16))) __local float temp[{ls}];
+        __attribute__ ((aligned (16))) __local float temp2[{n_tokens}];
+        int lidx0 = get_local_id(0);
+        int gidx0 = get_group_id(0);
+        int r = gidx0; //todo clean
+        temp2[r] = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            temp2[r] += x[768*r + lidx0*{seg} + i];
+        }}
+        temp[lidx0] = temp2[r];
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0<{n_tokens}) {{
+            temp2[lidx0] = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                temp2[lidx0] += temp[i];
+            }}
+            temp2[lidx0] = temp2[lidx0] / {size};  
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            x[768*r + i + lidx0*{seg}] -= temp2[r];
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        temp2[r] = 0;
+        for(int i = 0; i < {seg}; i++) {{
+            temp2[r] += pow(x[768*r + lidx0*{seg} + i],2);
+        }}
+        temp[lidx0] = temp2[r];
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx0<{n_tokens}) {{
+            temp2[lidx0] = 0;
+            for(int i = 0; i < {ls}; i++) {{
+                temp2[lidx0] += temp[i];
+            }}
+            temp2[lidx0] = pow(temp2[lidx0] / {size} + 1e-5,0.5);
+        }}
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for(int i = 0; i < {seg}; i++) {{
+            x[768*r + i + lidx0*{seg}] = (x[768*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
+        }}
+    }}
+    """).build()
+    knl = prg.mm
+    knl(queue, (ls*n_tokens,1), (ls,1), x_g, weight_g, bias_g) #rory to test large stuff
+    return x_g
+
+def matmul_t_b(a_g,b,n_tokens,bias_g):
+    a_rows = n_tokens
+    b_cols = np.shape(b)[1]
+    b_rows = np.shape(b)[0]
+    c = np.zeros([a_rows,b_cols])
+    ####TRANSPOSED
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    #bias_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=bias)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global const float *bias, __global float *res)
+    {{
+        int x = get_global_id(0);
+        if(x < {b_cols}) {{
+            for(int y = 0; y < {a_rows}; y++) {{
+                float total = 0;
+                for(int k = 0; k < {b_rows}; k++) {{
+                    total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
+                }}
+                res[y*{b_cols} + x] = bias[x] + total;
+            }}  
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    group_size = math.ceil(b_cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c

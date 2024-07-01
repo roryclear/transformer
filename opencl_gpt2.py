@@ -370,20 +370,14 @@ class Transformer:
         ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
         return ret
     else:
-      tok_emb = openclk.tok_emb(tokens,self.wte.weight)
-      pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,dim))
-      x = tok_emb + pos_emb
+      n_tokens = len(tokens)
+      x = openclk.tok_emb(tokens,self.wte.weight,self.wpe.weight)
 
       #rory - h self.h is the 12 transformer blocks, so this is just forward through all
       for i in range(len(self.h)-1):
         h = np.copy(x) #todo
-        for j in range(len(x)): #todo, kernel instead of loop
-          x[j] = openclk.kernel_0(x[j],self.h[i].ln_1.weight, self.h[i].ln_1.bias)
-        #attn = self.h[i].attn(x,start_pos)
-        #ATTN START
-
-        xqkv = openclk.matmul_t(x,self.h[i].attn.c_attn.weight)
-        xqkv += self.h[i].attn.c_attn.bias
+        x = openclk.kernel_0_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
+        xqkv = openclk.matmul_t_b(x,self.h[i].attn.c_attn.weight,n_tokens,self.attn_c_attn_bias[i])
         xq = xqkv[:,:dim]
         xk = xqkv[:,dim:2*dim]
         xv = xqkv[:,2*dim:]
