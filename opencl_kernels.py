@@ -1032,7 +1032,9 @@ def matmul3_b(xq,values,s):
     return res
 
 def transpose(a):
-    s = np.shape(a)[1]    
+    a_rows = np.shape(a)[1]
+    a_cols = np.shape(a)[2]
+    print(a_rows,a_cols)     
     a = a.flatten()
     at = np.zeros_like(a)
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
@@ -1042,9 +1044,9 @@ def transpose(a):
         __global const float *a, __global float *at)
     {{
         for(int i = 0; i < 12; i++) {{
-            for(int j = 0; j < {s}; j++) {{
-                for(int k = 0; k < 64; k++) {{
-                    at[i*{s}*64 + j + k*{s}] = a[i*{s}*64 + j*64 + k];
+            for(int j = 0; j < {a_rows}; j++) {{
+                for(int k = 0; k < {a_cols}; k++) {{
+                    at[i*{a_rows}*{a_cols} + j + k*{a_rows}] = a[i*{a_rows}*{a_cols} + j*{a_cols} + k];
                 }}
             }}
         }}
@@ -1791,9 +1793,9 @@ def matmul_t_3d_c(a,b):
             int y = gidx0 % {a_rows};
             float total = 0;
             for(int k = 0; k < {a_cols}; k++) {{
-                total += a[y*{a_cols} + k + z*{a_rows}*{a_cols}] * b[x + k*{a_rows} + z*{a_cols}*{a_rows}]; 
+                total += a[y*{a_cols} + k + z*{a_rows}*{a_cols}] * b[x*{a_cols} + k + z*{a_cols}*{a_rows}];
             }}
-            res[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total;
+            res[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total / 8; //sqrt 64 input shape xq
         }}
     }}
     """).build()

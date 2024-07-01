@@ -43,6 +43,7 @@ def decode(index):
   return ret
 
 def scaled_dot_product_attention(xq, keys, values):
+  exit()
   keys = np.transpose(keys,(0,2,1))
   xq = openclk.matmul_t_3d(xq,keys)
   xq = xq / 8 #sqrt 64 input shape xq
@@ -400,9 +401,7 @@ class Transformer:
         xq, keys, values = xq.transpose((1,0,2)), keys.transpose((1,0,2)), values.transpose((1,0,2))
         #xq = scaled_dot_product_attention(xq,keys,values)
         #inlined
-        keys = openclk.transpose(np.copy(keys)).reshape(n_heads,64,n_tokens)
         xq = openclk.matmul_t_3d_c(xq,keys)
-        xq = xq / 8 #sqrt 64 input shape xq
         for x in range(len(xq)):
           for y in range(len(xq[0])):
             for z in range(len(xq[0][0])):
