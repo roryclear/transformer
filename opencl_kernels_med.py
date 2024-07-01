@@ -95,16 +95,14 @@ def matmul_t(a,b):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmul_t_3d(a,b):
-    a_rows = np.shape(a)[1]
-    a_cols = np.shape(a)[2]
-    b_cols = np.shape(b)[2]
-    b_rows = np.shape(b)[1]
-    c = np.zeros([np.shape(a)[0],a_rows,b_cols])
+def matmul_t_3d(a_g,b,n_tokens):
+    a_rows = n_tokens
+    a_cols = n_tokens
+    b_rows = n_tokens
+    b_cols = 64 #todo
+    c = np.zeros([16,a_rows,b_cols])
     ls = 256
-    a = a.flatten()
     b = b.flatten()
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
@@ -123,7 +121,7 @@ def matmul_t_3d(a,b):
         res[y*{b_cols} + x + z*{b_cols}*{a_rows}] = total;
     }}
     """).build()
-    g = math.ceil((np.shape(a)[0]*b_cols*a_rows / ls) * ls)
+    g = math.ceil((16*b_cols*a_rows / ls) * ls)
     knl = prg.matmul
     knl(queue, (g,1), (ls,1), a_g, b_g,c_g) #todo, this is arbitrary
     cl.enqueue_copy(queue, c, c_g)
@@ -1141,50 +1139,10 @@ def matmul_t_3d_c(a,b):
     """).build()
     knl = prg.matmul
     knl(queue, (g,1), (ls,1), a_g, b_g,c_g) #todo this will break when g < ls, small prompt
-    cl.enqueue_copy(queue, c, c_g)
-    return c
+    return c_g
 
-def minus_sum_3d(a):
-    print(np.shape(a))
-    x = np.shape(a[0])
-    num_tokens = np.shape(a)[1]
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    prg = cl.Program(ctx, f"""
-    __kernel void ms(
-        __global float *a)
-    {{
-      for(int x = 0; x < {x}; x++) {{
-        for(int y = 0; y < {num_tokens}; y++) {{
-            for(int z = y+1; z < {num_tokens}; z++) {{
-                a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = -INFINITY;
-            }}
-            float m = -INFINITY;
-            for(int z = 0; z < {num_tokens}; z++) {{
-                m = max(a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z],m);
-            }}
-            for(int z = 0; z < {num_tokens}; z++) {{
-                a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = exp(a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] - m);
-            }}
-            m = 0;
-            for(int z = 0; z < {num_tokens}; z++) {{
-                m += a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z];
-            }}
-            for(int z = 0; z < {num_tokens}; z++) {{
-                a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] /= m;
-            }}
-        }}
-      }}  
-    }}
-    """).build()
-    knl = prg.ms
-    knl(queue, (1,1), (1,1), a_g) #todo this will break when g < ls, small prompt
-    cl.enqueue_copy(queue, a, a_g)
-    return a
-
-def minus_sum_3d(a):
-    x = np.shape(a)[0]
-    num_tokens = np.shape(a)[1]
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+def minus_sum_3d(a_g,num_tokens):
+    x = 16
     res = np.zeros(num_tokens*x).astype(np.float32)
     res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
     ls = 256
@@ -1203,7 +1161,6 @@ def minus_sum_3d(a):
         a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = exp(a[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z]);
     }}
     }}
-    
     __kernel void ms3(
         __global float *a, __global float *mx)
     {{
@@ -1216,7 +1173,6 @@ def minus_sum_3d(a):
         }}
         mx[x*{num_tokens} + y] = m;  
     }}
-    
     __kernel void ms4(
         __global float *a, global const float *mx)
     {{
@@ -1238,5 +1194,6 @@ def minus_sum_3d(a):
     knl3(queue, (g2,1), (g2,1), a_g,res_g)
     knl4 = prg.ms4
     knl4(queue, (g,1), (ls,1), a_g,res_g)
-    cl.enqueue_copy(queue, a, a_g)
-    return a
+    a = np.zeros((16,13,13)).astype(np.float32)
+    #cl.enqueue_copy(queue, a, a_g)
+    return a_g

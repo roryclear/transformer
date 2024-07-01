@@ -18,7 +18,7 @@ my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
 ctx = cl.Context(devices=my_gpu_devices)
 mf = cl.mem_flags
 
-med = True
+med = False
 dim = 768
 n_heads = 12
 if med == True:
@@ -401,8 +401,8 @@ class Transformer:
         #xq = scaled_dot_product_attention(xq,keys,values)
         #inlined
         xq = openclk.matmul_t_3d_c(xq,keys)
-        xq = openclk.minus_sum_3d(xq)
-        xq = openclk.matmul_t_3d(xq,values)
+        xq = openclk.minus_sum_3d(xq,n_tokens)
+        xq = openclk.matmul_t_3d(xq,values,n_tokens)
         xq = openclk.transpose(xq)
         h = openclk.matmul_t_e(xq,self.h[i].attn.c_proj.weight,self.attn_c_proj_bias[i],n_tokens,h)
         xq = None
