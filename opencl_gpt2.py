@@ -20,9 +20,11 @@ mf = cl.mem_flags
 
 med = False
 dim = 768
+n_heads = 12
 if med == True:
   import opencl_kernels_med as openclk
   dim = 1024
+  n_heads = 16
 
 MAX_CONTEXT = 128
 
@@ -40,18 +42,18 @@ def decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-def scaled_dot_product_attention(x, key, value):
-  key = np.transpose(key,(0,2,1))
-  qk = openclk.matmul_t_3d(x,key)
-  qk = qk / math.sqrt(np.shape(x)[-1])
-  for x in range(len(qk)):
-    for y in range(len(qk[0])):
-      for z in range(len(qk[0][0])):
-        if z > y: qk[x][y][z] -= np.inf
-      qk[x][y] = np.exp(qk[x][y] - np.max(qk[x][y]))
-      qk[x][y] = qk[x][y] / qk[x][y].sum()
-  qk = np.array(openclk.matmul_t_3d(qk,value))
-  return qk
+def scaled_dot_product_attention(xq, keys, values):
+  keys = np.transpose(keys,(0,2,1))
+  xq = openclk.matmul_t_3d(xq,keys)
+  xq = xq / 8 #sqrt 64 input shape xq
+  for x in range(len(xq)):
+    for y in range(len(xq[0])):
+      for z in range(len(xq[0][0])):
+        if z > y: xq[x][y][z] -= np.inf
+      xq[x][y] = np.exp(xq[x][y] - np.max(xq[x][y]))
+      xq[x][y] = xq[x][y] / xq[x][y].sum()
+  xq = np.array(openclk.matmul_t_3d(xq,values))
+  return xq
 
 def scaled_dot_product_attention_b(x, key, value):
   qk = openclk.matvec4(x,key)
@@ -396,7 +398,18 @@ class Transformer:
           new_cache[1][j] = values[j]       
         self.h[i].attn.cache_kv = new_cache
         xq, keys, values = xq.transpose((1,0,2)), keys.transpose((1,0,2)), values.transpose((1,0,2))
-        xq = scaled_dot_product_attention(xq,keys,values)
+        #xq = scaled_dot_product_attention(xq,keys,values)
+        #inlined
+        keys = openclk.transpose(np.copy(keys)).reshape(n_heads,64,n_tokens)
+        xq = openclk.matmul_t_3d_c(xq,keys)
+        xq = xq / 8 #sqrt 64 input shape xq
+        for x in range(len(xq)):
+          for y in range(len(xq[0])):
+            for z in range(len(xq[0][0])):
+              if z > y: xq[x][y][z] -= np.inf
+            xq[x][y] = np.exp(xq[x][y] - np.max(xq[x][y]))
+            xq[x][y] = xq[x][y] / xq[x][y].sum()
+        xq = np.array(openclk.matmul_t_3d(xq,values))
         xq = xq.transpose((1,0,2))
         xq = xq.reshape(seqlen, dim)
         #ret = np.matmul(x,self.weight) kernel below
