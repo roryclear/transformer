@@ -106,49 +106,14 @@ class Attention:
     self.head_dim = dim // n_heads
 
   def __call__(self, x, start_pos,od_out=False):
-    x = np.array(x)
-
-    if start_pos > 0:
-      xqkv = openclk.matmul_t_b(x,self.c_attn.weight) + self.c_attn.bias
-      xq = xqkv[0:self.dim]
-      xk = xqkv[self.dim:2*self.dim]
-      xk = xk.reshape(self.n_heads,self.head_dim)
-      xv = xqkv[self.dim*2:]
-      xv = xv.reshape(self.n_heads,self.head_dim)
-
-      keys = self.cache_kv[0]
-      values = self.cache_kv[1]
-      
-      keys[start_pos] = xk
-      values[start_pos] = xv
-
-      keys = np.resize(keys,(start_pos,self.n_heads,self.head_dim))
-      values = np.resize(values,(start_pos,self.n_heads,self.head_dim))
-
-      keys = np.concatenate([keys,[xk]]) #todo
-      values = np.concatenate([values,[xv]]) #todo
-
-      keys = keys.transpose(1,2,0) #todo, can we not do this?
-
-      xq = openclk.kernel_3(xq,keys)
-      values = values.transpose(1,0,2)
-      xq = openclk.matmul3(xq,values,(start_pos+1))
-      #xq = openclk.matmul3_b(xq,values,(start_pos+1))
-
-      values = values.transpose(1,0,2)
-
-      xq = openclk.matmul3(xq,values,(start_pos+1))
-
-      ret = openclk.matvec(xq,self.c_proj.weight,self.c_proj.bias)
-      return ret
-    
+    x = np.array(x)  
     if od_out:
       #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
       xqkv = openclk.matmul_t(x,self.c_attn.weight)
       xqkv += self.c_attn.bias
-      xq = xqkv[:,:self.dim]
-      xk = xqkv[:,self.dim:2*self.dim]
-      xv = xqkv[:,2*self.dim:]
+      xq = xqkv[:,:dim]
+      xk = xqkv[:,dim:2*dim]
+      xv = xqkv[:,2*dim:]
       xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
       xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
       xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
@@ -171,39 +136,7 @@ class Attention:
       ret = openclk.matmul_t_c(xq,self.c_proj.weight)
       ret += self.c_proj.bias
       return ret
-    
-    #xqkv = np.matmul(x,self.c_attn.weight) #kernel below
-    xqkv = openclk.matmul_t(x,self.c_attn.weight)
-    xqkv += self.c_attn.bias
-
-    xq = xqkv[:,:self.dim]
-    xk = xqkv[:,self.dim:2*self.dim]
-    xv = xqkv[:,2*self.dim:]
-
-    xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
-    xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
-    xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
-    seqlen = len(xq)
-
-    keys = xk
-    values = xv
-    s = list(np.shape(keys))
-    s[0] = MAX_CONTEXT
-    new_cache = np.zeros(shape=s).astype(np.float32)
-    new_cache = [np.copy(new_cache),np.copy(new_cache)]
-    for i in range(len(keys)):
-      new_cache[0][i] = keys[i]
-      new_cache[1][i] = values[i]       
-    self.cache_kv = new_cache
-    xq, keys, values = xq.transpose((1,0,2)), keys.transpose((1,0,2)), values.transpose((1,0,2))
-    xq = scaled_dot_product_attention(xq,keys,values)
-    xq = xq.transpose((1,0,2))
-    xq = xq.reshape(seqlen, self.dim)
-
-    ret = openclk.matmul_t(xq,self.c_proj.weight)
-    ret += self.c_proj.bias
-    return ret
-  
+      
 class FeedForward:
   def __init__(self, dim, hidden_dim):
     self.c_fc = Linear(dim, hidden_dim, bias=True)
@@ -437,7 +370,7 @@ class Transformer:
         ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
         return ret
     else:
-      tok_emb = self.wte(tokens) #rorys todo
+      tok_emb = openclk.tok_emb(tokens,self.wte.weight)
       pos_emb = np.resize(self.wpe.weight,new_shape=(seqlen,dim))
       x = tok_emb + pos_emb
 
@@ -446,7 +379,36 @@ class Transformer:
         h = np.copy(x) #todo
         for j in range(len(x)): #todo, kernel instead of loop
           x[j] = openclk.kernel_0(x[j],self.h[i].ln_1.weight, self.h[i].ln_1.bias)
-        attn = self.h[i].attn(x,start_pos)
+        #attn = self.h[i].attn(x,start_pos)
+        #ATTN START
+
+        xqkv = openclk.matmul_t(x,self.h[i].attn.c_attn.weight)
+        xqkv += self.h[i].attn.c_attn.bias
+        xq = xqkv[:,:dim]
+        xk = xqkv[:,dim:2*dim]
+        xv = xqkv[:,2*dim:]
+        xq = xq.reshape(len(xq),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
+        xk = xk.reshape(len(xk),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
+        xv = xv.reshape(len(xv),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
+        seqlen = len(xq)
+        keys = xk
+        values = xv
+        s = list(np.shape(keys))
+        s[0] = MAX_CONTEXT
+        new_cache = np.zeros(shape=s).astype(np.float32)
+        new_cache = [np.copy(new_cache),np.copy(new_cache)]
+        for j in range(len(keys)):
+          new_cache[0][j] = keys[j]
+          new_cache[1][j] = values[j]       
+        self.h[i].attn.cache_kv = new_cache
+        xq, keys, values = xq.transpose((1,0,2)), keys.transpose((1,0,2)), values.transpose((1,0,2))
+        xq = scaled_dot_product_attention(xq,keys,values)
+        xq = xq.transpose((1,0,2))
+        xq = xq.reshape(seqlen, dim)
+        #ret = np.matmul(x,self.weight) kernel below
+        ret = openclk.matmul_t(xq,self.h[i].attn.c_proj.weight)
+        ret += self.h[i].attn.c_proj.bias
+        attn = ret
         h += attn
         x = np.copy(h)
 

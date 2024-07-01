@@ -1582,3 +1582,27 @@ def kernel_6(a_g,random_num):
     ##
     #cl.enqueue_copy(queue, a, a_g)
     return res
+
+def tok_emb(tokens,weight):
+    tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
+    weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=weight)
+    no_tokens = np.shape(tokens)[0]
+    tok_emb = np.zeros((no_tokens,dim)).astype(np.float32)
+    ls = 256
+    size = no_tokens*dim
+
+    tok_emb_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tok_emb)
+    prg = cl.Program(ctx, f"""
+    __kernel void mm(
+        __global int *tokens, __global float *weight, __global float *tok_emb)
+    {{
+        int gidx0 = get_global_id(0);
+        int i = gidx0 / {dim};
+        int j = gidx0 % {dim};
+        tok_emb[i*{dim} + j] = weight[tokens[i]*{dim} + j];
+    }}
+    """).build()
+    knl = prg.mm
+    knl(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, tok_emb_g)
+    cl.enqueue_copy(queue, tok_emb, tok_emb_g)
+    return tok_emb
