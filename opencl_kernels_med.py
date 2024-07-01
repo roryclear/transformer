@@ -922,7 +922,7 @@ def kernel_0_b(x,weight,bias,n_tokens,retnp=False):
        return x 
     return x_g
 
-def matmul_t_d(a,b,bias_g):
+def matmul_t_d(a,b,bias_g,h):
     a_rows = np.shape(a)[0]
     b_cols = np.shape(b)[1]
     b_rows = np.shape(b)[0]
@@ -940,7 +940,7 @@ def matmul_t_d(a,b,bias_g):
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
         __global const float *a, __global const float *b,__global const float *bias, __global float *res)
@@ -952,7 +952,7 @@ def matmul_t_d(a,b,bias_g):
         for(int k = 0; k < {b_rows}; k++) {{
             total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
         }}
-        res[y*{b_cols} + x] = total + bias[x];
+        res[y*{b_cols} + x] += total + bias[x];
     }}
     """).build()
     g = math.ceil((b_cols*a_rows / ls)*ls)
