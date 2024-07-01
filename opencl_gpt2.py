@@ -402,12 +402,7 @@ class Transformer:
         #xq = scaled_dot_product_attention(xq,keys,values)
         #inlined
         xq = openclk.matmul_t_3d_c(xq,keys)
-        for x in range(len(xq)):
-          for y in range(len(xq[0])):
-            for z in range(len(xq[0][0])):
-              if z > y: xq[x][y][z] -= np.inf
-            xq[x][y] = np.exp(xq[x][y] - np.max(xq[x][y]))
-            xq[x][y] = xq[x][y] / xq[x][y].sum()
+        xq = openclk.minus_sum_3d(xq)
         xq = np.array(openclk.matmul_t_3d(xq,values))
         xq = xq.transpose((1,0,2))
         xq = xq.reshape(seqlen, dim)
