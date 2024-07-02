@@ -364,7 +364,7 @@ class Transformer:
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
       h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
       if temperature < 1e-6:
-        logits = openclk.matvec2(h,self.lm_head_weight)
+        logits = openclk.matvec2(h,self.lm_head_weight) #todo
         ret = logits.argmax(-1)
       else:
         logits = openclk.matvec2(h,self.lm_head_weight,temperature)
@@ -438,37 +438,21 @@ class Transformer:
       values = values[-1] #todo
       qk = openclk.matvec4(xq,keys)
       xq = openclk.matmul_t(qk,values)
-      attn = openclk.matmul_t_c2(xq,self.h[-1].attn.c_proj.weight,self.attn_c_proj_bias[-1])
-      h += attn
-      x = np.copy(h)
-
-      x = openclk.kernel_0(x,self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
+      x = openclk.matmul_t_c2(xq,self.h[-1].attn.c_proj.weight,self.attn_c_proj_bias[-1],h)
+      x = openclk.kernel_0(x,self.ln_2_weight[-1], self.ln_2_bias[-1])
 
       x = openclk.matmul_t_c3(x,self.h[-1].mlp.c_fc.weight,self.mlp_c_fc_bias[-1])
-      x = openclk.matmul_t_c2(x,self.h[-1].mlp.c_proj.weight,self.mlp_c_proj_bias[-1])
-      x += h
-
-      x = openclk.kernel_0(x,self.ln_f.weight, self.ln_f.bias)
-
-      logits = openclk.matmul_t_c(x,self.lm_head.weight)
+      x = openclk.matmul_t_c2(x,self.h[-1].mlp.c_proj.weight,self.mlp_c_proj_bias[-1],h)
+      h = None
+      x = openclk.kernel_0(x,self.ln_f_weight, self.ln_f_bias)
 
     if temperature < 1e-6:
+      logits = openclk.matmul_t_c(x,self.lm_head.weight) #todo
       ret = logits.argmax(-1)
     else:
-      logits = np.array(logits) / temperature
-      logits = np.exp(logits - np.max(logits))
-      logits = logits / logits.sum()
-      logits = logits.cumsum(0)
+      logits = openclk.matmul_t_c(x,self.lm_head.weight,temperature,True)
       unif_samples = tg_rand.rand()
-      #unif_samples = unif_samples.numpy()
-      b = np.empty_like(logits,dtype=bool)
-      for i in range(len(logits)):
-        if unif_samples >= logits[i]:
-          b[i] = True
-        else:
-          b[i] = False
-      b = b.sum()
-      ret = np.array(b)
+      ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]
     return ret
 
   def __call__(self, tokens, start_pos, temperature:np.float32=0.0,v_in=False):

@@ -211,10 +211,11 @@ def test_equal(a,b):
     return
 
 
-def matmul_t_c(a,b):
-    b_cols = np.shape(b)[1]
-    b_rows = np.shape(b)[0]
+def matmul_t_c(a_g,b,temperature,buffer=False):
+    b_cols = 50257
+    b_rows = 768
     c = np.zeros(b_cols)
+    ls = 256
     ####TRANSPOSED, this replicates it for a test. todo: fix 
     '''
     b2 = np.copy(b)
@@ -224,7 +225,6 @@ def matmul_t_c(a,b):
         for i in range(np.shape(b)[1]):
             b[j][i] = np.copy(b2[i][j])
     '''
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
@@ -238,13 +238,15 @@ def matmul_t_c(a,b):
             for(int k = 0; k < {b_rows}; k++) {{
                 total += a[k] * b[x*{b_rows} + k]; 
             }}
-            res[x] = total; 
+            res[x] = total / {temperature};
         }}
     }}
     """).build()
     knl = prg.matmul
-    group_size = math.ceil(b_cols / 16) * 16
-    knl(queue, (group_size,1), (16,1), a_g, b_g,c_g) #todo, this is arbitrary
+    group_size = math.ceil(b_cols / ls) * ls
+    knl(queue, (group_size,1), (ls,1), a_g, b_g,c_g) #todo, this is arbitrary
+    if buffer:
+        return c_g
     cl.enqueue_copy(queue, c, c_g)
     return c
 
@@ -279,13 +281,11 @@ def matvec4(a,b):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def kernel_0(a,c,d):
+def kernel_0(a,c_g,d_g):
     size = np.shape(a)[0]
     ls = 256
     seg = int(size / ls) #todo
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-    d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d)
@@ -332,8 +332,7 @@ def kernel_0(a,c,d):
     """).build()
     knl = prg.mm
     knl(queue, (ls,1), (ls,1), a_g, c_g, d_g) #rory to test large stuff
-    cl.enqueue_copy(queue, a, a_g)
-    return a
+    return a_g
 
 def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
     weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g): #g = size
@@ -1047,10 +1046,9 @@ def matmul_t_f(a,b_g,n_tokens,bias_g):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmul_t_c2(a,b,bias_g):
+def matmul_t_c2(a,b,bias_g,h):
     b_cols = np.shape(b)[1]
     b_rows = np.shape(b)[0]
-    c = np.zeros(b_cols)
     ####TRANSPOSED, this replicates it for a test. todo: fix 
     '''
     b2 = np.copy(b)
@@ -1062,8 +1060,7 @@ def matmul_t_c2(a,b,bias_g):
     '''
     a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-    c = np.float32(c)
-    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
         __global const float *a, __global const float *b, __global const float *bias, __global float *res)
@@ -1074,19 +1071,19 @@ def matmul_t_c2(a,b,bias_g):
             for(int k = 0; k < {b_rows}; k++) {{
                 total += a[k] * b[x*{b_rows} + k]; 
             }}
-            res[x] = total + bias[x]; 
+            res[x] += total + bias[x]; 
         }}
     }}
     """).build()
     knl = prg.matmul
     group_size = math.ceil(b_cols / 16) * 16
     knl(queue, (group_size,1), (16,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
-    cl.enqueue_copy(queue, c, c_g)
-    return c
+    cl.enqueue_copy(queue, h, c_g)
+    return h
 
-def matmul_t_c3(a,b,bias_g):
-    b_cols = np.shape(b)[1]
-    b_rows = np.shape(b)[0]
+def matmul_t_c3(a_g,b,bias_g):
+    b_cols = 3072
+    b_rows = 768
     c = np.zeros(b_cols)
     ####TRANSPOSED, this replicates it for a test. todo: fix 
     '''
@@ -1097,7 +1094,6 @@ def matmul_t_c3(a,b,bias_g):
         for i in range(np.shape(b)[1]):
             b[j][i] = np.copy(b2[i][j])
     '''
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     c = np.float32(c)
     c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
