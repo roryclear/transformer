@@ -42,34 +42,11 @@ def decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-def scaled_dot_product_attention(xq, keys, values):
-  exit()
-  keys = np.transpose(keys,(0,2,1))
-  xq = openclk.matmul_t_3d(xq,keys)
-  xq = xq / 8 #sqrt 64 input shape xq
-  for x in range(len(xq)):
-    for y in range(len(xq[0])):
-      for z in range(len(xq[0][0])):
-        if z > y: xq[x][y][z] -= np.inf
-      xq[x][y] = np.exp(xq[x][y] - np.max(xq[x][y]))
-      xq[x][y] = xq[x][y] / xq[x][y].sum()
-  xq = np.array(openclk.matmul_t_3d(xq,values))
-  return xq
-
-def scaled_dot_product_attention_b(x, key, value):
-  exit()
-  qk = openclk.matvec4(x,key)
-  qk = qk / math.sqrt(np.shape(x)[-1])
-  qk = np.array(openclk.matmul_t(qk,value))
-  return qk
-
 class Linear():
   def __init__(self, in_features, out_features, bias=True):
     self.bias = None
     self.weight = None
 
-  def __call__(self,x):
-    return None
   
 class LayerNorm:
   def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True):
@@ -78,12 +55,6 @@ class LayerNorm:
     self.bias = None
     self.key = key
     self.weight = None
-
-  def __call__(self, x):
-    for i in range(len(x)):
-      exit()
-      x[i] = openclk.kernel_0(np.copy(x[i]),self.weight, self.bias)
-    return x
 
 def encode(x):
   ret = []
@@ -108,56 +79,12 @@ class Attention:
     self.n_heads = n_heads
     self.dim = dim
     self.head_dim = dim // n_heads
-
-  def __call__(self, x):
-    exit()
-    xqkv = openclk.matmul_t(x,self.c_attn.weight)
-    xqkv += self.c_attn.bias
-    xq = xqkv[:,:self.dim]
-    xk = xqkv[:,self.dim:2*self.dim]
-    xv = xqkv[:,2*self.dim:]
-    xq = xq.reshape(len(xq),self.n_heads,self.head_dim)
-    xk = xk.reshape(len(xk),self.n_heads,self.head_dim)
-    xv = xv.reshape(len(xv),self.n_heads,self.head_dim)
-    keys = xk
-    values = xv
-    s = list(np.shape(keys))
-    s[0] = MAX_CONTEXT
-    new_cache = np.zeros(shape=s).astype(np.float32)
-    new_cache = [np.copy(new_cache),np.copy(new_cache)]
-    for i in range(len(keys)):
-      new_cache[0][i] = keys[i]
-      new_cache[1][i] = values[i]       
-    self.cache_kv = new_cache
-    xq = xq[-1] #todo
-    keys = keys[-1] #todo
-    values = values[-1] #todo
-    qk = openclk.matvec4(xq,keys)
-    qk = qk / math.sqrt(np.shape(xq)[-1])
-    xq = np.array(openclk.matmul_t(qk,values))
-    ret = openclk.matmul_t_c(xq,self.c_proj.weight)
-    ret += self.c_proj.bias
-    return ret
       
 class FeedForward:
   def __init__(self, dim, hidden_dim):
     self.c_fc = Linear(dim, hidden_dim, bias=True)
     self.c_proj = Linear(hidden_dim, dim, bias=True)
 
-  def __call__(self, x):
-    ret = openclk.matmul_t(x,self.c_fc.weight)
-    ret += self.c_fc.bias
-    x = ret
-    #x = self.c_fc(x) #above
-    for i in range(len(x)):  
-      # gelu() activation
-      x[i] = 0.5 * x[i] * (1 + np.tanh(x[i] * 0.7978845608 * (1 + 0.044715 * x[i] * x[i])))
-    x = np.array(x) #todo
-
-    ret = openclk.matmul_t(x,self.c_proj.weight)
-    ret += self.c_proj.bias
-    return ret
-  
 class Embedding:
   def __init__(self, vocab_size:int, embed_size:int):
     self = self
@@ -178,14 +105,6 @@ class Mock_tg_rand:
 class Embedding_2: #todo crutch
   def __init__(self, vocab_size:int, embed_size:int):
     self.vocab_size, self.embed_size = vocab_size, embed_size
-
-  def __call__(self, idx):
-    ret = np.empty((len(idx),self.embed_size)).astype(np.float32)
-    for i in range(len(ret)):
-      for j in range(len(ret[0])):
-        ret[i][j] = self.weight[idx[i]][j]
-    return ret
-
 
 class TransformerBlock:
   def __init__(self, dim, n_heads, norm_eps):
@@ -383,23 +302,20 @@ class Transformer:
         xq = xqkv[:,:dim]
         xk = xqkv[:,dim:2*dim]
         xv = xqkv[:,2*dim:]
-        xq = xq.reshape(len(xq),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        xk = xk.reshape(len(xk),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        xv = xv.reshape(len(xv),self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        keys = xk
+        xq = xq.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
+        xk = xk.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
+        xv = xv.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
         values = xv
-        s = list(np.shape(keys))
+        s = list(np.shape(xk))
         s[0] = MAX_CONTEXT
         new_cache = np.zeros(shape=s).astype(np.float32)
         new_cache = [np.copy(new_cache),np.copy(new_cache)]
-        for j in range(len(keys)):
-          new_cache[0][j] = keys[j]
+        for j in range(len(xk)):
+          new_cache[0][j] = xk[j]
           new_cache[1][j] = values[j]       
         self.h[i].attn.cache_kv = new_cache
-        xq, keys, values = xq.transpose((1,0,2)), keys.transpose((1,0,2)), values.transpose((1,0,2))
-        #xq = scaled_dot_product_attention(xq,keys,values)
-        #inlined
-        xq = openclk.matmul_t_3d_c(xq,keys)
+        xq, values = xq.transpose((1,0,2)), values.transpose((1,0,2))
+        xq = openclk.matmul_t_3d_c(xq,xk)
         xq = openclk.minus_sum_3d(xq,n_tokens)
         xq = openclk.matmul_t_3d(xq,values,n_tokens)
         xq = openclk.transpose(xq,n_tokens)
@@ -420,24 +336,20 @@ class Transformer:
       xq = xqkv[:,:self.h[-1].attn.dim]
       xk = xqkv[:,self.h[-1].attn.dim:2*self.h[-1].attn.dim]
       xv = xqkv[:,2*self.h[-1].attn.dim:]
-      xq = xq.reshape(len(xq),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
-      xk = xk.reshape(len(xk),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
-      xv = xv.reshape(len(xv),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
-      keys = xk
-      values = xv
-      s = list(np.shape(keys))
-      s[0] = MAX_CONTEXT
+      xq = xq.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
+      xk = xk.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
+      xv = xv.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
       new_cache = np.zeros(shape=s).astype(np.float32)
       new_cache = [np.copy(new_cache),np.copy(new_cache)]
-      for i in range(len(keys)):
-        new_cache[0][i] = keys[i]
-        new_cache[1][i] = values[i]       
+      for i in range(len(xk)):
+        new_cache[0][i] = xk[i]
+        new_cache[1][i] = xv[i]         
       self.h[-1].attn.cache_kv = new_cache
       xq = xq[-1] #todo
-      keys = keys[-1] #todo
-      values = values[-1] #todo
-      qk = openclk.matvec4(xq,keys)
-      xq = openclk.matmul_t(qk,values)
+      xk = xk[-1] #todo
+      xv = xv[-1] #todo
+      qk = openclk.matvec4(xq,xk)
+      xq = openclk.matmul_t(qk,xv)
       x = openclk.matmul_t_c2(xq,self.h[-1].attn.c_proj.weight,self.attn_c_proj_bias[-1],h)
       x = openclk.kernel_0(x,self.ln_2_weight[-1], self.ln_2_bias[-1])
 
@@ -523,10 +435,7 @@ class GPT2:
 # **** main code ****
 
 if __name__ == "__main__":
-  use_tg_rand = True
-
-  if use_tg_rand:
-    tg_rand = Mock_tg_rand()
+  tg_rand = Mock_tg_rand()
 
   if os.path.exists("gpt2weights") == False:
     os.mkdir("gpt2weights")
