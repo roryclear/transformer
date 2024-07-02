@@ -194,6 +194,12 @@ class Transformer:
       self.attn_c_proj_weight = []
       for i in range(len(self.h)):
         self.attn_c_proj_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].attn.c_proj.weight.flatten()))
+
+    if hasattr(self, 'attn_c_proj_weight2') == False: #todo, why is un-flattened one needed?
+      print("copying attn_c_proj_weight2")
+      self.attn_c_proj_weight2 = []
+      for i in range(len(self.h)):
+        self.attn_c_proj_weight2.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].attn.c_proj.weight))
     
     if hasattr(self, 'attn_c_proj_bias') == False:
       print("copying attn_c_proj_bias")
@@ -288,33 +294,30 @@ class Transformer:
       x = openclk.tok_emb(tokens,self.wte_weight,self.wpe.weight,n_tokens)
       for i in range(len(self.h)-1):
         h = x
-        x = openclk.kernel_0_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
+        x = openclk.kernel_0_b(x,self.ln_1_weight[i], self.ln_1_bias[i],n_tokens)
         xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[i],n_tokens,self.attn_c_attn_bias[i])
         new_cache = np.zeros((2*MAX_CONTEXT*n_heads*64)).astype(np.float32)
         new_cache = openclk.copy_to_cache_b(xqkv,new_cache,n_tokens,MAX_CONTEXT)
         self.h[i].attn.cache_kv = new_cache
-        xq = xqkv[:,:dim]
         xk = xqkv[:,dim:2*dim]
-        xv = xqkv[:,2*dim:]
 
-        xq = xq.flatten() #todo remove
-        xv = xv.flatten()
-        xq,xv = openclk.transpose_b(xq,n_tokens,xv)
+        xq,xv = openclk.transpose_b(xqkv,n_tokens)
+
         xq = openclk.matmul_t_3d_c(xq,xk,n_tokens)
         xq = openclk.minus_sum_3d(xq,n_tokens)
         xq = openclk.matmul_t_3d(xq,xv,n_tokens)
         xq = openclk.transpose(xq,n_tokens)
-        h = openclk.matmul_t_e(xq,self.h[i].attn.c_proj.weight,self.attn_c_proj_bias[i],n_tokens,h)
+        h = openclk.matmul_t_e(xq,self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],n_tokens,h)
         xq = None
         attn = None
         x = np.copy(h)
 
-        x = openclk.kernel_0_b(x,self.h[i].ln_2.weight, self.h[i].ln_2.bias,n_tokens,True)
+        x = openclk.kernel_0_b(x,self.ln_2_weight[i], self.ln_2_bias[i],n_tokens,True)
         x = openclk.matmul_t_d2(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],n_tokens)
         x = openclk.matmul_t_d(x,self.h[i].mlp.c_proj.weight,self.mlp_c_proj_bias[i],h,n_tokens)
         ############
       h = np.copy(x[-1])
-      x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
+      x = openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],n_tokens,True)
 
       xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[-1],n_tokens,self.attn_c_attn_bias[-1])
       xq = xqkv[:,:self.h[-1].attn.dim]
@@ -331,11 +334,12 @@ class Transformer:
       xv = xv[-1] #todo
       qk = openclk.matvec4(xq,xk)
       xq = openclk.matmul_t(qk,xv)
-      x = openclk.matmul_t_c2(xq,self.h[-1].attn.c_proj.weight,self.attn_c_proj_bias[-1],h)
+      qk = None
+      x = openclk.matmul_t_c2(xq,self.attn_c_proj_weight[-1],self.attn_c_proj_bias[-1],h)
       x = openclk.kernel_0(x,self.ln_2_weight[-1], self.ln_2_bias[-1])
 
       x = openclk.matmul_t_c3(x,self.h[-1].mlp.c_fc.weight,self.mlp_c_fc_bias[-1])
-      x = openclk.matmul_t_c2(x,self.h[-1].mlp.c_proj.weight,self.mlp_c_proj_bias[-1],h)
+      x = openclk.matmul_t_c2(x,self.mlp_c_proj_weight[-1],self.mlp_c_proj_bias[-1],h)
       h = None
       x = openclk.kernel_0(x,self.ln_f_weight, self.ln_f_bias)
 
