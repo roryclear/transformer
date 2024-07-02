@@ -125,8 +125,7 @@ def matmul_t_3d(a_g,b,n_tokens):
     g = math.ceil((12*b_cols*a_rows / ls) * ls)
     knl = prg.matmul
     knl(queue, (g,1), (ls,1), a_g, b_g,c_g) #todo, this is arbitrary
-    cl.enqueue_copy(queue, c, c_g)
-    return c
+    return c_g
 
 def matmulcr(a,b): #column-row weight (b) #column-row weight (b) #todo different from main, row-column order or opposite
     cols = np.shape(b)[0]
@@ -525,12 +524,10 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
     weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g, xq_temp_g)
     return a_g
 
-def transpose(a):
-    a_rows = np.shape(a)[1]
-    a_cols = np.shape(a)[2]   
-    a = a.flatten()
-    at = np.zeros_like(a)
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+def transpose(a_g,n_tokens):
+    # (12,13,64) -? (13,12,64)
+    a_rows = n_tokens
+    at = np.zeros(12*64*n_tokens).astype(np.float32) #todo
     at_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=at)
     prg = cl.Program(ctx, f"""
     __kernel void matmul(
@@ -548,8 +545,7 @@ def transpose(a):
     ls = 256
     g = math.ceil(g / ls)*ls
     knl(queue, (g,1), (ls,1), a_g, at_g)
-    cl.enqueue_copy(queue, at, at_g)
-    return at
+    return at_g
 
 def kernel_3(h_g,weight_g,bias_g):
     ls = 256
@@ -978,7 +974,7 @@ def matmul_t_d2(a,b,bias_g):
     cl.enqueue_copy(queue, c, c_g)
     return c
 
-def matmul_t_e(a,b,bias_g,n_tokens,h):
+def matmul_t_e(a_g,b,bias_g,n_tokens,h):
     a_rows = n_tokens
     b_rows = 768
     ls = 256
@@ -991,7 +987,6 @@ def matmul_t_e(a,b,bias_g,n_tokens,h):
         for i in range(np.shape(b)[1]):
             b[j][i] = np.copy(b2[i][j])
     '''
-    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
     h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
     prg = cl.Program(ctx, f"""
