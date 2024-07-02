@@ -164,7 +164,7 @@ class Transformer:
       hi.ln_2.bias = np.float32(hi.ln_2.bias)
       print(type(hi.ln_2.bias[0]))
 
-  def forward(self, tokens, start_pos, temperature:float=0.0,v_in=False):
+  def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if hasattr(self, 'ln_1_weight') == False:
       print("copying ln_1_weight")
       self.ln_1_weight = []
@@ -255,17 +255,16 @@ class Transformer:
       print("copying lm_head_weight")
       self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head.weight.flatten())
 
-    # 2D !
-    #if hasattr(self, 'attn_c_attn_weight') == False:
-      #print("FFFFFFSSSS attn_c_attn_weight")
-      #self.attn_c_attn_weight = np.concatenate((self.h[0].attn.c_attn.weight.flatten(),self.h[1].attn.c_attn.weight.flatten()))
-    if start_pos > 0:
-      h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
-      for i in range(len(self.h)):
-        self.h[i].attn.c_proj.weight = self.h[i].attn.c_proj.weight.flatten()
-        self.h[i].mlp.c_proj.weight = self.h[i].mlp.c_proj.weight.flatten()
-        self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten()
+    if hasattr(self, 'wte_weight') == False:
+      print("copying self_wte_weight")
+      self.wte_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wte.weight)
 
+    if hasattr(self, 'wpe_weight') == False:
+      print("copying self_wpe_weight")
+      self.wpe_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wpe.weight)
+
+    if start_pos > 0:
+      h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
       attn_dim = dim
       for i in range(0,len(self.h)):
         h = openclk.kernel_2(h,self.ln_1_weight[i],\
@@ -286,10 +285,7 @@ class Transformer:
         ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
         return ret
     else:
-      n_tokens = len(tokens)
-      x = openclk.tok_emb(tokens,self.wte.weight,self.wpe.weight)
-
-      #rory - h self.h is the 12 transformer blocks, so this is just forward through all
+      x = openclk.tok_emb(tokens,self.wte_weight,self.wpe.weight,n_tokens)
       for i in range(len(self.h)-1):
         h = x
         x = openclk.kernel_0_b(h,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
@@ -311,8 +307,10 @@ class Transformer:
         new_cache = np.array(new_cache)   
         self.h[i].attn.cache_kv = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
 
-        xq, xv = xq.transpose((1,0,2)), xv.transpose((1,0,2))
-        xq = openclk.matmul_t_3d_c(xq,xk)
+        xq = xq.flatten() #todo remove
+        xv = xv.flatten()
+        xq,xv = openclk.transpose_b(xq,n_tokens,xv)
+        xq = openclk.matmul_t_3d_c(xq,xk,n_tokens)
         xq = openclk.minus_sum_3d(xq,n_tokens)
         xq = openclk.matmul_t_3d(xq,xv,n_tokens)
         xq = openclk.transpose(xq,n_tokens)
@@ -322,8 +320,8 @@ class Transformer:
         x = np.copy(h)
 
         x = openclk.kernel_0_b(x,self.h[i].ln_2.weight, self.h[i].ln_2.bias,n_tokens,True)
-        x = openclk.matmul_t_d2(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i])
-        x = openclk.matmul_t_d(x,self.h[i].mlp.c_proj.weight,self.mlp_c_proj_bias[i],h)
+        x = openclk.matmul_t_d2(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],n_tokens)
+        x = openclk.matmul_t_d(x,self.h[i].mlp.c_proj.weight,self.mlp_c_proj_bias[i],h,n_tokens)
         ############
       h = np.copy(x[-1]) #todo
       x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
@@ -364,8 +362,8 @@ class Transformer:
       ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]
     return ret
 
-  def __call__(self, tokens, start_pos, temperature:np.float32=0.0,v_in=False):
-    return self.forward(tokens, start_pos, temperature)
+  def __call__(self, tokens, start_pos, temperature:np.float32=0.0,n_tokens=1):
+    return self.forward(tokens, start_pos, temperature,n_tokens)
 
 VOCAB_SIZE = 50257
 class GPT2:
@@ -412,12 +410,13 @@ class GPT2:
 
     toks = encode(prompt)
     start_pos = 0
+    n_tokens = len(toks)
     for _ in trange(max_length, disable=(timing==True)):
       if batch_size == 1 and len(toks[start_pos:]) == 1:
         tokens = np.array([toks[start_pos]])
       else:
         tokens = np.array(toks)
-      tok = self.model(tokens, start_pos, temperature).tolist()
+      tok = self.model(tokens, start_pos, temperature, n_tokens).tolist()
       start_pos = len(toks)
       if med == False:
         if default_prompt == "What is the answer to life, the universe, and everything?":
