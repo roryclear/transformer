@@ -300,7 +300,7 @@ def matvec4(a,b):
             for(int k = 0; k < {b_rows}; k++) {{
                 total += a[k] * b[x*{b_cols} + k]; 
             }}
-            res[x] = total;
+            res[x] = total / 8; //sqrt size hardcoded
         }}
     }}
     """).build()
@@ -1192,3 +1192,117 @@ def minus_sum_3d(a_g,num_tokens):
     a = np.zeros((16,13,13)).astype(np.float32)
     #cl.enqueue_copy(queue, a, a_g)
     return a_g
+
+def matmul_t_f(a,b_g,n_tokens,bias_g):
+    a_rows = n_tokens
+    b_cols = 1024*3 #todo
+    b_rows = 1024
+    c = np.zeros([a_rows,b_cols])
+    ls = 256
+    ####TRANSPOSED, this replicates it for a test. todo: fix 
+    '''
+    b2 = np.copy(b)
+    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
+    print("SHAPE =",np.shape(b)) 
+    for j in range(np.shape(b)[0]):
+        for i in range(np.shape(b)[1]):
+            b[j][i] = np.copy(b2[i][j])
+    '''
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global const float *bias,__global float *res)
+    {{
+        int gidx0 = get_global_id(0);
+        int x = gidx0 / {a_rows};
+        int y = gidx0 % {a_rows};
+        float total = 0;
+        for(int k = 0; k < {b_rows}; k++) {{
+            total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
+        }}
+        res[y*{b_cols} + x] = total + bias[x];
+    }}
+    """).build()
+    g = math.ceil((b_cols*a_rows / ls)*ls)
+    knl = prg.matmul
+    knl(queue, (g,1), (ls,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def matmul_t_c2(a,b,bias_g):
+    b_cols = np.shape(b)[1]
+    b_rows = np.shape(b)[0]
+    c = np.zeros(b_cols)
+    ####TRANSPOSED, this replicates it for a test. todo: fix 
+    '''
+    b2 = np.copy(b)
+    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
+    print("SHAPE =",np.shape(b)) 
+    for j in range(np.shape(b)[0]):
+        for i in range(np.shape(b)[1]):
+            b[j][i] = np.copy(b2[i][j])
+    '''
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global const float *bias, __global float *res)
+    {{
+        int x = get_global_id(0);
+        if(x < {b_cols}) {{
+            float total = 0;
+            for(int k = 0; k < {b_rows}; k++) {{
+                total += a[k] * b[x*{b_rows} + k]; 
+            }}
+            res[x] = total + bias[x]; 
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    group_size = math.ceil(b_cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c
+
+def matmul_t_c3(a,b,bias_g):
+    b_cols = np.shape(b)[1]
+    b_rows = np.shape(b)[0]
+    c = np.zeros(b_cols)
+    ####TRANSPOSED, this replicates it for a test. todo: fix 
+    '''
+    b2 = np.copy(b)
+    b = np.empty((np.shape(b2)[1],np.shape(b2)[0]),dtype=np.float32)
+    print("SHAPE =",np.shape(b)) 
+    for j in range(np.shape(b)[0]):
+        for i in range(np.shape(b)[1]):
+            b[j][i] = np.copy(b2[i][j])
+    '''
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
+    c = np.float32(c)
+    c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    prg = cl.Program(ctx, f"""
+    __kernel void matmul(
+        __global const float *a, __global const float *b, __global const float *bias, __global float *res)
+    {{
+        int x = get_global_id(0);
+        if(x < {b_cols}) {{
+            float total = 0;
+            for(int k = 0; k < {b_rows}; k++) {{
+                total += a[k] * b[x*{b_rows} + k]; 
+            }}
+            res[x] = 0.5 * (total + bias[x])\
+            * (1 + tanh((total + bias[x]) * 0.7978845608\
+            * (1 + 0.044715 * pow((total + bias[x]),2))));
+        }}
+    }}
+    """).build()
+    knl = prg.matmul
+    group_size = math.ceil(b_cols / 16) * 16
+    knl(queue, (group_size,1), (16,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
+    cl.enqueue_copy(queue, c, c_g)
+    return c

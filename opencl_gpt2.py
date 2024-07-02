@@ -57,6 +57,7 @@ def scaled_dot_product_attention(xq, keys, values):
   return xq
 
 def scaled_dot_product_attention_b(x, key, value):
+  exit()
   qk = openclk.matvec4(x,key)
   qk = qk / math.sqrt(np.shape(x)[-1])
   qk = np.array(openclk.matmul_t(qk,value))
@@ -109,6 +110,7 @@ class Attention:
     self.head_dim = dim // n_heads
 
   def __call__(self, x):
+    exit()
     xqkv = openclk.matmul_t(x,self.c_attn.weight)
     xqkv += self.c_attn.bias
     xq = xqkv[:,:self.dim]
@@ -412,20 +414,38 @@ class Transformer:
         ############
       h = np.copy(x[-1]) #todo
       x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
-      attn = self.h[-1].attn(x) 
-      attn = attn[-1]
+      #attn = self.h[-1].attn(x)
+
+      xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[-1],n_tokens,self.attn_c_attn_bias[-1])
+      xq = xqkv[:,:self.h[-1].attn.dim]
+      xk = xqkv[:,self.h[-1].attn.dim:2*self.h[-1].attn.dim]
+      xv = xqkv[:,2*self.h[-1].attn.dim:]
+      xq = xq.reshape(len(xq),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
+      xk = xk.reshape(len(xk),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
+      xv = xv.reshape(len(xv),self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
+      keys = xk
+      values = xv
+      s = list(np.shape(keys))
+      s[0] = MAX_CONTEXT
+      new_cache = np.zeros(shape=s).astype(np.float32)
+      new_cache = [np.copy(new_cache),np.copy(new_cache)]
+      for i in range(len(keys)):
+        new_cache[0][i] = keys[i]
+        new_cache[1][i] = values[i]       
+      self.h[-1].attn.cache_kv = new_cache
+      xq = xq[-1] #todo
+      keys = keys[-1] #todo
+      values = values[-1] #todo
+      qk = openclk.matvec4(xq,keys)
+      xq = openclk.matmul_t(qk,values)
+      attn = openclk.matmul_t_c2(xq,self.h[-1].attn.c_proj.weight,self.attn_c_proj_bias[-1])
       h += attn
       x = np.copy(h)
 
       x = openclk.kernel_0(x,self.h[-1].ln_2.weight, self.h[-1].ln_2.bias)
 
-      x = openclk.matmul_t_c(x,self.h[-1].mlp.c_fc.weight)
-
-      x += self.h[-1].mlp.c_fc.bias
-
-      x = 0.5 * x * (1 + np.tanh(x * 0.7978845608 * (1 + 0.044715 * x * x)))
-      x = openclk.matmul_t_c(x,self.h[-1].mlp.c_proj.weight)
-      x += self.h[-1].mlp.c_proj.bias
+      x = openclk.matmul_t_c3(x,self.h[-1].mlp.c_fc.weight,self.mlp_c_fc_bias[-1])
+      x = openclk.matmul_t_c2(x,self.h[-1].mlp.c_proj.weight,self.mlp_c_proj_bias[-1])
       x += h
 
       x = openclk.kernel_0(x,self.ln_f.weight, self.ln_f.bias)
