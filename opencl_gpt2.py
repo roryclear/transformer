@@ -256,7 +256,6 @@ class Transformer:
     #if hasattr(self, 'attn_c_attn_weight') == False:
       #print("FFFFFFSSSS attn_c_attn_weight")
       #self.attn_c_attn_weight = np.concatenate((self.h[0].attn.c_attn.weight.flatten(),self.h[1].attn.c_attn.weight.flatten()))
-    seqlen = len(tokens)
     if start_pos > 0:
       h = openclk.add(self.wte.weight,self.wpe.weight,start_pos,tokens[0])
       for i in range(len(self.h)):
@@ -265,6 +264,7 @@ class Transformer:
         self.h[i].mlp.c_proj.bias = self.h[i].mlp.c_proj.bias.flatten()
 
       attn_dim = dim
+      kernel_2_prg = openclk.build_kernel_2_prg(start_pos,attn_dim)
       for i in range(0,len(self.h)):
         h = openclk.kernel_2(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
@@ -273,7 +273,7 @@ class Transformer:
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
-        self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
+        self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i],kernel_2_prg)
       h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
       if temperature < 1e-6:
         logits = openclk.matvec2(h,self.lm_head_weight) #todo

@@ -316,15 +316,9 @@ def kernel_0(a,c_g,d_g):
     knl(queue, (ls,1), (ls,1), a_g, c_g, d_g) #rory to test large stuff
     return a_g
 
-def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
-    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g): #g = size
+def build_kernel_2_prg(start_pos,g):
     ls = 256
-    xq_temp = np.zeros(768).astype(np.float32)
-    zeros2 = np.zeros(12*(start_pos+1)).astype(np.float32)
     seg = int(dim / ls) #todo
-    seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
-    temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros2)
-    xq_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq_temp)
     prg = cl.Program(ctx, f"""
     __kernel void mm(
         __global float *a, __global const float *c, __global const float *d, __global const float *e,
@@ -494,6 +488,16 @@ def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         }}
     }}
     """).build()
+    return prg
+
+def kernel_2(a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
+    weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,prg): #g = size
+    ls = 256
+    xq_temp = np.zeros(768).astype(np.float32)
+    zeros2 = np.zeros(12*(start_pos+1)).astype(np.float32)
+    seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
+    temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros2)
+    xq_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq_temp)
     knl = prg.mm
     knl2 = prg.mm2
     knl3 = prg.mm3
