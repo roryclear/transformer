@@ -288,24 +288,14 @@ class Transformer:
       x = openclk.tok_emb(tokens,self.wte_weight,self.wpe.weight,n_tokens)
       for i in range(len(self.h)-1):
         h = x
-        x = openclk.kernel_0_b(h,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
-        xqkv = openclk.matmul_t_b(x,self.h[i].attn.c_attn.weight,n_tokens,self.attn_c_attn_bias[i])
+        x = openclk.kernel_0_b(x,self.h[i].ln_1.weight, self.h[i].ln_1.bias,n_tokens)
+        xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[i],n_tokens,self.attn_c_attn_bias[i])
+        new_cache = np.zeros((2*MAX_CONTEXT*n_heads*64)).astype(np.float32)
+        new_cache = openclk.copy_to_cache_b(xqkv,new_cache,n_tokens,MAX_CONTEXT)
+        self.h[i].attn.cache_kv = new_cache
         xq = xqkv[:,:dim]
         xk = xqkv[:,dim:2*dim]
         xv = xqkv[:,2*dim:]
-        xq = xq.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        xk = xk.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        xv = xv.reshape(n_tokens,self.h[i].attn.n_heads,self.h[i].attn.head_dim)
-        values = xv
-        s = list(np.shape(xk))
-        s[0] = MAX_CONTEXT
-        new_cache = np.zeros(shape=s).astype(np.float32)
-        new_cache = [np.copy(new_cache),np.copy(new_cache)]
-        for j in range(len(xk)):
-          new_cache[0][j] = xk[j]
-          new_cache[1][j] = xv[j]
-        new_cache = np.array(new_cache)   
-        self.h[i].attn.cache_kv = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
 
         xq = xq.flatten() #todo remove
         xv = xv.flatten()
@@ -323,9 +313,8 @@ class Transformer:
         x = openclk.matmul_t_d2(x,self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],n_tokens)
         x = openclk.matmul_t_d(x,self.h[i].mlp.c_proj.weight,self.mlp_c_proj_bias[i],h,n_tokens)
         ############
-      h = np.copy(x[-1]) #todo
+      h = np.copy(x[-1])
       x = openclk.kernel_0_b(x,self.h[-1].ln_1.weight, self.h[-1].ln_1.bias,n_tokens,True)
-      #attn = self.h[-1].attn(x)
 
       xqkv = openclk.matmul_t_f(x,self.attn_c_attn_weight[-1],n_tokens,self.attn_c_attn_bias[-1])
       xq = xqkv[:,:self.h[-1].attn.dim]
@@ -334,12 +323,9 @@ class Transformer:
       xq = xq.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
       xk = xk.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
       xv = xv.reshape(n_tokens,self.h[-1].attn.n_heads,self.h[-1].attn.head_dim)
-      new_cache = np.zeros(shape=s).astype(np.float32)
-      new_cache = [np.copy(new_cache),np.copy(new_cache)]
-      new_cache[0][0:len(xk)] = xk
-      new_cache[1][0:len(xk)] = xv   
-      new_cache = np.array(new_cache)
-      self.h[-1].attn.cache_kv = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
+      new_cache = np.zeros((2*MAX_CONTEXT*n_heads*64)).astype(np.float32)
+      new_cache = openclk.copy_to_cache(xk,xv,new_cache,n_tokens,MAX_CONTEXT)
+      self.h[-1].attn.cache_kv = new_cache
       xq = xq[-1] #todo
       xk = xk[-1] #todo
       xv = xv[-1] #todo

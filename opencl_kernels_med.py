@@ -581,13 +581,14 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, c, c_g)
         return c
 
-    def matmul_t_f(self,a,b_g,n_tokens,bias_g):
+    def matmul_t_f(self,a_g,b_g,n_tokens,bias_g):
         a_rows = n_tokens
         b_cols = 1024*3 #todo
         b_rows = 1024
         c = np.zeros([a_rows,b_cols])
         ls = 256
-        a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+        if type(a_g) is np.ndarray:
+            a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a_g)
         c = np.float32(c)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
         prg = cl.Program(ctx, f"""
@@ -699,38 +700,56 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, h, h_g)
         return h
 
-    def matmul_t_b(self,a_g,b,n_tokens,bias_g):
-        a_rows = n_tokens
-        b_cols = 1024*3
-        b_rows = 1024
-        c = np.zeros([a_rows,b_cols])
-        b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-        c = np.float32(c)
-        c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+    def copy_to_cache_b(self,xqkv,new_cache,n_tokens,max_content):
+        new_cache = np.array(new_cache)
+        xqkv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xqkv)
+        new_cache_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
         prg_str = f"""
         __kernel void matmul(
-            __global const float *a, __global const float *b, __global const float *bias, __global float *res)
+            __global const float *xqkv, __global float *new_cache)
         {{
-            int x = get_global_id(0);
-            if(x < {b_cols}) {{
-                for(int y = 0; y < {a_rows}; y++) {{
-                    float total = 0;
-                    for(int k = 0; k < {b_rows}; k++) {{
-                        total += a[y*{b_rows} + k] * b[x*{b_rows} + k]; 
-                    }}
-                    res[y*{b_cols} + x] = bias[x] + total;
-                }}  
-            }}
+            int gidx0 = get_global_id(0);
+            int i = gidx0 / {16*64};
+            int j = gidx0 % {16*64};
+            new_cache[i*16*64 + j] = xqkv[i*16*64*3 + 1024*1 + j];
+            new_cache[{max_content}*16*64 + i*16*64 + j] = xqkv[i*16*64*3 + 1024*2 + j]; 
         }}
         """
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
         prg = self.prg_cache[prg_str]
         knl = prg.matmul
-        group_size = math.ceil(b_cols / 16) * 16
-        knl(queue, (group_size,1), (16,1), a_g, b_g,bias_g,c_g) #todo, this is arbitrary
-        cl.enqueue_copy(queue, c, c_g)
-        return c
+        ls = 256
+        g = math.ceil((n_tokens*16*64) / ls) * ls
+        knl(queue, (g,1), (ls,1), xqkv_g, new_cache_g) #todo, this is arbitrary
+        return new_cache_g
+
+    def copy_to_cache(self,xk,xv,new_cache,n_tokens,max_content):
+        xk = xk.flatten()
+        xv = xv.flatten()
+        new_cache = np.array(new_cache)
+        xk_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xk)
+        xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
+        new_cache_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=new_cache)
+        prg_str = f"""
+        __kernel void matmul(
+            __global const float *xk, __global const float *xv, __global float *new_cache)
+        {{
+            int gidx0 = get_global_id(0);
+            int i = gidx0 / {16*64};
+            int j = gidx0 % {16*64};
+            new_cache[i*16*64 + j] = xk[i*16*64 + j];
+            new_cache[{max_content}*16*64 + i*16*64 + j] = xv[i*16*64 + j]; 
+        }}
+        """
+        if prg_str not in self.prg_cache:
+            self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
+        prg = self.prg_cache[prg_str]
+        knl = prg.matmul
+        ls = 256
+        g = math.ceil((n_tokens*16*64) / ls) * ls
+        knl(queue, (g,1), (ls,1), xk_g, xv_g, new_cache_g) #todo, this is arbitrary
+        return new_cache_g
 
     def matmul_t_c(self,a_g,b,temperature,buffer=False):
         b_cols = 50257
