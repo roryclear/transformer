@@ -21,7 +21,7 @@ my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
 ctx = cl.Context(devices=my_gpu_devices)
 mf = cl.mem_flags
 
-med = True
+med = False
 dim = 768
 n_heads = 12
 if med == True:

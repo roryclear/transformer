@@ -34,8 +34,7 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        knl = prg.add
-        knl(queue, (1024,1), (256,1), a_g, b_g,res_g) #todo check shape
+        prg.add(queue, (1024,1), (256,1), a_g, b_g,res_g) #todo check shape
         return res_g
 
     len = 1024
@@ -117,22 +116,15 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        knl = prg.mm
-        knl(queue, (1,1), (1,1), a_g, res_g) 
-        knl2 = prg.mm2
-        knl2(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
-        knl3 = prg.mm3
-        knl3(queue, (1,1), (1,1), a_g, res_g)
-        knl4 = prg.mm4
-        knl4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
-        knl5 = prg.mm5
-        knl5(queue, (ls,1), (ls,1), a_g, res_g)
-        knl4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
-        knl6 = prg.mm6
-        knl6(queue, (1,1), (1,1), a_g)
-        knl7 = prg.mm7
-        knl7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g)
-        knl5(queue, (ls,1), (ls,1), a_g, res_g)
+        prg.mm(queue, (1,1), (1,1), a_g, res_g) 
+        prg.mm2(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
+        prg.mm3(queue, (1,1), (1,1), a_g, res_g)
+        prg.mm4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
+        prg.mm5(queue, (ls,1), (ls,1), a_g, res_g)
+        prg.mm4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
+        prg.mm6(queue, (1,1), (1,1), a_g)
+        prg.mm7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g)
+        prg.mm5(queue, (ls,1), (ls,1), a_g, res_g)
         cl.enqueue_copy(queue, res, res_g)
         #print(res)
         ##
@@ -159,8 +151,7 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        knl = prg.mm
-        knl(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, weight_2_g,tok_emb_g)
+        prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, weight_2_g,tok_emb_g)
         cl.enqueue_copy(queue, tok_emb, tok_emb_g)
         return tok_emb
 
@@ -214,8 +205,7 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        knl = prg.mm4
-        knl(queue, (ls,1), (ls,1), h_g, weight_g, bias_g) 
+        prg.mm4(queue, (ls,1), (ls,1), h_g, weight_g, bias_g) 
         return h_g
 
     def kernel_0_b(self,x,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
@@ -348,21 +338,17 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
         prg = self.prg_cache[prg_str]
-        knl = prg.mm
-        knl(queue, (ls*n_tokens,1), (ls,1), x0_g, weight_g, bias_g) 
+        prg.mm(queue, (ls*n_tokens,1), (ls,1), x0_g, weight_g, bias_g) 
         g = math.ceil((b_cols*n_tokens / ls)*ls)
         c = np.zeros([n_tokens,b_cols]).astype(np.float32)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-        knl2 = prg.mm2
-        knl2(queue, (g,1), (ls,1), x0_g, attn_weight_g,attn_bias_g,c_g)
+        prg.mm2(queue, (g,1), (ls,1), x0_g, attn_weight_g,attn_bias_g,c_g)
 
-        knl4 = prg.mm4
         ls = 256
         g = math.ceil((n_tokens*16*64) / ls) * ls
-        knl4(queue, (g,1), (ls,1), c_g, new_cache_g) 
+        prg.mm4(queue, (g,1), (ls,1), c_g, new_cache_g) 
 
-        knl5 = prg.mm5
-        knl5(queue, (ls,1), (ls,1), x_g, ln_f_weight_g, ln_f_bias_g)
+        prg.mm5(queue, (ls,1), (ls,1), x_g, ln_f_weight_g, ln_f_bias_g)
         return x_g
 
     def kernel_2(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
@@ -549,13 +535,10 @@ class Opencl_Kernels:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
 
-        knl = prg.mm
-        knl2 = prg.mm2
-        knl3 = prg.mm3
-        knl(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
+        prg.mm(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
         ,keys_values_g,xq_temp_g)
-        knl2(queue, (ls*seg3,1), (ls,1),keys_values_g,temp_g, xq_temp_g)
-        knl3(queue, (ls,1), (ls,1),a_g\
+        prg.mm2(queue, (ls*seg3,1), (ls,1),keys_values_g,temp_g, xq_temp_g)
+        prg.mm3(queue, (ls,1), (ls,1),a_g\
         ,keys_values_g,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g, xq_temp_g)
         return a_g
@@ -579,9 +562,8 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        knl = prg.matvec
         gidx = math.ceil(cols / 16) * 16
-        knl(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
+        prg.matvec(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
         return res_g
 
     def matmul_t_c(self,a_g,b,temperature,buffer=False):
@@ -609,9 +591,8 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        knl = prg.matmul
         group_size = math.ceil(b_cols / ls) * ls
-        knl(queue, (group_size,1), (ls,1), a_g, b_g,c_g) 
+        prg.matmul(queue, (group_size,1), (ls,1), a_g, b_g,c_g) 
         if buffer:
             return c_g
         cl.enqueue_copy(queue, c, c_g)
@@ -872,64 +853,50 @@ __kernel void ms8(
             res[y*{b_rows} + x] += total + c_proj_bias[x];
         }}
         """).build()
-        knl = prg.mm
-        knl(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g) 
+        prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g) 
         g = math.ceil((b_cols*num_tokens / ls)*ls)
         xqkv = np.zeros([num_tokens,b_cols]).astype(np.float32)
         xqkv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xqkv)
-        knl2 = prg.mm2
-        knl2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,xqkv_g)
+        prg.mm2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,xqkv_g)
         g = math.ceil((num_tokens*16*64) / ls) * ls
-        knl3 = prg.mm3
-        knl3(queue, (g,1), (ls,1), xqkv_g, cache_kv_g)
-        knltr = prg.tr
+        prg.mm3(queue, (g,1), (ls,1), xqkv_g, cache_kv_g)
         g = num_tokens*16*64
         ls = 256
         g = math.ceil(g / ls)*ls
-        knltr(queue, (g,1), (ls,1), xqkv_g, xq_g, xv_g)
+        prg.tr(queue, (g,1), (ls,1), xqkv_g, xq_g, xv_g)
 
         g = x*num_tokens*num_tokens
         g = math.ceil(g / ls) * ls
-        knl0 = prg.ms0
-        knl0(queue, (g,1), (ls,1), xq_g, xqkv_g)
-        knl = prg.ms
-        knl(queue, (g,1), (ls,1), xq_g)
+        prg.ms0(queue, (g,1), (ls,1), xq_g, xqkv_g)
+        prg.ms(queue, (g,1), (ls,1), xq_g)
         g2 = x*num_tokens #todo, will break for larger inputs
-        knl3 = prg.ms3
-        knl3(queue, (g2,1), (g2,1), xq_g,res_g)
-        knl4 = prg.ms4
-        knl4(queue, (g,1), (ls,1), xq_g,res_g)
+        prg.ms3(queue, (g2,1), (g2,1), xq_g,res_g)
+        prg.ms4(queue, (g,1), (ls,1), xq_g,res_g)
 
         c = np.zeros([16,num_tokens,a_cols])
         c = np.float32(c)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
         g3 = (math.ceil(16*a_cols*num_tokens / ls) * ls)
-        knl5 = prg.ms5
-        knl5(queue, (g3,1), (ls,1), xq_g,xv_g,c_g)
+        prg.ms5(queue, (g3,1), (ls,1), xq_g,xv_g,c_g)
         g4 = num_tokens*16*64
         g4 = math.ceil(g4 / ls)*ls
         xqt = np.zeros(16*64*num_tokens).astype(np.float32) #todo
         xqt_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xqt)
-        knl6 = prg.ms6
-        knl6(queue, (g4,1), (ls,1), c_g,xqt_g)
+        prg.ms6(queue, (g4,1), (ls,1), c_g,xqt_g)
 
         g = math.ceil((b_rows*num_tokens / ls)*ls)
-        knl7 = prg.ms7
-        knl7(queue, (g,1), (ls,1), xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,h_g)
+        prg.ms7(queue, (g,1), (ls,1), xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,h_g)
         cl.enqueue_copy(queue, h, h_g)
-        knl8 = prg.ms8
-        knl8(queue, (ls*num_tokens,1), (ls,1), h_g, ln_2_weight_g, ln_2_bias_g)
+        prg.ms8(queue, (ls*num_tokens,1), (ls,1), h_g, ln_2_weight_g, ln_2_bias_g)
 
         d = np.zeros([num_tokens,b_cols_2]).astype(np.float32)
         d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=d)
         g = math.ceil((b_cols_2*num_tokens / ls)*ls)
-        knl9 = prg.ms9
-        knl9(queue, (g,1), (ls,1), h_g, c_fc_weight_g,c_fc_bias_g,d_g)
+        prg.ms9(queue, (g,1), (ls,1), h_g, c_fc_weight_g,c_fc_bias_g,d_g)
 
         h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
-        knl10 = prg.ms10
         g = math.ceil((b_rows*num_tokens / ls)*ls)
-        knl10(queue, (g,1), (ls,1), d_g, c_proj_weight_g,c_proj_bias_g,h_g)
+        prg.ms10(queue, (g,1), (ls,1), d_g, c_proj_weight_g,c_proj_bias_g,h_g)
         cl.enqueue_copy(queue, h, h_g)
         return h
 
