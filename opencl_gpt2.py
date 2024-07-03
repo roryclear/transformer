@@ -21,7 +21,7 @@ my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
 ctx = cl.Context(devices=my_gpu_devices)
 mf = cl.mem_flags
 
-med = False
+med = True
 dim = 768
 n_heads = 12
 if med == True:
@@ -295,8 +295,8 @@ class Transformer:
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
       unif_samples = tg_rand.rand()
-      logits = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature)
-      ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
+      ret = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0] 
+      #ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
       return ret
     else:
       x = openclk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)

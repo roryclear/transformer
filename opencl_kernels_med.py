@@ -155,13 +155,16 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, tok_emb, tok_emb_g)
         return tok_emb
 
-    def kernel_3(self,h_g,weight_g,bias_g,weight2_g,temperatue):
+    def kernel_3(self,h_g,weight_g,bias_g,weight2_g,temperatue,random_num):
         ls = 256
         seg = int(dim / ls) #todo
         rows = 1024
         cols = 50257
-        res = np.zeros(cols).astype(np.float32)
+        logits = np.zeros(cols).astype(np.float32)
+        logits_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=logits)
+        res = np.zeros(1).astype(np.float32)
         res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
+        seg2 = math.ceil(50257 / ls)
         prg_str = f"""
         __kernel void mm4(
             __global float *h, __global const float *weight, __global const float *bias)
@@ -214,14 +217,91 @@ class Opencl_Kernels:
             }}
             res[gidx0] /= {temperatue};
         }}
+        __kernel void mm5(
+            __global const float *a, __global float *res)
+        {{
+            res[0] = a[0]; //todo why is this needed?, used to be a MAX
+        }}
+
+        __kernel void mm6(
+        __global float *a, __global const float *res)
+        {{
+            barrier(CLK_LOCAL_MEM_FENCE);
+            int gidx0 = get_global_id(0);
+            a[gidx0] = exp(a[gidx0] - res[0]);
+        }}
+
+        __kernel void mm7(
+            __global const float *a, __global float *res)
+        {{
+            res[0] = a[0];
+        }}
+
+        __kernel void mm8(
+        __global float *a, __global const float *res)
+        {{
+            int gidx0 = get_global_id(0);
+            a[gidx0] = a[gidx0] / res[0];
+        }}
+
+        __kernel void mm9(
+        __global const float *a, __global float *res)
+        {{
+            __attribute__ ((aligned (16))) __local float temp[{ls}];
+            int lidx0 = get_local_id(0);
+            float t = 0;
+            for(int i = 0; i < {seg2}; i++) {{
+                t += a[lidx0*{seg2} + i];
+            }}
+            temp[lidx0] = t;
+            barrier(CLK_LOCAL_MEM_FENCE);
+            if(lidx0 == 0) {{
+                t = 0;
+                for(int i = 0; i < {ls}; i++) {{
+                    t += temp[i];
+                }}
+                res[0] = t;
+            }}
+        }}
+
+        __kernel void mm10(
+        __global float *a)
+        {{
+            for(int i = 1; i < 50257; i++) {{
+                a[i] += a[i-1];
+            }}
+        }}
+
+        __kernel void mm11(
+        __global float *a)
+        {{
+            int gidx0 = get_global_id(0);
+            if((a[gidx0] / a[50256]) < {random_num}) {{
+                a[gidx0] = 1;
+            }} else {{
+                a[gidx0] = 0;
+            }}
+        }}
         """
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
         prg.mm4(queue, (ls,1), (ls,1), h_g, weight_g, bias_g)
         gidx = math.ceil(cols / 16) * 16
-        prg.matvec(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
-        return res_g
+        prg.matvec(queue, (gidx,1), (16,1), h_g, weight2_g,logits_g)
+
+        prg.mm5(queue, (1,1), (1,1), logits_g, res_g) 
+        prg.mm6(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
+        prg.mm7(queue, (1,1), (1,1), logits_g, res_g)
+        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
+        prg.mm9(queue, (ls,1), (ls,1), logits_g, res_g)
+        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
+        prg.mm10(queue, (1,1), (1,1), logits_g)
+        prg.mm11(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g)
+        prg.mm9(queue, (ls,1), (ls,1), logits_g, res_g)
+        cl.enqueue_copy(queue, res, res_g)
+        return res
+        
 
     def kernel_0_b(self,x,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,retnp=False):
