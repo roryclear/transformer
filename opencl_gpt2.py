@@ -21,7 +21,7 @@ my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
 ctx = cl.Context(devices=my_gpu_devices)
 mf = cl.mem_flags
 
-med = False
+med = True
 dim = 768
 n_heads = 12
 if med == True:
@@ -294,31 +294,23 @@ class Transformer:
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
+      unif_samples = tg_rand.rand()
       h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
-      if temperature < 1e-6:
-        logits = openclk.matvec2(h,self.lm_head_weight) #todo
-        ret = logits.argmax(-1)
-      else:
-        logits = openclk.matvec2(h,self.lm_head_weight,temperature)
-        unif_samples = tg_rand.rand()
-        ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
-        return ret
+      logits = openclk.matvec2(h,self.lm_head_weight,temperature)
+      ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
+      return ret
     else:
-      x = openclk.tok_emb(tokens,self.wte_weight,self.wpe.weight,n_tokens)
+      x = openclk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
       for i in range(len(self.h)-1):
         x = openclk.kernel_7(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],x,n_tokens,MAX_CONTEXT)
         ############
-      x = openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\
-      ,self.ln_f_weight, self.ln_f_bias,n_tokens,MAX_CONTEXT,True)
+    x = openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\
+    ,self.ln_f_weight, self.ln_f_bias,n_tokens,MAX_CONTEXT,True)
 
-    if temperature < 1e-6:
-      logits = openclk.matmul_t_c(x,self.lm_head.weight) #todo
-      ret = logits.argmax(-1)
-    else:
-      logits = openclk.matmul_t_c(x,self.lm_head.weight,temperature,True)
-      unif_samples = tg_rand.rand()
-      ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]
+    logits = openclk.matmul_t_c(x,self.lm_head.weight,temperature,True)
+    unif_samples = tg_rand.rand()
+    ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]
     return ret
 
   def __call__(self, tokens, start_pos, temperature:np.float32=0.0,n_tokens=1):
