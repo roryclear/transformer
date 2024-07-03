@@ -155,9 +155,13 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, tok_emb, tok_emb_g)
         return tok_emb
 
-    def kernel_3(self,h_g,weight_g,bias_g):
+    def kernel_3(self,h_g,weight_g,bias_g,weight2_g,temperatue):
         ls = 256
         seg = int(dim / ls) #todo
+        rows = 1024
+        cols = 50257
+        res = np.zeros(cols).astype(np.float32)
+        res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
         prg_str = f"""
         __kernel void mm4(
             __global float *h, __global const float *weight, __global const float *bias)
@@ -201,12 +205,23 @@ class Opencl_Kernels:
                 h[i + lidx0*{seg}] = (h[i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / mean + bias[i + lidx0*{seg}];
             }}
         }}
+        __kernel void matvec(
+            __global const float *h, __global const float *weight2 , __global float *res)
+        {{
+            int gidx0 = get_global_id(0);
+            for(int j = 0; j < {rows}; j++) {{
+                res[gidx0] += h[j] * weight2[gidx0 + j*{cols}];
+            }}
+            res[gidx0] /= {temperatue};
+        }}
         """
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        prg.mm4(queue, (ls,1), (ls,1), h_g, weight_g, bias_g) 
-        return h_g
+        prg.mm4(queue, (ls,1), (ls,1), h_g, weight_g, bias_g)
+        gidx = math.ceil(cols / 16) * 16
+        prg.matvec(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
+        return res_g
 
     def kernel_0_b(self,x,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,retnp=False):
@@ -542,29 +557,6 @@ class Opencl_Kernels:
         ,keys_values_g,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g, xq_temp_g)
         return a_g
-
-    def matvec2(self,h_g,weight2_g,temperatue): #pass bias in instead of adding to zero, todo for other kernels
-        rows = 1024
-        cols = 50257
-        res = np.zeros(cols).astype(np.float32)
-        res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
-        prg_str = f"""
-        __kernel void matvec(
-            __global const float *h, __global const float *weight2 , __global float *res)
-        {{
-            int gidx0 = get_global_id(0);
-            for(int j = 0; j < {rows}; j++) {{
-                res[gidx0] += h[j] * weight2[gidx0 + j*{cols}];
-            }}
-            res[gidx0] /= {temperatue};
-        }}
-        """
-        if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
-        prg = self.prg_cache[prg_str]
-        gidx = math.ceil(cols / 16) * 16
-        prg.matvec(queue, (gidx,1), (16,1), h_g, weight2_g,res_g)
-        return res_g
 
     def matmul_t_c(self,a_g,b,temperature,buffer=False):
         b_cols = 50257

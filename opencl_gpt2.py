@@ -295,8 +295,7 @@ class Transformer:
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
       unif_samples = tg_rand.rand()
-      h = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias)
-      logits = openclk.matvec2(h,self.lm_head_weight,temperature)
+      logits = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature)
       ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
       return ret
     else:
