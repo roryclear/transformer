@@ -20,14 +20,6 @@ my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
 ctx = cl.Context(devices=my_gpu_devices)
 mf = cl.mem_flags
 
-med = False
-dim = 768
-n_heads = 12
-if med == True:
-  openclk = opencl_kernels.Opencl_Kernels(dim=1024,n_heads=16)
-  dim = 1024
-  n_heads = 16
-
 MAX_CONTEXT = 128
 
 tokens = open('tokens.txt','r',encoding="utf-8").readlines()
@@ -323,39 +315,7 @@ class GPT2:
   def __init__(self, model):
     self.model = model
 
-  def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):
-    expected_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
-    893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
-    1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
-    1244, 1011, 257, 2392, 1570, 286, 262, 6881, 13,\
-    887, 329, 584, 661, 851, 1390, 5519, 11, 7912,\
-    11, 290, 584, 287, 12, 14108, 12, 2550, 661, 851,\
-    534, 3280, 1244, 307, 1290, 517, 588, 25, 5155, 1595,\
-    470, 2152, 379, 477, 13, 198, 198, 25153, 345, 389, 257,\
-    1862, 1048, 508, 655, 18303, 422, 3504, 1524, 290, 468,\
-    1239, 1107, 19189, 257, 3451, 287, 48782, 23154, 13, 921, 821, 319, 281, 3624]
-
-    expected_tokens_b = [198, 198,\
-    1026, 373, 257, 845, 46873, 1110, 13, 198, 198, 2215, 262,
-    19147, 12030, 12873, 287, 24414, 11, 262, 6771, 547, 407, 3142,\
-    284, 670, 287, 262, 17590, 11, 645, 2300, 703, 881, 484, 2227,\
-    284, 13, 383, 1917, 2627, 1598, 618, 262, 5103, 1664, 286, 262,\
-    309, 9116, 4623, 268, 4618, 11, 543, 925, 281, 3113, 329, 262,\
-    11908, 12, 1273, 14414, 41460, 11, 3414, 617, 19008, 284, 262,\
-    24718, 25931, 13, 198, 198, 464, 2551, 373, 2077, 706, 257, 1327,\
-    6531, 1022, 262, 7570, 4479, 338, 1964, 5531, 290, 12267, 7602, 11, 290, 373, 1912, 319, 262]
-
-    expected_tokens_med = [198, 198, 1544, 468, 262, 2694,\
-    290, 262, 481, 284, 3853, 475, 339, 2391, 2314, 2222,\
-    2241, 284, 466, 340, 13, 679, 318, 7787, 284, 307,\
-    3436, 290, 7787, 284, 2222, 1854, 656, 340, 13, 679,\
-    318, 7787, 284, 307, 33046, 290, 7787, 284, 307, 8606,\
-    13, 198, 198, 4864, 11, 339, 318, 407, 3436, 287, 465,\
-    3252, 286, 5287, 13, 198, 198, 22210, 4952, 502, 326,\
-    3252, 2125, 470, 262, 6808, 2728, 286, 262, 1917, 13,\
-    198, 198, 2025, 37560, 198, 198, 4864, 11, 611, 356, 804,\
-    9211, 356, 1064, 326, 4213, 836, 470, 423, 284, 307, 7042, 287]
-
+  def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1,expected_tokens=None):
     toks = encode(prompt)
     start_pos = 0
     n_tokens = len(toks)
@@ -366,13 +326,10 @@ class GPT2:
         tokens = np.array(toks)
       tok = self.model(tokens, start_pos, temperature, n_tokens).tolist()
       start_pos = len(toks)
-      if med == False:
-        if default_prompt == "What is the answer to life, the universe, and everything?":
-          np.testing.assert_equal(tok,expected_tokens[start_pos-13])
-        else:
-          np.testing.assert_equal(tok,expected_tokens_b[start_pos-5])
+      if default_prompt == "What is the answer to life, the universe, and everything?":
+        np.testing.assert_equal(tok,expected_tokens[start_pos-n_tokens])#1
       else:
-        np.testing.assert_equal(tok,expected_tokens_med[start_pos-13])  
+        np.testing.assert_equal(tok,expected_tokens[start_pos-n_tokens])#2
       toks.append(tok)
     return decode(toks)
 
@@ -472,50 +429,76 @@ if __name__ == "__main__":
   #filehandler = open("weights_med.pickle", 'rb')  
   #gpt2_med = pickle.load(filehandler)
 
-  if med:
-    filehandler = open("weights_med.pickle", 'rb')  
-    gpt2_med = pickle.load(filehandler)
-    gpt2_med.model.convert()
+  expected_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
+    893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
+    1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
+    1244, 1011, 257, 2392, 1570, 286, 262, 6881, 13,\
+    887, 329, 584, 661, 851, 1390, 5519, 11, 7912,\
+    11, 290, 584, 287, 12, 14108, 12, 2550, 661, 851,\
+    534, 3280, 1244, 307, 1290, 517, 588, 25, 5155, 1595,\
+    470, 2152, 379, 477, 13, 198, 198, 25153, 345, 389, 257,\
+    1862, 1048, 508, 655, 18303, 422, 3504, 1524, 290, 468,\
+    1239, 1107, 19189, 257, 3451, 287, 48782, 23154, 13, 921, 821, 319, 281, 3624]
 
-    for i in range(24):
-      gpt2_med.model.h[i].attn.c_attn.weight = np.asfortranarray(gpt2_med.model.h[i].attn.c_attn.weight)
-      gpt2_med.model.h[i].attn.c_proj.weight = np.asfortranarray(gpt2_med.model.h[i].attn.c_proj.weight)
-      gpt2_med.model.h[i].mlp.c_fc.weight = np.asfortranarray(gpt2_med.model.h[i].mlp.c_fc.weight)
-      gpt2_med.model.h[i].mlp.c_proj.weight = np.asfortranarray(gpt2_med.model.h[i].mlp.c_proj.weight)
+  expected_tokens_b = [198, 198,\
+    1026, 373, 257, 845, 46873, 1110, 13, 198, 198, 2215, 262,
+    19147, 12030, 12873, 287, 24414, 11, 262, 6771, 547, 407, 3142,\
+    284, 670, 287, 262, 17590, 11, 645, 2300, 703, 881, 484, 2227,\
+    284, 13, 383, 1917, 2627, 1598, 618, 262, 5103, 1664, 286, 262,\
+    309, 9116, 4623, 268, 4618, 11, 543, 925, 281, 3113, 329, 262,\
+    11908, 12, 1273, 14414, 41460, 11, 3414, 617, 19008, 284, 262,\
+    24718, 25931, 13, 198, 198, 464, 2551, 373, 2077, 706, 257, 1327,\
+    6531, 1022, 262, 7570, 4479, 338, 1964, 5531, 290, 12267, 7602, 11, 290, 373, 1912, 319, 262]
 
-    text = gpt2_med.generate(prompt=default_prompt, max_length=100, temperature=0.8, timing=None, batch_size=1)
-    print('Generating text...')
-    print((f"Response:", "green"), text)
-    assert text == ("What is the answer to life, the universe, and everything?\n\n"
-    "He has the ability and the will to choose but he simply cannot bring himself to"
-    " do it. He is afraid to be alone and afraid to bring others into it. "
-    "He is afraid to be misunderstood and afraid to be rejected.\n\n"
-    "However, he is not alone in his fear of failure.\n\n"
-    "Something tells me that fear isn't the root cause of the problem.\n\n"
-    "An Idea\n\nHowever, if we look deeper we find that ideas don't have to be formed in")
-
-  if med == False:
-    filehandler = open("weights_128.pickle", 'rb')  
-    gpt2 = pickle.load(filehandler)
-    gpt2.model.convert()
-    filehandler = open("weights.pickle", 'rb')  
-    gpt2_og = pickle.load(filehandler)
+  expected_tokens_med = [198, 198, 1544, 468, 262, 2694,\
+    290, 262, 481, 284, 3853, 475, 339, 2391, 2314, 2222,\
+    2241, 284, 466, 340, 13, 679, 318, 7787, 284, 307,\
+    3436, 290, 7787, 284, 2222, 1854, 656, 340, 13, 679,\
+    318, 7787, 284, 307, 33046, 290, 7787, 284, 307, 8606,\
+    13, 198, 198, 4864, 11, 339, 318, 407, 3436, 287, 465,\
+    3252, 286, 5287, 13, 198, 198, 22210, 4952, 502, 326,\
+    3252, 2125, 470, 262, 6808, 2728, 286, 262, 1917, 13,\
+    198, 198, 2025, 37560, 198, 198, 4864, 11, 611, 356, 804,\
+    9211, 356, 1064, 326, 4213, 836, 470, 423, 284, 307, 7042, 287]
 
 
-    for i in range(12):
-      gpt2.model.h[i].attn.c_attn.weight = np.asfortranarray(gpt2.model.h[i].attn.c_attn.weight)
-      gpt2.model.h[i].attn.c_proj.weight = np.asfortranarray(gpt2.model.h[i].attn.c_proj.weight)
-      gpt2.model.h[i].mlp.c_fc.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_fc.weight)
-      gpt2.model.h[i].mlp.c_proj.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_proj.weight)
+  openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12)
+  dim = 768
+  n_heads = 12
 
-    text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
-    print((f"Response:", "green"), text)
-    assert text == ("What is the answer to life, the universe, and everything?"
-    "\n\nIf you were an astrophysicist, or just a physicist, your answer might "
-    "be a bit different. For one, you might take a longer view of the universe. "
-    "But for other people — including scientists, artists, and other in-your-face "
-    "people — your answer might be far more like: Life doesn't exist at all.\n\n"
-    "Imagine you are a young person who just graduated from middle school and has "
-    "never really pursued a career in astrophysics. You're on an eight")
+  filehandler = open("weights_128.pickle", 'rb')  
+  gpt2 = pickle.load(filehandler)
+  gpt2.model.convert()
+  filehandler = open("weights.pickle", 'rb')  
+  gpt2_og = pickle.load(filehandler)
 
+
+  for i in range(12):
+    gpt2.model.h[i].attn.c_attn.weight = np.asfortranarray(gpt2.model.h[i].attn.c_attn.weight)
+    gpt2.model.h[i].attn.c_proj.weight = np.asfortranarray(gpt2.model.h[i].attn.c_proj.weight)
+    gpt2.model.h[i].mlp.c_fc.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_fc.weight)
+    gpt2.model.h[i].mlp.c_proj.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_proj.weight)
+  
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
+  print((f"Response:", "green"), text)
+  tg_rand = Mock_tg_rand()
+  text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_b)
+  print((f"Response:", "green"), text)
+
+  openclk = opencl_kernels.Opencl_Kernels(dim=1024,n_heads=16)
+  dim = 1024
+  n_heads = 16
+
+  filehandler = open("weights_med.pickle", 'rb')  
+  gpt2 = pickle.load(filehandler)
+  gpt2.model.convert()
+
+  for i in range(24):
+    gpt2.model.h[i].attn.c_attn.weight = np.asfortranarray(gpt2.model.h[i].attn.c_attn.weight)
+    gpt2.model.h[i].attn.c_proj.weight = np.asfortranarray(gpt2.model.h[i].attn.c_proj.weight)
+    gpt2.model.h[i].mlp.c_fc.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_fc.weight)
+    gpt2.model.h[i].mlp.c_proj.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_proj.weight)
+  tg_rand = Mock_tg_rand()
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_med)
+  print((f"Response:", "green"), text)
   exit()
