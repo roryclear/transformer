@@ -57,7 +57,7 @@ class Opencl_Kernels:
         prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, weight_2_g,tok_emb_g)
         return tok_emb_g
 
-    def kernel_0(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
+    def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
         ls = 256
         seg = int(self.dim / ls) #todo
         rows = self.dim
@@ -205,7 +205,7 @@ class Opencl_Kernels:
 
         return res
 
-    def kernel_1(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
+    def kernel_3(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,lm_head_weight_g,temperature,random_num):
         ls = 256
         size = self.dim #todo hardcoded
@@ -218,15 +218,7 @@ class Opencl_Kernels:
         x0_g = self.get_buffer("x0",n_tokens*self.dim)
         logits_g = self.get_buffer("logits",50257)
         prg_str = f"""
-        __kernel void copy(
-            __global const float *a, __global float *b)
-        {{
-            int gidx0 = get_global_id(0);
-            if(gidx0 < {self.dim*n_tokens}) {{
-            b[gidx0] = a[gidx0];
-            }}
-        }}
-        __kernel void mm(
+        __kernel void mm(__global const float *x_in,
             __global float *x, __global const float *weight, __global const float *bias)
         {{
             __attribute__ ((aligned (16))) __local float temp[{ls}];
@@ -236,6 +228,7 @@ class Opencl_Kernels:
             int r = gidx0; //todo clean
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
+                x[{self.dim}*r + lidx0*{seg} + i] = x_in[{self.dim}*r + lidx0*{seg} + i];
                 temp2[r] += x[{self.dim}*r + lidx0*{seg} + i];
             }}
             temp[lidx0] = temp2[r];
@@ -423,8 +416,8 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
         prg = self.prg_cache[prg_str]
-        prg.copy(queue,(math.ceil(n_tokens*self.dim / ls)*ls,1),(ls,1),x_g,x0_g) #todo, find how to copy properly
-        prg.mm(queue, (ls*n_tokens,1), (ls,1), x0_g, weight_g, bias_g)
+        x0_g = self.get_buffer("x0_g",n_tokens*self.dim)
+        prg.mm(queue, (ls*n_tokens,1), (ls,1),x_g, x0_g, weight_g, bias_g)
         g = math.ceil((b_cols*n_tokens / ls)*ls)
         c_g = self.get_buffer("c",n_tokens*b_cols)
         prg.mm2(queue, (g,1), (ls,1), x0_g, attn_weight_g,attn_bias_g,c_g)
@@ -449,7 +442,7 @@ class Opencl_Kernels:
         cl.enqueue_copy(queue, res, res_g)
         return res
 
-    def kernel_2(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
+    def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g): #g = size
         ls = 256
         #zeros2 = np.zeros(self.n_heads*(start_pos+1)).astype(np.float32)
@@ -640,7 +633,7 @@ class Opencl_Kernels:
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g, xq_temp_g)
         return a_g    
         
-    def kernel_3(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
+    def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content):
         h_g = self.get_buffer("h",num_tokens*self.dim)
         h2_g = self.get_buffer("h2",num_tokens*self.dim)
@@ -656,16 +649,9 @@ class Opencl_Kernels:
         b_cols = self.dim*3 # for first part
         b_cols_2 = self.dim*4
         prg = cl.Program(ctx, f"""
-        __kernel void copy(
-            __global const float *a, __global float *b)
-        {{
-            int gidx0 = get_global_id(0);
-            if(gidx0 < {self.dim*num_tokens}) {{
-            b[gidx0] = a[gidx0];
-            }}
-        }}
         __kernel void mm(
-            __global float *x, __global const float *weight, __global const float *bias)
+            __global float *x, __global const float *weight, __global const float *bias,
+            __global float *copy)
         {{
             __attribute__ ((aligned (16))) __local float temp[{ls}];
             __attribute__ ((aligned (16))) __local float temp2[{num_tokens}];
@@ -674,6 +660,7 @@ class Opencl_Kernels:
             int r = gidx0; //todo clean
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
+                copy[{self.dim}*r + lidx0*{seg} + i] = x[{self.dim}*r + lidx0*{seg} + i];
                 temp2[r] += x[{self.dim}*r + lidx0*{seg} + i];
             }}
             temp[lidx0] = temp2[r];
@@ -826,7 +813,8 @@ class Opencl_Kernels:
             res[y*{b_rows} + x] += total + attn_bias[x];
         }}
         __kernel void ms8(
-            __global float *x, __global const float *ln_2_weight, __global const float *ln_2_bias)
+            __global float *x, __global const float *ln_2_weight, __global const float *ln_2_bias
+            ,__global float *copy)
         {{
             __attribute__ ((aligned (16))) __local float temp[{ls}];
             __attribute__ ((aligned (16))) __local float temp2[{num_tokens}];
@@ -835,6 +823,7 @@ class Opencl_Kernels:
             int r = gidx0; //todo clean
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
+                copy[{self.dim}*r + lidx0*{seg} + i] = x[{self.dim}*r + lidx0*{seg} + i];
                 temp2[r] += x[{self.dim}*r + lidx0*{seg} + i];
             }}
             temp[lidx0] = temp2[r];
@@ -896,15 +885,14 @@ class Opencl_Kernels:
             res[y*{b_rows} + x] += total + c_proj_bias[x];
         }}
         """).build()
-        prg.copy(queue,(math.ceil(num_tokens*self.dim / ls)*ls,1),(ls,1),x_g,h_g) #todo, find how to copy properly
-        prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g) 
+        h_g = self.get_buffer("h3",num_tokens*self.dim)
+        prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g,h_g) 
         g = math.ceil((b_cols*num_tokens / ls)*ls)
         xqkv_g = self.get_buffer("xqkv",num_tokens*b_cols)
         prg.mm2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,xqkv_g)
         g = math.ceil((num_tokens*self.n_heads*64) / ls) * ls
         prg.mm3(queue, (g,1), (ls,1), xqkv_g, cache_kv_g)
 
-        g = num_tokens*self.n_heads*64
         ls = 256
         g = math.ceil(g / ls)*ls
         prg.tr(queue, (g,1), (ls,1), xqkv_g, xq_g, xv_g)
@@ -927,8 +915,8 @@ class Opencl_Kernels:
 
         g = math.ceil((b_rows*num_tokens / ls)*ls)
         prg.ms7(queue, (g,1), (ls,1), xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,h_g)
-        prg.copy(queue,(math.ceil(num_tokens*self.dim / ls)*ls,1),(ls,1),h_g,h2_g) #todo, find how to copy properly
-        prg.ms8(queue, (ls*num_tokens,1), (ls,1), h_g, ln_2_weight_g, ln_2_bias_g)
+        h2_g = self.get_buffer("h4",num_tokens*self.dim)
+        prg.ms8(queue, (ls*num_tokens,1), (ls,1), h_g, ln_2_weight_g, ln_2_bias_g,h2_g)
 
         d_g = self.get_buffer("d",num_tokens*b_cols_2)
         g = math.ceil((b_cols_2*num_tokens / ls)*ls)
