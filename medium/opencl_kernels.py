@@ -452,7 +452,6 @@ class Opencl_Kernels:
     def kernel_2(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g): #g = size
         ls = 256
-        #zeros2 = np.zeros(self.n_heads*(start_pos+1)).astype(np.float32)
         seg = int(self.dim / ls) #todo
         seg3 = math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
         temp_g = self.get_buffer("temp",self.n_heads*128)
@@ -655,7 +654,7 @@ class Opencl_Kernels:
         seg = int(size / ls) #todo
         b_cols = self.dim*3 # for first part
         b_cols_2 = self.dim*4
-        prg = cl.Program(ctx, f"""
+        prg_str = f"""
         __kernel void copy(
             __global const float *a, __global float *b)
         {{
@@ -895,7 +894,10 @@ class Opencl_Kernels:
             }}
             res[y*{b_rows} + x] += total + c_proj_bias[x];
         }}
-        """).build()
+        """
+        if prg_str not in self.prg_cache:
+            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
+        prg = self.prg_cache[prg_str]
         prg.copy(queue,(math.ceil(num_tokens*self.dim / ls)*ls,1),(ls,1),x_g,h_g) #todo, find how to copy properly
         prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g) 
         g = math.ceil((b_cols*num_tokens / ls)*ls)
@@ -943,15 +945,3 @@ class Opencl_Kernels:
         if key not in self.buffer_cache:
             self.buffer_cache[key] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(size).astype(np.float32))
         return self.buffer_cache[key]
-
-    def time_it(func,a,b,i=100):
-        f = None
-        total_time = 0
-        for _ in range(i):
-            st = time.perf_counter()
-            ret = func(a,b)
-            t = time.perf_counter() - st
-            total_time += t
-            if f is None or t < f:
-                f = t
-        return ret,f
