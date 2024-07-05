@@ -13,14 +13,11 @@ from tinygrad.helpers import fetch
 import pyopencl as cl
 opencl = True
 
-openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12)
-
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
 ctx = cl.Context(devices=my_gpu_devices)
 mf = cl.mem_flags
 
-MAX_CONTEXT = 128
 
 tokens = open('tokens.txt','r',encoding="utf-8").readlines()
 token_dict = dict()
@@ -462,7 +459,8 @@ if __name__ == "__main__":
     9211, 356, 1064, 326, 4213, 836, 470, 423, 284, 307, 7042, 287]
 
 
-  openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12)
+  MAX_CONTEXT = len(encode(default_prompt))+100
+  openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
   dim = 768
   n_heads = 12
 
@@ -482,10 +480,14 @@ if __name__ == "__main__":
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
   print((f"Response:", "green"), text)
   tg_rand = Mock_tg_rand()
+  MAX_CONTEXT = len(encode("What happened in 1939?"))+100
+  openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
   text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_b)
   print((f"Response:", "green"), text)
 
-  openclk = opencl_kernels.Opencl_Kernels(dim=1024,n_heads=16)
+
+  MAX_CONTEXT = len(encode(default_prompt))+100
+  openclk = opencl_kernels.Opencl_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)
   dim = 1024
   n_heads = 16
 

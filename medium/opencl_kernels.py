@@ -11,11 +11,12 @@ mf = cl.mem_flags
 prg = None
 
 class Opencl_Kernels:
-    def __init__(self,dim,n_heads):
+    def __init__(self,dim,n_heads,max_context):
         self.prg_cache = {}
         self.buffer_cache = {}
         self.dim = dim
         self.n_heads = n_heads
+        self.max_context = max_context
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
         res_g = self.get_buffer("add_res",self.dim)
@@ -455,7 +456,7 @@ class Opencl_Kernels:
         #zeros2 = np.zeros(self.n_heads*(start_pos+1)).astype(np.float32)
         seg = int(self.dim / ls) #todo
         seg3 = math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
-        temp_g = self.get_buffer("temp",self.n_heads*128)
+        temp_g = self.get_buffer("temp",self.n_heads*self.max_context)
         xq_temp_g = self.get_buffer("xq_temp",self.dim)
         prg_str = f"""
         __kernel void mm(
@@ -508,7 +509,7 @@ class Opencl_Kernels:
                     keys_values[{start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {g}] = xqkv[{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {g}] + total;
                 }}
                 if((lidx0*{int(self.dim*3 / ls)} + i) >= {2*g}) {{
-                    keys_values[{self.dim*128} + {start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] = xqkv[{self.dim*2} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] + total;
+                    keys_values[{self.dim*self.max_context} + {start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] = xqkv[{self.dim*2} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] + total;
                 }}
             }}
         }}
@@ -565,7 +566,7 @@ class Opencl_Kernels:
                 int x = (g + lidx0*{seg}) % 64;
                 float acc0 = 0;
                 for(int i = 0; i < {start_pos+1}; i++) {{
-                    acc0 += temp3[i + {start_pos+1}*y] * keys_values[{self.dim*128} + i*{self.n_heads*64} + x + y*64];
+                    acc0 += temp3[i + {start_pos+1}*y] * keys_values[{self.dim*self.max_context} + i*{self.n_heads*64} + x + y*64];
                 }}
                 xq_temp[x + y*64] = acc0;
             }}
