@@ -294,21 +294,17 @@ class Transformer:
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
       unif_samples = tg_rand.rand()
-      ret = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0] 
-      #ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]    
+      ret = openclk.kernel_3(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0]  
       return ret
     else:
       x = openclk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
       for i in range(len(self.h)-1):
         x = openclk.kernel_7(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.h[i].mlp.c_fc.weight,self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],x,n_tokens,MAX_CONTEXT)
-        ############
     x = openclk.kernel_0_b(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\
     ,self.ln_f_weight, self.ln_f_bias,n_tokens,MAX_CONTEXT,True)
-
-    logits = openclk.matmul_t_c(x,self.lm_head.weight,temperature,True)
     unif_samples = tg_rand.rand()
-    ret = openclk.kernel_6(logits,unif_samples).astype(np.int32)[0]
+    ret = openclk.kernel_6(x,self.lm_head.weight,temperature,unif_samples).astype(np.int32)[0]
     return ret
 
   def __call__(self, tokens, start_pos, temperature:np.float32=0.0,n_tokens=1):
@@ -386,7 +382,7 @@ if __name__ == "__main__":
     os.mkdir("gpt2weights")
 
   default_prompt = "What is the answer to life, the universe, and everything?"
-  default_prompt = "What happened in 1939?"
+  #default_prompt = "What happened in 1939?"
   # should output:
   # .... The Jewish people rejected
 

@@ -35,7 +35,7 @@ class Opencl_Kernels:
         prg.add(queue, (self.dim,1), (256,1), a_g, b_g,res_g) #todo check shape
         return res_g
 
-    def kernel_6(self,a_g,random_num):
+    def kernel_6(self,logits_g,random_num):
         res = np.zeros(1).astype(np.float32)
         res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
         ls = 256
@@ -110,19 +110,16 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        prg.mm(queue, (1,1), (1,1), a_g, res_g) 
-        prg.mm2(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
-        prg.mm3(queue, (1,1), (1,1), a_g, res_g)
-        prg.mm4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
-        prg.mm5(queue, (ls,1), (ls,1), a_g, res_g)
-        prg.mm4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g, res_g)
-        prg.mm6(queue, (1,1), (1,1), a_g)
-        prg.mm7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), a_g)
-        prg.mm5(queue, (ls,1), (ls,1), a_g, res_g)
+        prg.mm(queue, (1,1), (1,1), logits_g, res_g) 
+        prg.mm2(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
+        prg.mm3(queue, (1,1), (1,1), logits_g, res_g)
+        prg.mm4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
+        prg.mm5(queue, (ls,1), (ls,1), logits_g, res_g)
+        prg.mm4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
+        prg.mm6(queue, (1,1), (1,1), logits_g)
+        prg.mm7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g)
+        prg.mm5(queue, (ls,1), (ls,1), logits_g, res_g)
         cl.enqueue_copy(queue, res, res_g)
-        #print(res)
-        ##
-        #cl.enqueue_copy(queue, a, a_g)
         return res
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
@@ -630,14 +627,14 @@ class Opencl_Kernels:
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g, xq_temp_g)
         return a_g
 
-    def matmul_t_c(self,a_g,b,temperature,buffer=False):
+    def kernel_6(self,a_g,b,temperature,random_num):
         b_cols = 50257
         b_rows = self.dim
-        c = np.zeros(b_cols)
+        logits = np.zeros(b_cols).astype(np.float32)
         ls = 256
         b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
-        c = np.float32(c)
-        c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
+        logits_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=logits)
+        seg = math.ceil(50257 / ls)
         prg_str = f"""
         __kernel void matmul(
             __global const float *a, __global const float *b, __global float *res)
@@ -651,16 +648,91 @@ class Opencl_Kernels:
                 res[x] = total / {temperature}; 
             }}
         }}
+        __kernel void mm(
+            __global const float *a, __global float *res)
+        {{
+            res[0] = a[0]; //todo why is this needed?, used to be a MAX
+        }}
+
+        __kernel void mm2(
+        __global float *a, __global const float *res)
+        {{
+            barrier(CLK_LOCAL_MEM_FENCE);
+            int gidx0 = get_global_id(0);
+            a[gidx0] = exp(a[gidx0] - res[0]);
+        }}
+
+        __kernel void mm3(
+            __global const float *a, __global float *res)
+        {{
+            res[0] = a[0];
+        }}
+
+        __kernel void mm4(
+        __global float *a, __global const float *res)
+        {{
+            int gidx0 = get_global_id(0);
+            a[gidx0] = a[gidx0] / res[0];
+        }}
+
+        __kernel void mm5(
+        __global const float *a, __global float *res)
+        {{
+            __attribute__ ((aligned (16))) __local float temp[{ls}];
+            int lidx0 = get_local_id(0);
+            float t = 0;
+            for(int i = 0; i < {seg}; i++) {{
+                t += a[lidx0*{seg} + i];
+            }}
+            temp[lidx0] = t;
+            barrier(CLK_LOCAL_MEM_FENCE);
+            if(lidx0 == 0) {{
+                t = 0;
+                for(int i = 0; i < {ls}; i++) {{
+                    t += temp[i];
+                }}
+                res[0] = t;
+            }}
+        }}
+
+        __kernel void mm6(
+        __global float *a)
+        {{
+            for(int i = 1; i < 50257; i++) {{
+                a[i] += a[i-1];
+            }}
+        }}
+
+        __kernel void mm7(
+        __global float *a)
+        {{
+            int gidx0 = get_global_id(0);
+            if((a[gidx0] / a[50256]) < {random_num}) {{
+                a[gidx0] = 1;
+            }} else {{
+                a[gidx0] = 0;
+            }}
+        }}
         """
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
         group_size = math.ceil(b_cols / ls) * ls
-        prg.matmul(queue, (group_size,1), (ls,1), a_g, b_g,c_g) 
-        if buffer:
-            return c_g
-        cl.enqueue_copy(queue, c, c_g)
-        return c
+        res = np.zeros(1).astype(np.float32)
+        res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
+        prg.matmul(queue, (group_size,1), (ls,1), a_g, b_g,logits_g)
+        prg.mm(queue, (1,1), (1,1), logits_g, res_g) 
+        prg.mm2(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
+        prg.mm3(queue, (1,1), (1,1), logits_g, res_g)
+        prg.mm4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
+        prg.mm5(queue, (ls,1), (ls,1), logits_g, res_g)
+        prg.mm4(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
+        prg.mm6(queue, (1,1), (1,1), logits_g)
+        prg.mm7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g)
+        prg.mm5(queue, (ls,1), (ls,1), logits_g, res_g)
+        cl.enqueue_copy(queue, res, res_g)
+        return res 
+        
         
     def kernel_7(self,x,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,h,num_tokens,max_content):
