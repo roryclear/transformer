@@ -217,11 +217,19 @@ class Opencl_Kernels:
         b_cols = self.dim*3 #todo
         b_rows = self.dim
         seg = int(size / ls) #todo
-        x0_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
+        x0_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(n_tokens*self.dim).astype(np.float32))
         x_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
         logits = np.zeros(b_cols2).astype(np.float32)
         logits_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=logits)
         prg_str = f"""
+        __kernel void copy(
+            __global const float *a, __global float *b)
+        {{
+            int gidx0 = get_global_id(0);
+            if(gidx0 < {self.dim*n_tokens}) {{
+            b[gidx0] = a[gidx0];
+            }}
+        }}
         __kernel void mm(
             __global float *x, __global const float *weight, __global const float *bias)
         {{
@@ -419,6 +427,7 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
         prg = self.prg_cache[prg_str]
+        prg.copy(queue,(math.ceil(n_tokens*self.dim / ls)*ls,1),(ls,1),x_g,x0_g) #todo, find how to copy properly
         prg.mm(queue, (ls*n_tokens,1), (ls,1), x0_g, weight_g, bias_g)
         g = math.ceil((b_cols*n_tokens / ls)*ls)
         c = np.zeros([n_tokens,b_cols]).astype(np.float32)
@@ -640,6 +649,7 @@ class Opencl_Kernels:
     def kernel_7(self,x,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,h,num_tokens,max_content):
         h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
+        h2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(num_tokens*self.dim).astype(np.float32))
         x_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
         xq = np.zeros(self.n_heads*64*num_tokens).astype(np.float32) #todo
         xv = np.zeros(self.n_heads*64*num_tokens).astype(np.float32) #todo
@@ -659,6 +669,14 @@ class Opencl_Kernels:
         b_cols = self.dim*3 # for first part
         b_cols_2 = self.dim*4
         prg = cl.Program(ctx, f"""
+        __kernel void copy(
+            __global const float *a, __global float *b)
+        {{
+            int gidx0 = get_global_id(0);
+            if(gidx0 < {self.dim*num_tokens}) {{
+            b[gidx0] = a[gidx0];
+            }}
+        }}
         __kernel void mm(
             __global float *x, __global const float *weight, __global const float *bias)
         {{
@@ -926,7 +944,7 @@ class Opencl_Kernels:
 
         g = math.ceil((b_rows*num_tokens / ls)*ls)
         prg.ms7(queue, (g,1), (ls,1), xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,h_g)
-        cl.enqueue_copy(queue, h, h_g)
+        prg.copy(queue,(math.ceil(num_tokens*self.dim / ls)*ls,1),(ls,1),h_g,h2_g) #todo, find how to copy properly
         prg.ms8(queue, (ls*num_tokens,1), (ls,1), h_g, ln_2_weight_g, ln_2_bias_g)
 
         d = np.zeros([num_tokens,b_cols_2]).astype(np.float32)
@@ -934,10 +952,10 @@ class Opencl_Kernels:
         g = math.ceil((b_cols_2*num_tokens / ls)*ls)
         prg.ms9(queue, (g,1), (ls,1), h_g, c_fc_weight_g,c_fc_bias_g,d_g)
 
-        h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
+
         g = math.ceil((b_rows*num_tokens / ls)*ls)
-        prg.ms10(queue, (g,1), (ls,1), d_g, c_proj_weight_g,c_proj_bias_g,h_g)
-        cl.enqueue_copy(queue, h, h_g)
+        prg.ms10(queue, (g,1), (ls,1), d_g, c_proj_weight_g,c_proj_bias_g,h2_g)
+        cl.enqueue_copy(queue, h, h2_g)
         return h        
 
     def time_it(func,a,b,i=100):
