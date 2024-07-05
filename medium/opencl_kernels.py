@@ -418,12 +418,10 @@ class Opencl_Kernels:
         prg = self.prg_cache[prg_str]
         x0_g = self.get_buffer("x0_g",n_tokens*self.dim)
         prg.mm(queue, (ls*n_tokens,1), (ls,1),x_g, x0_g, weight_g, bias_g)
-        g = math.ceil((b_cols*n_tokens / ls)*ls)
         c_g = self.get_buffer("c",n_tokens*b_cols)
-        prg.mm2(queue, (g,1), (ls,1), x0_g, attn_weight_g,attn_bias_g,c_g)
+        prg.mm2(queue, (math.ceil((b_cols*n_tokens / ls)*ls),1), (ls,1), x0_g, attn_weight_g,attn_bias_g,c_g)
         ls = 256
-        g = math.ceil((n_tokens*self.n_heads*64) / ls) * ls
-        prg.mm4(queue, (g,1), (ls,1), c_g, new_cache_g) 
+        prg.mm4(queue, (math.ceil((n_tokens*self.n_heads*64) / ls) * ls,1), (ls,1), c_g, new_cache_g) 
         prg.mm5(queue, (ls,1), (ls,1), x_g, ln_f_weight_g, ln_f_bias_g)
 
         group_size = math.ceil(b_cols2 / ls) * ls
@@ -443,7 +441,7 @@ class Opencl_Kernels:
         return res
 
     def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
-        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g): #g = size
+        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g):
         ls = 256
         #zeros2 = np.zeros(self.n_heads*(start_pos+1)).astype(np.float32)
         seg = int(self.dim / ls) #todo
@@ -635,18 +633,18 @@ class Opencl_Kernels:
         
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content):
-        h_g = self.get_buffer("h",num_tokens*self.dim)
-        h2_g = self.get_buffer("h2",num_tokens*self.dim)
-        h_g = self.get_buffer("h3",num_tokens*self.dim)
-        xq_g = self.get_buffer("xq",self.n_heads*64*num_tokens)
-        xv_g = self.get_buffer("xv",self.n_heads*64*num_tokens)
-        c_g = self.get_buffer("c2",self.n_heads*64*num_tokens)
-        c_g = self.get_buffer("c2",self.n_heads*64*num_tokens)
-        xqt_g = self.get_buffer("xqt",self.n_heads*64*num_tokens)
-        res_g = self.get_buffer("res",num_tokens*self.n_heads)
-        h2_g = self.get_buffer("h4",num_tokens*self.dim)
-        xqkv_g = self.get_buffer("xqkv",num_tokens*self.dim*3)
-        d_g = self.get_buffer("d",num_tokens*self.dim*4)
+        h_g = self.get_buffer("h",max_content*self.dim)
+        h2_g = self.get_buffer("h2",max_content*self.dim)
+        h_g = self.get_buffer("h3",max_content*self.dim)
+        xq_g = self.get_buffer("xq",self.n_heads*64*max_content)
+        xv_g = self.get_buffer("xv",self.n_heads*64*max_content)
+        c_g = self.get_buffer("c2",self.n_heads*64*max_content)
+        c_g = self.get_buffer("c2",self.n_heads*64*max_content)
+        xqt_g = self.get_buffer("xqt",self.n_heads*64*max_content)
+        res_g = self.get_buffer("res",max_content*self.n_heads)
+        h2_g = self.get_buffer("h4",max_content*self.dim)
+        xqkv_g = self.get_buffer("xqkv",max_content*self.dim*3)
+        d_g = self.get_buffer("d",max_content*self.dim*4)
         a_rows = num_tokens
         a_cols = 64
         b_rows = self.dim
