@@ -40,7 +40,6 @@ class Opencl_Kernels:
         tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
         ls = 256
         size = no_tokens*self.dim
-
         tok_emb_g = self.get_buffer("tok_emb",no_tokens*self.dim)
         prg_str = f"""
         __kernel void mm(
@@ -58,7 +57,7 @@ class Opencl_Kernels:
         prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, weight_2_g,tok_emb_g)
         return tok_emb_g
 
-    def kernel_3(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
+    def kernel_0(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
         ls = 256
         seg = int(self.dim / ls) #todo
         rows = self.dim
@@ -206,7 +205,7 @@ class Opencl_Kernels:
 
         return res
 
-    def kernel_6(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
+    def kernel_1(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,lm_head_weight_g,temperature,random_num):
         ls = 256
         size = self.dim #todo hardcoded
@@ -641,7 +640,7 @@ class Opencl_Kernels:
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g, xq_temp_g)
         return a_g    
         
-    def kernel_7(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
+    def kernel_3(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content):
         h_g = self.get_buffer("h",num_tokens*self.dim)
         h2_g = self.get_buffer("h2",num_tokens*self.dim)
