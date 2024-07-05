@@ -646,7 +646,7 @@ class Opencl_Kernels:
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g, xq_temp_g)
         return a_g    
         
-    def kernel_7(self,x,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight,c_fc_bias_g\
+    def kernel_7(self,x,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,h,num_tokens,max_content):
         h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
         h2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(num_tokens*self.dim).astype(np.float32))
@@ -655,7 +655,6 @@ class Opencl_Kernels:
         xv = np.zeros(self.n_heads*64*num_tokens).astype(np.float32) #todo
         xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
         xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
-        c_fc_weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c_fc_weight)
         a_rows = num_tokens
         a_cols = 64
         b_rows = self.dim
