@@ -637,12 +637,19 @@ class Opencl_Kernels:
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content):
         h_g = self.get_buffer("h",num_tokens*self.dim)
         h2_g = self.get_buffer("h2",num_tokens*self.dim)
+        h_g = self.get_buffer("h3",num_tokens*self.dim)
         xq_g = self.get_buffer("xq",self.n_heads*64*num_tokens)
         xv_g = self.get_buffer("xv",self.n_heads*64*num_tokens)
+        c_g = self.get_buffer("c2",self.n_heads*64*num_tokens)
+        c_g = self.get_buffer("c2",self.n_heads*64*num_tokens)
+        xqt_g = self.get_buffer("xqt",self.n_heads*64*num_tokens)
+        res_g = self.get_buffer("res",num_tokens*self.n_heads)
+        h2_g = self.get_buffer("h4",num_tokens*self.dim)
+        xqkv_g = self.get_buffer("xqkv",num_tokens*self.dim*3)
+        d_g = self.get_buffer("d",num_tokens*self.dim*4)
         a_rows = num_tokens
         a_cols = 64
         b_rows = self.dim
-        res_g = self.get_buffer("res",num_tokens*self.n_heads)
         ls = 256
         size = self.dim
         seg = int(size / ls) #todo
@@ -885,40 +892,34 @@ class Opencl_Kernels:
             res[y*{b_rows} + x] += total + c_proj_bias[x];
         }}
         """).build()
-        h_g = self.get_buffer("h3",num_tokens*self.dim)
         prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g,h_g) 
         g = math.ceil((b_cols*num_tokens / ls)*ls)
-        xqkv_g = self.get_buffer("xqkv",num_tokens*b_cols)
         prg.mm2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,xqkv_g)
         g = math.ceil((num_tokens*self.n_heads*64) / ls) * ls
         prg.mm3(queue, (g,1), (ls,1), xqkv_g, cache_kv_g)
 
         ls = 256
-        g = math.ceil(g / ls)*ls
         prg.tr(queue, (g,1), (ls,1), xqkv_g, xq_g, xv_g)
 
-        g = self.n_heads*num_tokens*num_tokens
-        g = math.ceil(g / ls) * ls
+        g = math.ceil(self.n_heads*num_tokens*num_tokens / ls) * ls
         prg.ms0(queue, (g,1), (ls,1), xq_g, xqkv_g)
         prg.ms(queue, (g,1), (ls,1), xq_g)
         g2 = self.n_heads*num_tokens #todo, will break for larger inputs
         prg.ms3(queue, (g2,1), (g2,1), xq_g,res_g)
         prg.ms4(queue, (g,1), (ls,1), xq_g,res_g)
 
-        c_g = self.get_buffer("c2",self.n_heads*num_tokens*a_cols)
+        
         g3 = (math.ceil(self.n_heads*a_cols*num_tokens / ls) * ls)
         prg.ms5(queue, (g3,1), (ls,1), xq_g,xv_g,c_g)
         g4 = num_tokens*self.n_heads*64
         g4 = math.ceil(g4 / ls)*ls
-        xqt_g = self.get_buffer("xqt",self.n_heads*64*num_tokens)
+        
         prg.ms6(queue, (g4,1), (ls,1), c_g,xqt_g)
 
         g = math.ceil((b_rows*num_tokens / ls)*ls)
         prg.ms7(queue, (g,1), (ls,1), xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,h_g)
-        h2_g = self.get_buffer("h4",num_tokens*self.dim)
         prg.ms8(queue, (ls*num_tokens,1), (ls,1), h_g, ln_2_weight_g, ln_2_bias_g,h2_g)
 
-        d_g = self.get_buffer("d",num_tokens*b_cols_2)
         g = math.ceil((b_cols_2*num_tokens / ls)*ls)
         prg.ms9(queue, (g,1), (ls,1), h_g, c_fc_weight_g,c_fc_bias_g,d_g)
 
