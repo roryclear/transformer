@@ -13,15 +13,13 @@ prg = None
 class Opencl_Kernels:
     def __init__(self,dim,n_heads,max_context):
         self.prg_cache = {}
-        self.buffer_cache = {}
         self.dim = dim
         self.n_heads = n_heads
         self.max_context = max_context
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
-        res_g = self.get_buffer("add_res",self.dim)
-        #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (self.dim * 4))
-
+        if hasattr(self, 'add_res_g') == False:
+            self.add_res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.dim).astype(np.float32))
         prg_str = f"""
         __kernel void add(
             __global const float *a, __global const float *b, __global float *res)
@@ -33,14 +31,14 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        prg.add(queue, (self.dim,1), (256,1), a_g, b_g,res_g) #todo check shape
-        return res_g
+        prg.add(queue, (self.dim,1), (256,1), a_g, b_g,self.add_res_g) #todo check shape
+        return self.add_res_g
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
         tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
         ls = 256
         size = no_tokens*self.dim
-        tok_emb_g = self.get_buffer("tok_emb",no_tokens*self.dim)
+        tok_emb_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(no_tokens*self.dim).astype(np.float32))
         prg_str = f"""
         __kernel void mm(
             __global int *tokens, __global const float *weight, __global const float *weight2,  __global float *tok_emb)
@@ -62,9 +60,12 @@ class Opencl_Kernels:
         seg = int(self.dim / ls) #todo
         rows = self.dim
         cols = 50257
-        logits_g = self.get_buffer("logits",50257)
-        res = np.zeros(1).astype(np.float32)
-        res_g = self.get_buffer("token",1)
+        if hasattr(self, 'logits_g') == False:
+            self.logits_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(50257).astype(np.float32))
+        if hasattr(self, 'res') == False:
+            self.res = np.zeros(1).astype(np.float32)
+        if hasattr(self, 'res_g') == False:
+            self.res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(1).astype(np.float32))
         seg2 = math.ceil(50257 / ls)
         prg_str = f"""
         __kernel void mm4(
@@ -190,20 +191,19 @@ class Opencl_Kernels:
         prg = self.prg_cache[prg_str]
         prg.mm4(queue, (ls,1), (ls,1), h_g, weight_g, bias_g)
         gidx = math.ceil(cols / 16) * 16
-        prg.matvec(queue, (gidx,1), (16,1), h_g, weight2_g,logits_g)
+        prg.matvec(queue, (gidx,1), (16,1), h_g, weight2_g,self.logits_g)
 
-        prg.mm5(queue, (1,1), (1,1), logits_g, res_g) 
-        prg.mm6(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
-        prg.mm7(queue, (1,1), (1,1), logits_g, res_g)
-        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
-        prg.mm9(queue, (ls,1), (ls,1), logits_g, res_g)
-        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
-        prg.mm10(queue, (1,1), (1,1), logits_g)
-        prg.mm11(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g)
-        prg.mm9(queue, (ls,1), (ls,1), logits_g, res_g)
-        cl.enqueue_copy(queue, res, res_g)
-
-        return res
+        prg.mm5(queue, (1,1), (1,1), self.logits_g, self.res_g) 
+        prg.mm6(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g, self.res_g)
+        prg.mm7(queue, (1,1), (1,1), self.logits_g, self.res_g)
+        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g, self.res_g)
+        prg.mm9(queue, (ls,1), (ls,1), self.logits_g, self.res_g)
+        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g, self.res_g)
+        prg.mm10(queue, (1,1), (1,1), self.logits_g)
+        prg.mm11(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g)
+        prg.mm9(queue, (ls,1), (ls,1), self.logits_g, self.res_g)
+        cl.enqueue_copy(queue, self.res, self.res_g)
+        return self.res
 
     def kernel_3(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,lm_head_weight_g,temperature,random_num):
@@ -215,8 +215,11 @@ class Opencl_Kernels:
         b_cols = self.dim*3 #todo
         b_rows = self.dim
         seg = int(size / ls) #todo
-        x0_g = self.get_buffer("x0",n_tokens*self.dim)
-        logits_g = self.get_buffer("logits",50257)
+        x0_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(n_tokens*self.dim).astype(np.float32))
+        logits_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(50257).astype(np.float32))
+        c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(n_tokens*b_cols).astype(np.float32))
+        res = np.zeros(1).astype(np.float32)
+        res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(1).astype(np.float32))
         prg_str = f"""
         __kernel void mm(__global const float *x_in,
             __global float *x, __global const float *weight, __global const float *bias)
@@ -416,17 +419,13 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
         prg = self.prg_cache[prg_str]
-        x0_g = self.get_buffer("x0_g",n_tokens*self.dim)
         prg.mm(queue, (ls*n_tokens,1), (ls,1),x_g, x0_g, weight_g, bias_g)
-        c_g = self.get_buffer("c",n_tokens*b_cols)
         prg.mm2(queue, (math.ceil((b_cols*n_tokens / ls)*ls),1), (ls,1), x0_g, attn_weight_g,attn_bias_g,c_g)
         ls = 256
         prg.mm4(queue, (math.ceil((n_tokens*self.n_heads*64) / ls) * ls,1), (ls,1), c_g, new_cache_g) 
         prg.mm5(queue, (ls,1), (ls,1), x_g, ln_f_weight_g, ln_f_bias_g)
 
         group_size = math.ceil(b_cols2 / ls) * ls
-        res = np.zeros(1).astype(np.float32)
-        res_g = self.get_buffer("token",1)
         prg.matmul(queue, (group_size,1), (ls,1), x_g, lm_head_weight_g,logits_g)
         prg.mm6(queue, (1,1), (1,1), logits_g, res_g) 
         prg.mm7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
@@ -446,8 +445,10 @@ class Opencl_Kernels:
         #zeros2 = np.zeros(self.n_heads*(start_pos+1)).astype(np.float32)
         seg = int(self.dim / ls) #todo
         seg3 = math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
-        temp_g = self.get_buffer("temp",self.n_heads*self.max_context)
-        xq_temp_g = self.get_buffer("xq_temp",self.dim)
+        if hasattr(self, 'temp_g') == False:
+            self.temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.n_heads*self.max_context).astype(np.float32))
+        if hasattr(self, 'xq_temp_g') == False:
+            self.xq_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.dim).astype(np.float32))
         prg_str = f"""
         __kernel void mm(
             __global float *a, __global const float *c, __global const float *d, __global const float *e,
@@ -624,27 +625,33 @@ class Opencl_Kernels:
         prg = self.prg_cache[prg_str]
 
         prg.mm(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
-        ,keys_values_g,xq_temp_g)
-        prg.mm2(queue, (ls*seg3,1), (ls,1),keys_values_g,temp_g, xq_temp_g)
+        ,keys_values_g,self.xq_temp_g)
+        prg.mm2(queue, (ls*seg3,1), (ls,1),keys_values_g,self.temp_g, self.xq_temp_g)
         prg.mm3(queue, (ls,1), (ls,1),a_g\
         ,keys_values_g,weight_g,bias_g,\
-        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,temp_g, xq_temp_g)
+        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g)
         return a_g    
         
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content):
-        h_g = self.get_buffer("h",max_content*self.dim)
-        h2_g = self.get_buffer("h2",max_content*self.dim)
-        h_g = self.get_buffer("h3",max_content*self.dim)
-        xq_g = self.get_buffer("xq",self.n_heads*64*max_content)
-        xv_g = self.get_buffer("xv",self.n_heads*64*max_content)
-        c_g = self.get_buffer("c2",self.n_heads*64*max_content)
-        c_g = self.get_buffer("c2",self.n_heads*64*max_content)
-        xqt_g = self.get_buffer("xqt",self.n_heads*64*max_content)
-        res_g = self.get_buffer("res",max_content*self.n_heads)
-        h2_g = self.get_buffer("h4",max_content*self.dim)
-        xqkv_g = self.get_buffer("xqkv",max_content*self.dim*3)
-        d_g = self.get_buffer("d",max_content*self.dim*4)
+        if hasattr(self, 'h_g') == False:
+            self.h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(max_content*self.dim).astype(np.float32))
+        if hasattr(self, 'h2_g') == False:
+            self.h2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(max_content*self.dim).astype(np.float32))
+        if hasattr(self, 'xq_g') == False:
+            self.xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.n_heads*64*max_content).astype(np.float32))
+        if hasattr(self, 'xv_g') == False:
+            self.xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.n_heads*64*max_content).astype(np.float32))
+        if hasattr(self, 'c_g') == False:
+            self.c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.n_heads*64*max_content).astype(np.float32))
+        if hasattr(self, 'xqt_g') == False:
+            self.xqt_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.n_heads*64*max_content).astype(np.float32))
+        if hasattr(self, 'res_g') == False:
+            self.res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(max_content*self.n_heads).astype(np.float32))
+        if hasattr(self, 'xqkv_g') == False:
+            self.xqkv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(max_content*self.dim*3).astype(np.float32))
+        if hasattr(self, 'd_g') == False:
+            self.d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(max_content*self.dim*4).astype(np.float32))
         a_rows = num_tokens
         a_cols = 64
         b_rows = self.dim
@@ -890,46 +897,41 @@ class Opencl_Kernels:
             res[y*{b_rows} + x] += total + c_proj_bias[x];
         }}
         """).build()
-        prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g,h_g) 
+        prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g,self.h_g) 
         g = math.ceil((b_cols*num_tokens / ls)*ls)
-        prg.mm2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,xqkv_g)
+        prg.mm2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,self.xqkv_g)
         g = math.ceil((num_tokens*self.n_heads*64) / ls) * ls
-        prg.mm3(queue, (g,1), (ls,1), xqkv_g, cache_kv_g)
+        prg.mm3(queue, (g,1), (ls,1), self.xqkv_g, cache_kv_g)
 
         ls = 256
-        prg.tr(queue, (g,1), (ls,1), xqkv_g, xq_g, xv_g)
+        prg.tr(queue, (g,1), (ls,1), self.xqkv_g, self.xq_g, self.xv_g)
 
         g = math.ceil(self.n_heads*num_tokens*num_tokens / ls) * ls
-        prg.ms0(queue, (g,1), (ls,1), xq_g, xqkv_g)
-        prg.ms(queue, (g,1), (ls,1), xq_g)
+        prg.ms0(queue, (g,1), (ls,1), self.xq_g, self.xqkv_g)
+        prg.ms(queue, (g,1), (ls,1), self.xq_g)
         g2 = self.n_heads*num_tokens #todo, will break for larger inputs
-        prg.ms3(queue, (g2,1), (g2,1), xq_g,res_g)
-        prg.ms4(queue, (g,1), (ls,1), xq_g,res_g)
+        prg.ms3(queue, (g2,1), (g2,1), self.xq_g,self.res_g)
+        prg.ms4(queue, (g,1), (ls,1), self.xq_g,self.res_g)
 
         
         g3 = (math.ceil(self.n_heads*a_cols*num_tokens / ls) * ls)
-        prg.ms5(queue, (g3,1), (ls,1), xq_g,xv_g,c_g)
+        prg.ms5(queue, (g3,1), (ls,1), self.xq_g,self.xv_g,self.c_g)
         g4 = num_tokens*self.n_heads*64
         g4 = math.ceil(g4 / ls)*ls
         
-        prg.ms6(queue, (g4,1), (ls,1), c_g,xqt_g)
+        prg.ms6(queue, (g4,1), (ls,1), self.c_g,self.xqt_g)
 
         g = math.ceil((b_rows*num_tokens / ls)*ls)
-        prg.ms7(queue, (g,1), (ls,1), xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,h_g)
-        prg.ms8(queue, (ls*num_tokens,1), (ls,1), h_g, ln_2_weight_g, ln_2_bias_g,h2_g)
+        prg.ms7(queue, (g,1), (ls,1), self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g)
+        prg.ms8(queue, (ls*num_tokens,1), (ls,1), self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g)
 
         g = math.ceil((b_cols_2*num_tokens / ls)*ls)
-        prg.ms9(queue, (g,1), (ls,1), h_g, c_fc_weight_g,c_fc_bias_g,d_g)
+        prg.ms9(queue, (g,1), (ls,1), self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g)
 
 
         g = math.ceil((b_rows*num_tokens / ls)*ls)
-        prg.ms10(queue, (g,1), (ls,1), d_g, c_proj_weight_g,c_proj_bias_g,h2_g)
-        return h2_g      
-
-    def get_buffer(self,key,size):
-        if key not in self.buffer_cache:
-            self.buffer_cache[key] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(size).astype(np.float32))
-        return self.buffer_cache[key]
+        prg.ms10(queue, (g,1), (ls,1), self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g)
+        return self.h2_g      
 
     def time_it(func,a,b,i=100):
         f = None
