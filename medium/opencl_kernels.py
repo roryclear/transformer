@@ -8,37 +8,32 @@ my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
 ctx = cl.Context(devices=my_gpu_devices)
 queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
-dim = 768
 prg = None
-n_heads = 12
 
 class Opencl_Kernels:
-    def __init__(self):
+    def __init__(self,dim,n_heads):
         self.prg_cache = {}
-        return None
+        self.dim = dim
+        self.n_heads = n_heads
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
-        res_np = np.zeros(768).astype(np.float32).flatten()
+        res_np = np.zeros(self.dim).astype(np.float32).flatten()
         res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res_np)
-        #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (dim * 4))
+        #res_g = cl.Buffer(ctx, mf.WRITE_ONLY, (self.dim * 4))
 
         prg_str = f"""
         __kernel void add(
             __global const float *a, __global const float *b, __global float *res)
         {{
         int gidx0 = get_global_id(0);
-            res[gidx0] = a[{int(a_s)*768} + gidx0] + b[gidx0 + {b_s}*768];   
+            res[gidx0] = a[{int(a_s)*self.dim} + gidx0] + b[gidx0 + {b_s*self.dim}];   
         }}
         """
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        prg.add(queue, (768,1), (256,1), a_g, b_g,res_g) #todo check shape
+        prg.add(queue, (self.dim,1), (256,1), a_g, b_g,res_g) #todo check shape
         return res_g
-
-    len = 768
-    loop_size = int(len / 256)
-    len_short = 768
 
     def kernel_6(self,a_g,random_num):
         res = np.zeros(1).astype(np.float32)
@@ -132,9 +127,9 @@ class Opencl_Kernels:
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
         tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
-        tok_emb = np.zeros((no_tokens,dim)).astype(np.float32)
+        tok_emb = np.zeros((no_tokens,self.dim)).astype(np.float32)
         ls = 256
-        size = no_tokens*dim
+        size = no_tokens*self.dim
 
         tok_emb_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tok_emb)
         prg_str = f"""
@@ -142,9 +137,9 @@ class Opencl_Kernels:
             __global int *tokens, __global const float *weight, __global const float *weight2,  __global float *tok_emb)
         {{
             int gidx0 = get_global_id(0);
-            int i = gidx0 / {dim};
-            int j = gidx0 % {dim};
-            tok_emb[i*{dim} + j] = weight[tokens[i]*{dim} + j] + weight2[i*{dim} + j];
+            int i = gidx0 / {self.dim};
+            int j = gidx0 % {self.dim};
+            tok_emb[i*{self.dim} + j] = weight[tokens[i]*{self.dim} + j] + weight2[i*{self.dim} + j];
         }}
         """
         if prg_str not in self.prg_cache:
@@ -156,8 +151,8 @@ class Opencl_Kernels:
 
     def kernel_3(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
         ls = 256
-        seg = int(dim / ls) #todo
-        rows = 768
+        seg = int(self.dim / ls) #todo
+        rows = self.dim
         cols = 50257
         logits = np.zeros(cols).astype(np.float32)
         logits_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=logits)
@@ -182,7 +177,7 @@ class Opencl_Kernels:
                 for(int i = 0; i < {ls}; i++) {{
                     total += temp[i];
                 }}
-                mean = total / {dim};  
+                mean = total / {self.dim};  
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             for(int i = 0; i < {seg}; i++) {{
@@ -200,7 +195,7 @@ class Opencl_Kernels:
                 for(int i = 0; i < {ls}; i++) {{
                     total += temp[i];
                 }}
-                mean = pow(total / {dim} + 1e-5,0.5);
+                mean = pow(total / {self.dim} + 1e-5,0.5);
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             for(int i = 0; i < {seg}; i++) {{
@@ -304,10 +299,10 @@ class Opencl_Kernels:
 
     def kernel_0_b(self,x,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,retnp=False):
-        size = 768 #todo hardcoded
+        size = self.dim #todo hardcoded
         ls = 256
-        b_cols = 2304 #todo
-        b_rows = 768
+        b_cols = self.dim*3 #todo
+        b_rows = self.dim
         seg = int(size / ls) #todo
         x0_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
         x_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
@@ -322,7 +317,7 @@ class Opencl_Kernels:
             int r = gidx0; //todo clean
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
-                temp2[r] += x[768*r + lidx0*{seg} + i];
+                temp2[r] += x[{self.dim}*r + lidx0*{seg} + i];
             }}
             temp[lidx0] = temp2[r];
             barrier(CLK_LOCAL_MEM_FENCE);
@@ -335,12 +330,12 @@ class Opencl_Kernels:
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             for(int i = 0; i < {seg}; i++) {{
-                x[768*r + i + lidx0*{seg}] -= temp2[r];
+                x[{self.dim}*r + i + lidx0*{seg}] -= temp2[r];
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
-                temp2[r] += pow(x[768*r + lidx0*{seg} + i],2);
+                temp2[r] += pow(x[{self.dim}*r + lidx0*{seg} + i],2);
             }}
             temp[lidx0] = temp2[r];
             barrier(CLK_LOCAL_MEM_FENCE);
@@ -353,7 +348,7 @@ class Opencl_Kernels:
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             for(int i = 0; i < {seg}; i++) {{
-                x[768*r + i + lidx0*{seg}] = (x[768*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
+                x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
             }}
         }}
         __kernel void mm2(
@@ -372,19 +367,19 @@ class Opencl_Kernels:
             __global const float *xqkv, __global float *new_cache)
         {{
             int gidx0 = get_global_id(0);
-            int i = gidx0 / {12*64};
-            int j = gidx0 % {12*64};
-            new_cache[i*12*64 + j] = xqkv[i*12*64*3 + 768*1 + j];
-            new_cache[{max_content}*12*64 + i*12*64 + j] = xqkv[i*12*64*3 + 768*2 + j]; 
+            int i = gidx0 / {self.n_heads*64};
+            int j = gidx0 % {self.n_heads*64};
+            new_cache[i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim*1} + j];
+            new_cache[{max_content*self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*2 + j]; 
         }}
          __kernel void mm4(
             __global const float *xqkv, __global float *new_cache)
         {{
             int gidx0 = get_global_id(0);
-            int i = gidx0 / {12*64};
-            int j = gidx0 % {12*64};
-            new_cache[i*12*64 + j] = xqkv[i*12*64*3 + j + 768];
-            new_cache[{max_content}*12*64 + i*12*64 + j] = xqkv[i*12*64*3 + j + 768*2]; 
+            int i = gidx0 / {self.n_heads*64};
+            int j = gidx0 % {self.n_heads*64};
+            new_cache[i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + j + {self.dim}];
+            new_cache[{max_content*self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + j + {self.dim}*2]; 
         }}
         __kernel void mm5(
             __global float *x, __global const float *ln_f_weight, __global const float *ln_f_bias)
@@ -407,12 +402,12 @@ class Opencl_Kernels:
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             for(int i = 0; i < {seg}; i++) {{
-                x[i + lidx0*{seg} + {(n_tokens - 1)*768}] -= mean;
+                x[i + lidx0*{seg} + {(n_tokens - 1)*self.dim}] -= mean;
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             total = 0;
             for(int i = 0; i < {seg}; i++) {{
-                total += pow(x[lidx0*{seg} + i + {(n_tokens - 1)*768}],2);
+                total += pow(x[lidx0*{seg} + i + {(n_tokens - 1)*self.dim}],2);
             }}
             temp[lidx0] = total;
             barrier(CLK_LOCAL_MEM_FENCE);
@@ -425,7 +420,7 @@ class Opencl_Kernels:
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             for(int i = 0; i < {seg}; i++) {{
-                x[i + lidx0*{seg}] = (x[i + lidx0*{seg} + {(n_tokens - 1)*768}] * ln_f_weight[i + lidx0*{seg}]) / mean + ln_f_bias[i + lidx0*{seg}];
+                x[i + lidx0*{seg}] = (x[i + lidx0*{seg} + {(n_tokens - 1)*self.dim}] * ln_f_weight[i + lidx0*{seg}]) / mean + ln_f_bias[i + lidx0*{seg}];
             }}
         }}
         """
@@ -438,7 +433,7 @@ class Opencl_Kernels:
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
         prg.mm2(queue, (g,1), (ls,1), x0_g, attn_weight_g,attn_bias_g,c_g)
         ls = 256
-        g = math.ceil((n_tokens*12*64) / ls) * ls
+        g = math.ceil((n_tokens*self.n_heads*64) / ls) * ls
         prg.mm4(queue, (g,1), (ls,1), c_g, new_cache_g) 
         prg.mm5(queue, (ls,1), (ls,1), x_g, ln_f_weight_g, ln_f_bias_g)
         return x_g
@@ -446,10 +441,10 @@ class Opencl_Kernels:
     def kernel_2(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g): #g = size
         ls = 256
-        xq_temp = np.zeros(768).astype(np.float32)
-        zeros2 = np.zeros(12*(start_pos+1)).astype(np.float32)
-        seg = int(dim / ls) #todo
-        seg3 = math.ceil(12*(start_pos+1)*(start_pos+1) / ls)
+        xq_temp = np.zeros(self.dim).astype(np.float32)
+        zeros2 = np.zeros(self.n_heads*(start_pos+1)).astype(np.float32)
+        seg = int(self.dim / ls) #todo
+        seg3 = math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
         temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=zeros2)
         xq_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq_temp)
         prg_str = f"""
@@ -472,7 +467,7 @@ class Opencl_Kernels:
                 for(int i = 0; i < {ls}; i++) {{
                     total += temp[i];
                 }}
-                mean = total / {dim};  
+                mean = total / {self.dim};  
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             total = 0;
@@ -487,23 +482,23 @@ class Opencl_Kernels:
                 for(int i = 0; i < {ls}; i++) {{
                     total += temp[i];
                 }}
-                mean = pow(total / {dim} + 1e-5,0.5);
+                mean = pow(total / {self.dim} + 1e-5,0.5);
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
-            for(int i = 0; i < {int(dim*3 / ls)}; i++) {{
-                xq_temp[lidx0*{int(dim*3 / ls)} + i] = xqkv[lidx0*{int(dim*3 / ls)} + i];
+            for(int i = 0; i < {int(self.dim*3 / ls)}; i++) {{
+                xq_temp[lidx0*{int(self.dim*3 / ls)} + i] = xqkv[lidx0*{int(self.dim*3 / ls)} + i];
                 float total = 0;
-                for(int k = 0; k < {dim}; k++) {{
-                    total += ((a[k] * c[k]) / mean + d[k]) * e[(lidx0*{int(dim*3 / ls)} + i)*{dim} + k];
+                for(int k = 0; k < {self.dim}; k++) {{
+                    total += ((a[k] * c[k]) / mean + d[k]) * e[(lidx0*{int(self.dim*3 / ls)} + i)*{self.dim} + k];
                 }}
-                if((lidx0*{int(dim*3 / ls)} + i) < {g}) {{
-                    xq_temp[lidx0*{int(dim*3 / ls)} + i] += total;
+                if((lidx0*{int(self.dim*3 / ls)} + i) < {g}) {{
+                    xq_temp[lidx0*{int(self.dim*3 / ls)} + i] += total;
                     }}
-                if((lidx0*{int(dim*3 / ls)} + i) >= {g} && (lidx0*{int(dim*3 / ls)} + i) < {2*g}) {{
-                    keys_values[{start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {g}] = xqkv[768 + lidx0*{int(dim*3 / ls)} + i - {g}] + total;
+                if((lidx0*{int(self.dim*3 / ls)} + i) >= {g} && (lidx0*{int(self.dim*3 / ls)} + i) < {2*g}) {{
+                    keys_values[{start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {g}] = xqkv[{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {g}] + total;
                 }}
-                if((lidx0*{int(dim*3 / ls)} + i) >= {2*g}) {{
-                    keys_values[98304 + {start_pos}*{dim} + lidx0*{int(dim*3 / ls)} + i - {2*g}] = xqkv[{768*2} + lidx0*{int(dim*3 / ls)} + i - {2*g}] + total;
+                if((lidx0*{int(self.dim*3 / ls)} + i) >= {2*g}) {{
+                    keys_values[{self.dim*128} + {start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] = xqkv[{self.dim*2} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] + total;
                 }}
             }}
         }}
@@ -517,9 +512,9 @@ class Opencl_Kernels:
                 int k = (lidx0) / {start_pos+1};
                 float acc0 = 0;
                 for(int i = 0; i < 64; i++) {{
-                    acc0 += xq_temp[i + 64*k] * keys_values[x*12*64 + i + 64*k];
+                    acc0 += xq_temp[i + 64*k] * keys_values[x*{self.n_heads*64} + i + 64*k];
                 }}                  
-                temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(self.head_dim)
+                temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(64)
         }}
             __kernel void mm3(
             __global float *a,
@@ -533,12 +528,12 @@ class Opencl_Kernels:
         {{
             __attribute__ ((aligned (16))) __local float temp[{ls}];
             __attribute__ ((aligned (16))) __local float mean;
-            __attribute__ ((aligned (16))) __local float bias3_temp[3072];
-            __attribute__ ((aligned (16))) __local float bias4_temp[2304];
-            __attribute__ ((aligned (16))) __local float h_temp[768];
-            __attribute__ ((aligned (16))) __local float h[768];
+            __attribute__ ((aligned (16))) __local float bias3_temp[{self.dim*4}];
+            __attribute__ ((aligned (16))) __local float bias4_temp[{self.dim*3}];
+            __attribute__ ((aligned (16))) __local float h_temp[{self.dim}];
+            __attribute__ ((aligned (16))) __local float h[{self.dim}];
             int lidx0 = get_local_id(0);
-            if(lidx0 < 12){{
+            if(lidx0 < {self.n_heads}){{
             float m = -INFINITY;
             for(int i = 0; i < {start_pos+1}; i++) {{
                 float val = temp3[i + lidx0*{start_pos+1}];
@@ -560,15 +555,15 @@ class Opencl_Kernels:
                 int x = (g + lidx0*{seg}) % 64;
                 float acc0 = 0;
                 for(int i = 0; i < {start_pos+1}; i++) {{
-                    acc0 += temp3[i + {start_pos+1}*y] * keys_values[98304 + i*12*64 + x + y*64];
+                    acc0 += temp3[i + {start_pos+1}*y] * keys_values[{self.dim*128} + i*{self.n_heads*64} + x + y*64];
                 }}
                 xq_temp[x + y*64] = acc0;
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             for(int i = 0; i < {seg}; i++) {{
                 float acc = 0;
-                for(int x = 0; x < {dim}; x++) {{
-                    acc += xq_temp[x] * weight[x*{dim} + lidx0*{seg} + i];
+                for(int x = 0; x < {self.dim}; x++) {{
+                    acc += xq_temp[x] * weight[x*{self.dim} + lidx0*{seg} + i];
                 }}
                 h[lidx0*{seg} + i] = a[lidx0*{seg} + i] + acc + bias[lidx0*{seg} + i];
                 h_temp[lidx0*{seg} + i] = h[lidx0*{seg} + i];
@@ -585,7 +580,7 @@ class Opencl_Kernels:
                 for(int i = 0; i < {ls}; i++) {{
                     total += temp[i];
                 }}
-                mean = total / {dim};  
+                mean = total / {self.dim};  
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             total = 0;
@@ -600,23 +595,23 @@ class Opencl_Kernels:
                 for(int i = 0; i < {ls}; i++) {{
                     total += temp[i];
                 }}
-                mean = pow(total / {dim} + 1e-5,0.5);
+                mean = pow(total / {self.dim} + 1e-5,0.5);
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
-            for(int i = 0; i < {int(dim*4 / ls)}; i++) {{
-                bias3_temp[i + lidx0*{int(dim*4 / ls)}] = bias3[i + lidx0*{int(dim*4 / ls)}];
-                for(int j = 0; j < {dim}; j++) {{
-                    bias3_temp[i + lidx0*{int(dim*4 / ls)}] += ((h[j] * weight2[j]) / mean + bias2[j]) * weight3[(i + lidx0*{int(dim*4 / ls)})*{dim} + j];
+            for(int i = 0; i < {int(self.dim*4 / ls)}; i++) {{
+                bias3_temp[i + lidx0*{int(self.dim*4 / ls)}] = bias3[i + lidx0*{int(self.dim*4 / ls)}];
+                for(int j = 0; j < {self.dim}; j++) {{
+                    bias3_temp[i + lidx0*{int(self.dim*4 / ls)}] += ((h[j] * weight2[j]) / mean + bias2[j]) * weight3[(i + lidx0*{int(self.dim*4 / ls)})*{self.dim} + j];
                 }}
-                bias3_temp[i + lidx0*{int(dim*4 / ls)}] = 0.5 * bias3_temp[i + lidx0*{int(dim*4 / ls)}]\
-                * (1 + tanh(bias3_temp[i + lidx0*{int(dim*4 / ls)}] * 0.7978845608\
-                * (1 + 0.044715 * pow(bias3_temp[i + lidx0*{int(dim*4 / ls)}],2))));
+                bias3_temp[i + lidx0*{int(self.dim*4 / ls)}] = 0.5 * bias3_temp[i + lidx0*{int(self.dim*4 / ls)}]\
+                * (1 + tanh(bias3_temp[i + lidx0*{int(self.dim*4 / ls)}] * 0.7978845608\
+                * (1 + 0.044715 * pow(bias3_temp[i + lidx0*{int(self.dim*4 / ls)}],2))));
             }}
             barrier(CLK_LOCAL_MEM_FENCE);  
-            for(int i = 0; i < {int(dim / ls)}; i++) {{
+            for(int i = 0; i < {int(self.dim / ls)}; i++) {{
                 bias4_temp[lidx0 + i*{ls}] = bias4[lidx0 + i*{ls}];
-                for(int j = 0; j < {dim*4}; j++) {{
-                    bias4_temp[lidx0 + i*{ls}] += bias3_temp[j] * weight4[lidx0 + i*{ls} + j*{dim}];
+                for(int j = 0; j < {self.dim*4}; j++) {{
+                    bias4_temp[lidx0 + i*{ls}] += bias3_temp[j] * weight4[lidx0 + i*{ls} + j*{self.dim}];
                 }}
                 a[lidx0 + i*{ls}] = bias4_temp[lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
             }}
@@ -637,7 +632,7 @@ class Opencl_Kernels:
 
     def matmul_t_c(self,a_g,b,temperature,buffer=False):
         b_cols = 50257
-        b_rows = 768
+        b_rows = self.dim
         c = np.zeros(b_cols)
         ls = 256
         b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b)
@@ -671,23 +666,23 @@ class Opencl_Kernels:
         ,c_proj_weight_g,c_proj_bias_g,h,num_tokens,max_content):
         h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=h)
         x_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
-        xq = np.zeros(12*64*num_tokens).astype(np.float32) #todo
-        xv = np.zeros(12*64*num_tokens).astype(np.float32) #todo
+        xq = np.zeros(self.n_heads*64*num_tokens).astype(np.float32) #todo
+        xv = np.zeros(self.n_heads*64*num_tokens).astype(np.float32) #todo
         xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xq)
         xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xv)
         c_fc_weight_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c_fc_weight)
         a_rows = num_tokens
         a_cols = 64
-        b_rows = 768
-        n = 12
-        x = 12
+        b_rows = self.dim
+        n = self.n_heads
+        x = self.n_heads
         res = np.zeros(num_tokens*x).astype(np.float32)
         res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
         ls = 256
-        size = 768
+        size = self.dim
         seg = int(size / ls) #todo
-        b_cols = 2304 # for first part
-        b_cols_2 = 3072
+        b_cols = self.dim*3 # for first part
+        b_cols_2 = self.dim*4
         prg = cl.Program(ctx, f"""
         __kernel void mm(
             __global float *x, __global const float *weight, __global const float *bias)
@@ -699,7 +694,7 @@ class Opencl_Kernels:
             int r = gidx0; //todo clean
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
-                temp2[r] += x[768*r + lidx0*{seg} + i];
+                temp2[r] += x[{self.dim}*r + lidx0*{seg} + i];
             }}
             temp[lidx0] = temp2[r];
             barrier(CLK_LOCAL_MEM_FENCE);
@@ -712,12 +707,12 @@ class Opencl_Kernels:
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             for(int i = 0; i < {seg}; i++) {{
-                x[768*r + i + lidx0*{seg}] -= temp2[r];
+                x[{self.dim}*r + i + lidx0*{seg}] -= temp2[r];
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
-                temp2[r] += pow(x[768*r + lidx0*{seg} + i],2);
+                temp2[r] += pow(x[{self.dim}*r + lidx0*{seg} + i],2);
             }}
             temp[lidx0] = temp2[r];
             barrier(CLK_LOCAL_MEM_FENCE);
@@ -730,7 +725,7 @@ class Opencl_Kernels:
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             for(int i = 0; i < {seg}; i++) {{
-                x[768*r + i + lidx0*{seg}] = (x[768*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
+                x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
             }}
         }}
         __kernel void mm2(
@@ -749,10 +744,10 @@ class Opencl_Kernels:
             __global const float *xqkv, __global float *new_cache)
         {{
             int gidx0 = get_global_id(0);
-            int i = gidx0 / {12*64};
-            int j = gidx0 % {12*64};
-            new_cache[i*12*64 + j] = xqkv[i*12*64*3 + 768*1 + j];
-            new_cache[{max_content}*12*64 + i*12*64 + j] = xqkv[i*12*64*3 + 768*2 + j]; 
+            int i = gidx0 / {self.n_heads*64};
+            int j = gidx0 % {self.n_heads*64};
+            new_cache[i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*1 + j];
+            new_cache[{max_content}*{self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*2 + j]; 
         }}                 
         __kernel void tr(
             __global const float *xqkv, __global float *xq, __global float *xv)
@@ -761,8 +756,8 @@ class Opencl_Kernels:
             int i = (gidx0 / {64}) / {num_tokens};
             int j = (gidx0 / {64}) % {num_tokens};
             int k = gidx0 % 64;
-            xq[i*{num_tokens}*64 + j*64 + k] = xqkv[i*64 + j*64*12*3 + k];
-            xv[i*{num_tokens}*64 + j*64 + k] = xqkv[i*64 + j*64*12*3 + k + 64*12*2];
+            xq[i*{num_tokens}*64 + j*64 + k] = xqkv[i*64 + j*{64*self.n_heads*3} + k];
+            xv[i*{num_tokens}*64 + j*64 + k] = xqkv[i*64 + j*{64*self.n_heads*3} + k + {64*self.n_heads*2}];
         }}
         __kernel void ms0(
             __global float *xq, __global const float *xqkv)
@@ -774,7 +769,7 @@ class Opencl_Kernels:
                 int y = gidx0 % {a_rows};
                 float total = 0;
                 for(int k = 0; k < {a_cols}; k++) {{
-                    total += xq[y*{a_cols} + k + z*{a_rows}*{a_cols}] * xqkv[x*64*12*3 + k + z*64 + 768]; 
+                    total += xq[y*{a_cols} + k + z*{a_rows}*{a_cols}] * xqkv[x*{64*self.n_heads*3} + k + z*64 + {self.dim}]; 
                 }}
                 xq[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total / 8; //sqrt 64 input shape xq
             }}
@@ -836,7 +831,7 @@ class Opencl_Kernels:
             int i = (gidx0 / 64) / {num_tokens};
             int j = (gidx0 / 64) % {num_tokens};
             int k = gidx0 % 64;
-            xqt[i*64 + j*12*64 + k] = xq[i*{num_tokens}*64 + j*64 + k];
+            xqt[i*64 + j*{self.n_heads*64} + k] = xq[i*{num_tokens}*64 + j*64 + k];
         }}
         __kernel void ms7(
             __global const float *xq, __global const float *attn_weight,__global const float *attn_bias, __global float *res)
@@ -860,7 +855,7 @@ class Opencl_Kernels:
             int r = gidx0; //todo clean
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
-                temp2[r] += x[768*r + lidx0*{seg} + i];
+                temp2[r] += x[{self.dim}*r + lidx0*{seg} + i];
             }}
             temp[lidx0] = temp2[r];
             barrier(CLK_LOCAL_MEM_FENCE);
@@ -873,12 +868,12 @@ class Opencl_Kernels:
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             for(int i = 0; i < {seg}; i++) {{
-                x[768*r + i + lidx0*{seg}] -= temp2[r];
+                x[{self.dim}*r + i + lidx0*{seg}] -= temp2[r];
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
-                temp2[r] += pow(x[768*r + lidx0*{seg} + i],2);
+                temp2[r] += pow(x[{self.dim}*r + lidx0*{seg} + i],2);
             }}
             temp[lidx0] = temp2[r];
             barrier(CLK_LOCAL_MEM_FENCE);
@@ -891,7 +886,7 @@ class Opencl_Kernels:
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             for(int i = 0; i < {seg}; i++) {{
-                x[768*r + i + lidx0*{seg}] = (x[768*r + i + lidx0*{seg}] * ln_2_weight[i + lidx0*{seg}]) / temp2[r] + ln_2_bias[i + lidx0*{seg}];
+                x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * ln_2_weight[i + lidx0*{seg}]) / temp2[r] + ln_2_bias[i + lidx0*{seg}];
             }}
         }}
         __kernel void ms9(
@@ -927,10 +922,10 @@ class Opencl_Kernels:
         xqkv = np.zeros([num_tokens,b_cols]).astype(np.float32)
         xqkv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xqkv)
         prg.mm2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,xqkv_g)
-        g = math.ceil((num_tokens*12*64) / ls) * ls
+        g = math.ceil((num_tokens*self.n_heads*64) / ls) * ls
         prg.mm3(queue, (g,1), (ls,1), xqkv_g, cache_kv_g)
 
-        g = num_tokens*12*64
+        g = num_tokens*self.n_heads*64
         ls = 256
         g = math.ceil(g / ls)*ls
         prg.tr(queue, (g,1), (ls,1), xqkv_g, xq_g, xv_g)
@@ -943,14 +938,14 @@ class Opencl_Kernels:
         prg.ms3(queue, (g2,1), (g2,1), xq_g,res_g)
         prg.ms4(queue, (g,1), (ls,1), xq_g,res_g)
 
-        c = np.zeros([12,num_tokens,a_cols])
+        c = np.zeros([self.n_heads,num_tokens,a_cols])
         c = np.float32(c)
         c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
-        g3 = (math.ceil(12*a_cols*num_tokens / ls) * ls)
+        g3 = (math.ceil(self.n_heads*a_cols*num_tokens / ls) * ls)
         prg.ms5(queue, (g3,1), (ls,1), xq_g,xv_g,c_g)
-        g4 = num_tokens*12*64
+        g4 = num_tokens*self.n_heads*64
         g4 = math.ceil(g4 / ls)*ls
-        xqt = np.zeros(12*64*num_tokens).astype(np.float32) #todo
+        xqt = np.zeros(self.n_heads*64*num_tokens).astype(np.float32) #todo
         xqt_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xqt)
         prg.ms6(queue, (g4,1), (ls,1), c_g,xqt_g)
 

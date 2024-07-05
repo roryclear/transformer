@@ -8,13 +8,12 @@ import math
 import os
 import pickle
 import opencl_kernels
-import opencl_kernels_med
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 import pyopencl as cl
 opencl = True
 
-openclk = opencl_kernels.Opencl_Kernels()
+openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12)
 
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
@@ -25,7 +24,7 @@ med = False
 dim = 768
 n_heads = 12
 if med == True:
-  openclk = opencl_kernels_med.Opencl_Kernels()
+  openclk = opencl_kernels.Opencl_Kernels(dim=1024,n_heads=16)
   dim = 1024
   n_heads = 16
 
@@ -387,7 +386,7 @@ if __name__ == "__main__":
     os.mkdir("gpt2weights")
 
   default_prompt = "What is the answer to life, the universe, and everything?"
-  #default_prompt = "What happened in 1939?"
+  default_prompt = "What happened in 1939?"
   # should output:
   # .... The Jewish people rejected
 
