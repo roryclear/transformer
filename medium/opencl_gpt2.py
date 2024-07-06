@@ -34,18 +34,12 @@ def decode(index):
   return ret
 
 class Linear():
-  def __init__(self, in_features, out_features, bias=True):
-    self.bias = None
-    self.weight = None
+  def __init__():
+    return None
 
-  
 class LayerNorm:
-  def __init__(self, normalized_shape:Union[int, Tuple[int, ...]], eps:float=1e-5, elementwise_affine:bool=True):
-    self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else tuple(normalized_shape)
-    self.axis, self.eps, self.elementwise_affine = tuple(-1-i for i in range(len(self.normalized_shape))), eps, elementwise_affine
-    self.bias = None
-    self.key = key
-    self.weight = None
+  def __init__():
+    return None
 
 def encode(x):
   ret = []
@@ -64,26 +58,21 @@ def encode(x):
   return ret
 
 class Attention:
-  def __init__(self, dim, n_heads):
-    self.c_attn = Linear(dim, 3*dim, bias=True) #float32
-    self.c_proj = Linear(dim, dim, bias=True)
-    self.n_heads = n_heads
-    self.dim = dim
-    self.head_dim = dim // n_heads
+  def __init__():
+    return None
       
 class FeedForward:
-  def __init__(self, dim, hidden_dim):
-    self.c_fc = Linear(dim, hidden_dim, bias=True)
-    self.c_proj = Linear(hidden_dim, dim, bias=True)
+  def __init__():
+    return None
 
 class Embedding:
-  def __init__(self, vocab_size:int, embed_size:int):
-    self = self
+  def __init__():
+    return None
 
-  def __call__(self, idx):
+  def __call__():
     return None
   
-class Mock_tg_rand:
+class Rand:
   def __init__(self):
     self.seed = 420
 
@@ -94,24 +83,16 @@ class Mock_tg_rand:
     return rng_np_buffer[0]
   
 class Embedding_2: #todo crutch
-  def __init__(self, vocab_size:int, embed_size:int):
-    self.vocab_size, self.embed_size = vocab_size, embed_size
+  def __init__():
+    return None
 
 class TransformerBlock:
-  def __init__(self, dim, n_heads, norm_eps):
-    self.attn = Attention(dim,n_heads) # done
-    self.mlp = FeedForward(dim, 4*dim) #
-    self.ln_1 = LayerNorm(dim,norm_eps)
-    self.ln_2 = LayerNorm(dim,norm_eps)
-
-  def __call__(self, x, start_pos):
+  def __init__():
     return None
     
 class Transformer:
-  def __init__(self, dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=1024):
-    self.vocab_size = vocab_size
-    self.wte = Embedding_2(vocab_size,dim)
-    self.wpe = Embedding(max_seq_len,dim)
+  def __init__():
+    return None
 
   def convert(self):
     print("CONVERT")
@@ -286,7 +267,7 @@ class Transformer:
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
-      unif_samples = tg_rand.rand()
+      unif_samples = rand.rand()
       ret = openclk.kernel_1(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0]  
       return ret
     else:
@@ -294,7 +275,7 @@ class Transformer:
       for i in range(len(self.h)-1):
         x = openclk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT)
-    unif_samples = tg_rand.rand()
+    unif_samples = rand.rand()
     ret = openclk.kernel_3(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\
     ,self.ln_f_weight, self.ln_f_bias,n_tokens,MAX_CONTEXT,self.lm_head_weight_unf,temperature,unif_samples).astype(np.int32)[0]
     return ret
@@ -330,7 +311,7 @@ class GPT2:
 # **** main code ****
 
 if __name__ == "__main__":
-  tg_rand = Mock_tg_rand()
+  rand = Rand()
 
   if os.path.exists("gpt2weights") == False:
     os.mkdir("gpt2weights")
@@ -476,7 +457,7 @@ if __name__ == "__main__":
   
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
   print((f"Response:", "green"), text)
-  tg_rand = Mock_tg_rand()
+  rand = Rand()
   MAX_CONTEXT = len(encode("What happened in 1939?"))+100
   openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
   text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_b)
@@ -497,7 +478,7 @@ if __name__ == "__main__":
     gpt2.model.h[i].attn.c_proj.weight = np.asfortranarray(gpt2.model.h[i].attn.c_proj.weight)
     gpt2.model.h[i].mlp.c_fc.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_fc.weight)
     gpt2.model.h[i].mlp.c_proj.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_proj.weight)
-  tg_rand = Mock_tg_rand()
+  rand = Rand()
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_med)
   print((f"Response:", "green"), text)
   exit()
