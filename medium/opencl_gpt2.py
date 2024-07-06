@@ -323,10 +323,7 @@ class GPT2:
         tokens = np.array(toks)
       tok = self.model(tokens, start_pos, temperature, n_tokens).tolist()
       start_pos = len(toks)
-      if default_prompt == "What is the answer to life, the universe, and everything?":
-        np.testing.assert_equal(tok,expected_tokens[start_pos-n_tokens])#1
-      else:
-        np.testing.assert_equal(tok,expected_tokens[start_pos-n_tokens])#2
+      np.testing.assert_equal(tok,expected_tokens[start_pos-n_tokens])#2
       toks.append(tok)
     return decode(toks)
 
