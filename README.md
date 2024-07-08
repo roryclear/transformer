@@ -1,5 +1,4 @@
 # Transformer
-Use git lfs to clone with weights
 ## Fast OpenCL GPT-2 (124M) inference
 - [ ] Fastest Inference
 
