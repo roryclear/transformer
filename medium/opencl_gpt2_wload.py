@@ -195,7 +195,8 @@ class GPT2:
         tokens = np.array(toks)
       tok = self.model(tokens, start_pos, temperature, n_tokens).tolist()
       start_pos = len(toks)
-      np.testing.assert_equal(tok,expected_tokens[start_pos-n_tokens])#2
+      if expected_tokens != None:
+        np.testing.assert_equal(tok,expected_tokens[start_pos-n_tokens])
       toks.append(tok)
     return decode(toks)
 
@@ -203,7 +204,7 @@ class GPT2:
 def get_model(model_size = "gpt2"):
   gpt2_blank = GPT2(None)
   gpt2_blank.model = Transformer()
-  n_layers = {"gpt2":12,"gpt2-medium":24}
+  n_layers = {"gpt2":12,"gpt2-medium":24,"gpt2-large":36}
   model = AutoModelForCausalLM.from_pretrained(model_size)
 
   print("converting wpe_weight")
@@ -369,4 +370,17 @@ if __name__ == "__main__":
   rand = Rand()
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_med)
   print((f"Response:", "green"), text)
-  exit()
+  
+  '''
+  dim = 1280
+  n_heads = 20
+  openclk = opencl_kernels.Opencl_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
+  if os.path.exists("gpt2-large.pickle") == False:
+    get_model("gpt2-large")
+  filehandler = open("gpt2-large.pickle", 'rb')  
+  gpt2 = pickle.load(filehandler)
+  gpt2.model.to_buffer()
+  rand = Rand()
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
+  print((f"Response:", "green"), text)
+  '''
