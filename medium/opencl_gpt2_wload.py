@@ -33,14 +33,6 @@ def decode(index):
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
 
-class Linear():
-  def __init__():
-    return None
-
-class LayerNorm:
-  def __init__():
-    return None
-
 def encode(x):
   ret = []
   token = None
@@ -57,18 +49,6 @@ def encode(x):
     x = x[min(max_token_length,len(x))-i:]
   return ret
 
-class Attention:
-  def __init__():
-    return None
-      
-class FeedForward:
-  def __init__():
-    return None
-
-class Embedding:
-  def __init__():
-    return None
-
   def __call__():
     return None
   
@@ -81,14 +61,6 @@ class Rand:
     rng = np.random.default_rng(self.seed)
     rng_np_buffer = rng.random(size=1, dtype=np.float32).astype(dtype=np.float32, copy=False)
     return rng_np_buffer[0]
-  
-class Embedding_2: #todo crutch
-  def __init__():
-    return None
-
-class TransformerBlock:
-  def __init__():
-    return None
     
 class Transformer:
   def __init__():
@@ -284,17 +256,6 @@ if __name__ == "__main__":
   #Tensor.manual_seed(420) #don't need
   np.random.seed(28)
 
-  #filehandler = open("weights_128.pickle", 'rb')  
-  #gpt2 = pickle.load(filehandler)
-  #filehandler = open("weights_med.pickle", 'rb')  
-  #gpt2_med = pickle.load(filehandler)
-
-  
-  #gpt2_med = GPT2(model=Transformer(dim=1024,n_heads=16,n_layers=24,norm_eps=1e-5,vocab_size=50257))
-  #gpt2 = GPT2(model=Transformer(dim=768,n_heads=12,n_layers=12,norm_eps=1e-5,vocab_size=50257))
-  #gpt2 = GPT2.build()
-
-
   expected_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
     893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
     1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
@@ -333,7 +294,7 @@ if __name__ == "__main__":
   dim = 768
   n_heads = 12
 
-  filehandler = open("new_converted_model_128_3.pickle", 'rb')  
+  filehandler = open("gpt2.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   gpt2.model.to_buffer()
   
