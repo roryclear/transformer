@@ -330,71 +330,6 @@ if __name__ == "__main__":
   #gpt2 = GPT2(model=Transformer(dim=768,n_heads=12,n_layers=12,norm_eps=1e-5,vocab_size=50257))
   #gpt2 = GPT2.build()
 
-  '''
-  ##COPY WEIGHTS TO VAR AGAIN?
-  #weights = torch_load(fetch(f'https://huggingface.co/gpt2/resolve/main/pytorch_model.bin'))
-  weights = torch_load(fetch(f'https://huggingface.co/gpt2/resolve/main/pytorch_model.bin'))
-  weights_med = torch_load(fetch(f'https://huggingface.co/gpt2-medium/resolve/main/pytorch_model.bin'))
-  for w in weights:
-    print(w)
-
-  gpt2_med.model.wte.weight = weights_med["wte.weight"].numpy()
-  gpt2_med.model.wpe.weight = weights_med["wpe.weight"].numpy()
-  gpt2_med.model.ln_f.weight = weights_med["ln_f.weight"].numpy()
-  gpt2_med.model.ln_f.bias = weights_med["ln_f.bias"].numpy()
-  gpt2_med.model.lm_head.weight = weights_med["wte.weight"].numpy().transpose(1,0)
-  for i in range(24):
-    gpt2_med.model.h[i].ln_1.weight = weights_med["h."+str(i)+".ln_1.weight"].numpy()
-    gpt2_med.model.h[i].ln_1.bias = weights_med["h."+str(i)+".ln_1.bias"].numpy()
-    gpt2_med.model.h[i].attn.bias = weights_med["h."+str(i)+".attn.bias"].numpy()
-    gpt2_med.model.h[i].attn.c_attn.weight = weights_med["h."+str(i)+".attn.c_attn.weight"].numpy()
-    gpt2_med.model.h[i].attn.c_attn.bias = weights_med["h."+str(i)+".attn.c_attn.bias"].numpy()
-    gpt2_med.model.h[i].attn.c_proj.weight = weights_med["h."+str(i)+".attn.c_proj.weight"].numpy()
-    gpt2_med.model.h[i].attn.c_proj.bias = weights_med["h."+str(i)+".attn.c_proj.bias"].numpy()
-    gpt2_med.model.h[i].ln_2.weight = weights_med["h."+str(i)+".ln_2.weight"].numpy()
-    gpt2_med.model.h[i].ln_2.bias = weights_med["h."+str(i)+".ln_2.bias"].numpy()
-    gpt2_med.model.h[i].mlp.c_fc.weight = weights_med["h."+str(i)+".mlp.c_fc.weight"].numpy()
-    gpt2_med.model.h[i].mlp.c_fc.bias = weights_med["h."+str(i)+".mlp.c_fc.bias"].numpy()
-    #todo, why is this needed to keep gpt2 output equal?
-    gpt2_med.model.h[i].mlp.c_proj.weight = np.zeros(np.shape(weights_med["h."+str(i)+".mlp.c_proj.weight"].numpy())).astype(np.float64)
-    gpt2_med.model.h[i].mlp.c_proj.weight[:] = weights_med["h."+str(i)+".mlp.c_proj.weight"].numpy()[:]
-    gpt2_med.model.h[i].mlp.c_proj.bias = np.zeros(np.shape(weights_med["h."+str(i)+".mlp.c_proj.bias"].numpy())).astype(np.float64)
-    gpt2_med.model.h[i].mlp.c_proj.bias[:] = weights_med["h."+str(i)+".mlp.c_proj.bias"].numpy()[:]
-
-  gpt2.model.wte.weight = weights["wte.weight"].numpy()
-  gpt2.model.wpe.weight = weights["wpe.weight"].numpy()
-  gpt2.model.ln_f.weight = weights["ln_f.weight"].numpy()
-  gpt2.model.ln_f.bias = weights["ln_f.bias"].numpy()
-  gpt2.model.lm_head.weight = weights["wte.weight"].numpy().transpose(1,0)
-  for i in range(12):
-    gpt2.model.h[i].ln_1.weight = weights["h."+str(i)+".ln_1.weight"].numpy()
-    gpt2.model.h[i].ln_1.bias = weights["h."+str(i)+".ln_1.bias"].numpy()
-    gpt2.model.h[i].attn.bias = weights["h."+str(i)+".attn.bias"].numpy()
-    gpt2.model.h[i].attn.c_attn.weight = weights["h."+str(i)+".attn.c_attn.weight"].numpy()
-    gpt2.model.h[i].attn.c_attn.bias = weights["h."+str(i)+".attn.c_attn.bias"].numpy()
-    gpt2.model.h[i].attn.c_proj.weight = weights["h."+str(i)+".attn.c_proj.weight"].numpy()
-    gpt2.model.h[i].attn.c_proj.bias = weights["h."+str(i)+".attn.c_proj.bias"].numpy()
-    gpt2.model.h[i].ln_2.weight = weights["h."+str(i)+".ln_2.weight"].numpy()
-    gpt2.model.h[i].ln_2.bias = weights["h."+str(i)+".ln_2.bias"].numpy()
-    gpt2.model.h[i].mlp.c_fc.weight = weights["h."+str(i)+".mlp.c_fc.weight"].numpy()
-    gpt2.model.h[i].mlp.c_fc.bias = weights["h."+str(i)+".mlp.c_fc.bias"].numpy()
-    #todo, why is this needed to keep gpt2 output equal?
-    gpt2.model.h[i].mlp.c_proj.weight = np.zeros(np.shape(weights["h."+str(i)+".mlp.c_proj.weight"].numpy())).astype(np.float64)
-    gpt2.model.h[i].mlp.c_proj.weight[:] = weights["h."+str(i)+".mlp.c_proj.weight"].numpy()[:]
-    gpt2.model.h[i].mlp.c_proj.bias = np.zeros(np.shape(weights["h."+str(i)+".mlp.c_proj.bias"].numpy())).astype(np.float64)
-    gpt2.model.h[i].mlp.c_proj.bias[:] = weights["h."+str(i)+".mlp.c_proj.bias"].numpy()[:]
-
-
-  with open('weights_128.pickle', 'wb') as outp:
-    pickle.dump(gpt2, outp)
-  with open('weights_med.pickle', 'wb') as outp:
-    pickle.dump(gpt2_med, outp)
-  ####END RORY
-  '''
-  #filehandler = open("weights_128.pickle", 'rb')  
-  #gpt2 = pickle.load(filehandler)
-  #filehandler = open("weights_med.pickle", 'rb')  
-  #gpt2_med = pickle.load(filehandler)
 
   expected_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
     893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
@@ -437,20 +372,16 @@ if __name__ == "__main__":
   filehandler = open("weights_128.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   gpt2.model.convert()
-  filehandler = open("new_converted_model_128.pickle", 'rb')  
+  filehandler = open("new_converted_model_128_3.pickle", 'rb')  
   gpt2_2 = pickle.load(filehandler)
 
   print(np.shape(gpt2.model.h[0].attn.c_attn.weight),np.shape(gpt2_2.model.attn_c_attn_weight[0]))
   print(type(gpt2.model.h[0].attn.c_attn.weight[0][0]),type(gpt2_2.model.attn_c_attn_weight[0][0][0]))
 
-
+  #todo get rid of this
   for i in range(12):
-    gpt2.model.h[i].attn.c_attn.weight = gpt2_2.model.attn_c_attn_weight[i]
-    gpt2.model.h[i].attn.c_attn.weight = np.asfortranarray(gpt2.model.h[i].attn.c_attn.weight)
     gpt2.model.h[i].attn.c_proj.weight = gpt2_2.model.attn_c_proj_weight[i]
     gpt2.model.h[i].attn.c_proj.weight = np.asfortranarray(gpt2.model.h[i].attn.c_proj.weight)
-    gpt2.model.h[i].mlp.c_fc.weight = gpt2_2.model.mlp_c_fc_weight[i]
-    gpt2.model.h[i].mlp.c_fc.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_fc.weight)
     gpt2.model.h[i].mlp.c_proj.weight = gpt2_2.model.mlp_c_proj_weight[i]
     gpt2.model.h[i].mlp.c_proj.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_proj.weight)
   
