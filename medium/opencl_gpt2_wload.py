@@ -135,51 +135,51 @@ class Transformer:
 
   def to_buffer(self):
       print("copying ln_1_weight")
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.ln_1_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_1_weight[i])
 
       print("copying ln_1_bias")
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.ln_1_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_1_bias[i])
 
       print("copying attn_c_attn_weight")
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.attn_c_attn_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_attn_weight[i].transpose(1,0).flatten())
 
       print("copying attn_c_attn_bias")
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.attn_c_attn_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_attn_bias[i])
     
       print("copying attn_c_proj_weight")
       self.attn_c_proj_weight2 = []
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.attn_c_proj_weight2.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(self.attn_c_proj_weight[i])))
         self.attn_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_proj_weight[i].flatten())
 
       print("copying attn_c_proj_bias")
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.attn_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_proj_bias[i])
 
       print("copying ln_2_weight")
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.ln_2_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_2_weight[i])
 
       print("copying ln_2_bias")
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.ln_2_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_2_bias[i])
 
       print("copying mlp_c_fc_bias")
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.mlp_c_fc_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_fc_bias[i])
 
       print("copying mlp_c_proj_weight_unf")
       self.mlp_c_proj_weight_unf = []
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.mlp_c_proj_weight_unf.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(self.mlp_c_proj_weight[i])))
         self.mlp_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_weight[i].flatten())
 
       print("copying mlp_c_proj_bias")
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.mlp_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_bias[i])
 
       print("copying ln_f_weight")
@@ -189,7 +189,7 @@ class Transformer:
       self.ln_f_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f_bias)
 
       print("copying mlp_c_fc_weight")
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         self.mlp_c_fc_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_fc_weight[i].transpose(1,0).flatten())
 
       print("copying lm_head_weight_unf")
@@ -206,7 +206,7 @@ class Transformer:
 
       print("creating attn_cache_kv")
       self.attn_cache_kv = []
-      for i in range(12):
+      for i in range(len(self.ln_1_weight)):
         a = np.zeros((2*MAX_CONTEXT*n_heads*64)).astype(np.float32)
         self.attn_cache_kv.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a))
 
@@ -214,7 +214,7 @@ class Transformer:
     if start_pos > 0:
       h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
       attn_dim = dim
-      for i in range(0,12):
+      for i in range(0,len(self.ln_1_weight)):
         h = openclk.kernel_0(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
         self.attn_c_attn_bias[i],attn_dim,\
@@ -229,7 +229,7 @@ class Transformer:
     else:
       print(type(self.wte_weight))
       x = openclk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
-      for i in range(12-1):
+      for i in range(len(self.ln_1_weight)-1):
         x = openclk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT)
     unif_samples = rand.rand()
