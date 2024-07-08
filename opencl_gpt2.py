@@ -7,18 +7,19 @@ import numpy as np
 import math
 import os
 import pickle
-import opencl_kernels# as openclk
+import opencl_kernels
+from tinygrad.nn.state import torch_load
+from tinygrad.helpers import fetch
 import pyopencl as cl
+from transformers import AutoModelForCausalLM, AutoTokenizer
 opencl = True
 
-openclk = opencl_kernels.Opencl_Kernels()
 
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
 ctx = cl.Context(devices=my_gpu_devices)
 mf = cl.mem_flags
 
-MAX_CONTEXT = 128
 
 tokens = open('tokens.txt','r',encoding="utf-8").readlines()
 token_dict = dict()
@@ -50,6 +51,9 @@ def encode(x):
     x = x[min(max_token_length,len(x))-i:]
   return ret
 
+  def __call__():
+    return None
+  
 class Rand:
   def __init__(self):
     self.seed = 420
@@ -59,27 +63,93 @@ class Rand:
     rng = np.random.default_rng(self.seed)
     rng_np_buffer = rng.random(size=1, dtype=np.float32).astype(dtype=np.float32, copy=False)
     return rng_np_buffer[0]
-
+    
 class Transformer:
   def __init__(self):
     return None
 
+  def to_buffer(self):
+      print("copying ln_1_weight")
+      for i in range(len(self.ln_1_weight)):
+        self.ln_1_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_1_weight[i])
 
-  def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):      
-    n_layers = 12
-    if hasattr(self, 'attn_cache_kv') == False:
+      print("copying ln_1_bias")
+      for i in range(len(self.ln_1_weight)):
+        self.ln_1_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_1_bias[i])
+
+      print("copying attn_c_attn_weight")
+      for i in range(len(self.ln_1_weight)):
+        self.attn_c_attn_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_attn_weight[i].transpose(1,0).flatten())
+
+      print("copying attn_c_attn_bias")
+      for i in range(len(self.ln_1_weight)):
+        self.attn_c_attn_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_attn_bias[i])
+    
+      print("copying attn_c_proj_weight")
+      self.attn_c_proj_weight2 = []
+      for i in range(len(self.ln_1_weight)):
+        self.attn_c_proj_weight2.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(self.attn_c_proj_weight[i])))
+        self.attn_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_proj_weight[i].flatten())
+
+      print("copying attn_c_proj_bias")
+      for i in range(len(self.ln_1_weight)):
+        self.attn_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_proj_bias[i])
+
+      print("copying ln_2_weight")
+      for i in range(len(self.ln_1_weight)):
+        self.ln_2_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_2_weight[i])
+
+      print("copying ln_2_bias")
+      for i in range(len(self.ln_1_weight)):
+        self.ln_2_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_2_bias[i])
+
+      print("copying mlp_c_fc_bias")
+      for i in range(len(self.ln_1_weight)):
+        self.mlp_c_fc_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_fc_bias[i])
+
+      print("copying mlp_c_proj_weight_unf")
+      self.mlp_c_proj_weight_unf = []
+      for i in range(len(self.ln_1_weight)):
+        self.mlp_c_proj_weight_unf.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(self.mlp_c_proj_weight[i])))
+        self.mlp_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_weight[i].flatten())
+
+      print("copying mlp_c_proj_bias")
+      for i in range(len(self.ln_1_weight)):
+        self.mlp_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_bias[i])
+
+      print("copying ln_f_weight")
+      self.ln_f_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f_weight)
+    
+      print("copying ln_f_bias")
+      self.ln_f_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f_bias)
+
+      print("copying mlp_c_fc_weight")
+      for i in range(len(self.ln_1_weight)):
+        self.mlp_c_fc_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_fc_weight[i].transpose(1,0).flatten())
+
+      print("copying lm_head_weight_unf")
+      self.lm_head_weight_unf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head_weight)
+
+      print("copying lm_head_weight")
+      self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head_weight.flatten())
+
+      print("copying self_wte_weight")
+      self.wte_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wte_weight)
+
+      print("copying self_wpe_weight")
+      self.wpe_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wpe_weight)
+
       print("creating attn_cache_kv")
       self.attn_cache_kv = []
-      for i in range(n_layers):
-        a = np.zeros((2*MAX_CONTEXT*12*64)).astype(np.float32)
+      for i in range(len(self.ln_1_weight)):
+        a = np.zeros((2*MAX_CONTEXT*n_heads*64)).astype(np.float32)
         self.attn_cache_kv.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a))
-        
+
+  def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if start_pos > 0:
-      unif_samples = rand.rand()
       h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
-      attn_dim = 768
-      for i in range(0,n_layers):
-        #inlined attn
+      attn_dim = dim
+      for i in range(0,len(self.ln_1_weight)):
         h = openclk.kernel_0(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
         self.attn_c_attn_bias[i],attn_dim,\
@@ -87,57 +157,34 @@ class Transformer:
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
-        self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i],MAX_CONTEXT)
-      ret = openclk.kernel_1(h,self.lm_head_weight,self.ln_f_weight, self.ln_f_bias,unif_samples,temperature).astype(np.int32)[0]
+        self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
+      unif_samples = rand.rand()
+      ret = openclk.kernel_1(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0]  
       return ret
-
     else:
       x = openclk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
-      for i in range(n_layers-1):
+      for i in range(len(self.ln_1_weight)-1):
         x = openclk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT)
-      unif_samples = rand.rand()
-      ret = openclk.kernel_3(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1]\
-      ,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight2,self.attn_cache_kv[-1],temperature,n_tokens,unif_samples,MAX_CONTEXT)\
-      .astype(np.int32)[0]  
-      return ret
+    unif_samples = rand.rand()
+    ret = openclk.kernel_3(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\
+    ,self.ln_f_weight, self.ln_f_bias,n_tokens,MAX_CONTEXT,self.lm_head_weight_unf,temperature,unif_samples).astype(np.int32)[0]
+    return ret
 
   def __call__(self, tokens, start_pos, temperature:np.float32=0.0,n_tokens=1):
     return self.forward(tokens, start_pos, temperature,n_tokens)
 
-def pt(x):
-  for _ in range(len(np.shape(x))):
-    x = x[0]
-  return str(type(x))
-
 VOCAB_SIZE = 50257
 class GPT2:
   @staticmethod
-  def __init__():
-    return None
+  def build():
+    model = Transformer(n_layers=12,n_heads=12,dim=768,norm_eps=1e-5,vocab_size=VOCAB_SIZE) #small
+    return GPT2(model)
 
-  def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1):    
-    expected_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
-    893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
-    1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
-    1244, 1011, 257, 2392, 1570, 286, 262, 6881, 13,\
-    887, 329, 584, 661, 851, 1390, 5519, 11, 7912,\
-    11, 290, 584, 287, 12, 14108, 12, 2550, 661, 851,\
-    534, 3280, 1244, 307, 1290, 517, 588, 25, 5155, 1595,\
-    470, 2152, 379, 477, 13, 198, 198, 25153, 345, 389, 257,\
-    1862, 1048, 508, 655, 18303, 422, 3504, 1524, 290, 468,\
-    1239, 1107, 19189, 257, 3451, 287, 48782, 23154, 13, 921, 821, 319, 281, 3624]
+  def __init__(self, model):
+    self.model = model
 
-    expected_tokens_b = [198, 198,\
-    1026, 373, 257, 845, 46873, 1110, 13, 198, 198, 2215, 262,
-    19147, 12030, 12873, 287, 24414, 11, 262, 6771, 547, 407, 3142,\
-    284, 670, 287, 262, 17590, 11, 645, 2300, 703, 881, 484, 2227,\
-    284, 13, 383, 1917, 2627, 1598, 618, 262, 5103, 1664, 286, 262,\
-    309, 9116, 4623, 268, 4618, 11, 543, 925, 281, 3113, 329, 262,\
-    11908, 12, 1273, 14414, 41460, 11, 3414, 617, 19008, 284, 262,\
-    24718, 25931, 13, 198, 198, 464, 2551, 373, 2077, 706, 257, 1327,\
-    6531, 1022, 262, 7570, 4479, 338, 1964, 5531, 290, 12267, 7602, 11, 290, 373, 1912, 319, 262]
-
+  def generate(self, prompt:str, max_length:int, temperature:float, timing:bool=False, batch_size:int=1,expected_tokens=None):
     toks = encode(prompt)
     start_pos = 0
     n_tokens = len(toks)
@@ -148,54 +195,187 @@ class GPT2:
         tokens = np.array(toks)
       tok = self.model(tokens, start_pos, temperature, n_tokens).tolist()
       start_pos = len(toks)
-      if default_prompt == "What is the answer to life, the universe, and everything?":
-        np.testing.assert_equal(tok,expected_tokens[start_pos-13])
-      else:
-        np.testing.assert_equal(tok,expected_tokens_b[start_pos-5])
+      if expected_tokens != None:
+        np.testing.assert_equal(tok,expected_tokens[start_pos-n_tokens])
       toks.append(tok)
     return decode(toks)
 
+
+def get_model(model_size = "gpt2"):
+  gpt2_blank = GPT2(None)
+  gpt2_blank.model = Transformer()
+  n_layers = {"gpt2":12,"gpt2-medium":24,"gpt2-large":36}
+  model = AutoModelForCausalLM.from_pretrained(model_size)
+
+  print("converting wpe_weight")
+  gpt2_blank.model.wpe_weight = model.transformer.wpe.weight.detach().cpu().numpy().astype(np.float32)
+
+  print("converting ln_f.weight")
+  gpt2_blank.model.ln_f_weight = model.transformer.ln_f.weight.detach().cpu().numpy().astype(np.float32)
+
+  print("converting ln_f.bias")
+  gpt2_blank.model.ln_f_bias = model.transformer.ln_f.bias.detach().cpu().numpy().astype(np.float32)
+
+  print("converting mlp_c_proj.bias")
+  gpt2_blank.model.mlp_c_proj_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.mlp_c_proj_bias.append(model.transformer.h[x].mlp.c_proj.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting mlp_c_proj.weight")
+  gpt2_blank.model.mlp_c_proj_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.mlp_c_proj_weight.append(model.transformer.h[x].mlp.c_proj.weight.detach().cpu().numpy().astype(np.float32))
+
+  print("converting mlp_c_fc.bias")
+  gpt2_blank.model.mlp_c_fc_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.mlp_c_fc_bias.append(model.transformer.h[x].mlp.c_fc.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting mlp_c_fc.weight")
+  gpt2_blank.model.mlp_c_fc_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.mlp_c_fc_weight.append(model.transformer.h[x].mlp.c_fc.weight.detach().cpu().numpy().astype(np.float32))
+
+  print("converting attn_c_proj.bias")
+  gpt2_blank.model.attn_c_proj_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.attn_c_proj_bias.append(model.transformer.h[x].attn.c_proj.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting attn_c_proj.weight")
+  gpt2_blank.model.attn_c_proj_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.attn_c_proj_weight.append(model.transformer.h[x].attn.c_proj.weight.detach().cpu().numpy().astype(np.float32))
+
+  print("converting attn_c_attn.bias")
+  gpt2_blank.model.attn_c_attn_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.attn_c_attn_bias.append(model.transformer.h[x].attn.c_attn.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting attn_c_attn.weight")
+  gpt2_blank.model.attn_c_attn_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.attn_c_attn_weight.append(model.transformer.h[x].attn.c_attn.weight.detach().cpu().numpy().astype(np.float32))
+
+  print("converting ln_1.bias")
+  gpt2_blank.model.ln_1_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.ln_1_bias.append(model.transformer.h[x].ln_1.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting ln_1.weight")
+  gpt2_blank.model.ln_1_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.ln_1_weight.append(model.transformer.h[x].ln_1.weight.detach().cpu().numpy().astype(np.float32))
+
+  print("converting ln_2.bias")
+  gpt2_blank.model.ln_2_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.ln_2_bias.append(model.transformer.h[x].ln_2.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting ln_2.weight")
+  gpt2_blank.model.ln_2_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.ln_2_weight.append(model.transformer.h[x].ln_2.weight.detach().cpu().numpy().astype(np.float32))
+    
+  print("converting wte.weight")
+  gpt2_blank.model.wte_weight = model.transformer.wte.weight.detach().cpu().numpy().astype(np.float32)
+
+  print("converting lm_head.weight")
+  gpt2_blank.model.lm_head_weight = model.lm_head.weight.detach().cpu().numpy().astype(np.float32).transpose(1,0)
+
+  with open(model_size+".pickle", 'wb') as outp:
+      pickle.dump(gpt2_blank, outp)
+
+# **** main code ****
+
 if __name__ == "__main__":
-  default_prompt = "What is the answer to life, the universe, and everything?"
-  #default_prompt = "What happened in 1939?"
-
-  filehandler = open("weights_2.pickle", 'rb')  
-  gpt2 = pickle.load(filehandler)
-
-  #with open('weights_new2.pickle', 'wb') as outp:
-  #  pickle.dump(gpt2, outp)
-
-  n_layers = 12
-  gpt2.model.attn_c_proj_weight2 = [] #TODO shouldn't need
-  gpt2.model.mlp_c_proj_weight_unf = []
-
-  for i in range(n_layers):
-      gpt2.model.ln_1_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.ln_1_weight[i])
-      gpt2.model.ln_1_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.ln_1_bias[i])
-      gpt2.model.attn_c_attn_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.attn_c_attn_weight[i].transpose(1,0).flatten())
-      gpt2.model.attn_c_attn_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.attn_c_attn_bias[i])
-      gpt2.model.attn_c_proj_weight2.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.attn_c_proj_weight[i]))
-      gpt2.model.attn_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.attn_c_proj_weight[i].flatten())
-      gpt2.model.attn_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.attn_c_proj_bias[i])
-      gpt2.model.ln_2_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.ln_2_weight[i])
-      gpt2.model.ln_2_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.ln_2_bias[i])
-      gpt2.model.mlp_c_fc_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.mlp_c_fc_weight[i].transpose(1,0).flatten())
-      gpt2.model.mlp_c_fc_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.mlp_c_fc_bias[i])
-      gpt2.model.mlp_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.mlp_c_proj_bias[i])
-      gpt2.model.mlp_c_proj_weight_unf.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.mlp_c_proj_weight[i])) #TODO shoudlnt be needed
-      gpt2.model.mlp_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.mlp_c_proj_weight[i].flatten())
-
-  gpt2.model.ln_f_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.ln_f_weight)
-  gpt2.model.ln_f_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.ln_f_bias)
-  gpt2.model.lm_head_weight2 = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.lm_head_weight) #TODO shouldnt be needed
-  gpt2.model.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.lm_head_weight.flatten())
-  gpt2.model.wte_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.wte_weight)
-  gpt2.model.wpe_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2.model.wpe_weight)
-
-  #print(gpt2.model.wte)
   rand = Rand()
 
-  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1)
-  print('Generating text...')
+  default_prompt = "What is the answer to life, the universe, and everything?"
+  #default_prompt = "What happened in 1939?"
+  # should output:
+  # .... The Jewish people rejected
+
+  #(tg random) should output:
+  #It was a very fateful day.
+  #When the Nazis occupied Poland in 1939....
+
+  np.random.seed(28)
+
+  expected_tokens = [198, 198, 1532, 345, 547, 281, 48782,\
+    893, 48187, 11, 393, 655, 257, 33013, 11, 534, 3280,\
+    1244, 307, 257, 1643, 1180, 13, 1114, 530, 11, 345,\
+    1244, 1011, 257, 2392, 1570, 286, 262, 6881, 13,\
+    887, 329, 584, 661, 851, 1390, 5519, 11, 7912,\
+    11, 290, 584, 287, 12, 14108, 12, 2550, 661, 851,\
+    534, 3280, 1244, 307, 1290, 517, 588, 25, 5155, 1595,\
+    470, 2152, 379, 477, 13, 198, 198, 25153, 345, 389, 257,\
+    1862, 1048, 508, 655, 18303, 422, 3504, 1524, 290, 468,\
+    1239, 1107, 19189, 257, 3451, 287, 48782, 23154, 13, 921, 821, 319, 281, 3624]
+
+  expected_tokens_b = [198, 198,\
+    1026, 373, 257, 845, 46873, 1110, 13, 198, 198, 2215, 262,
+    19147, 12030, 12873, 287, 24414, 11, 262, 6771, 547, 407, 3142,\
+    284, 670, 287, 262, 17590, 11, 645, 2300, 703, 881, 484, 2227,\
+    284, 13, 383, 1917, 2627, 1598, 618, 262, 5103, 1664, 286, 262,\
+    309, 9116, 4623, 268, 4618, 11, 543, 925, 281, 3113, 329, 262,\
+    11908, 12, 1273, 14414, 41460, 11, 3414, 617, 19008, 284, 262,\
+    24718, 25931, 13, 198, 198, 464, 2551, 373, 2077, 706, 257, 1327,\
+    6531, 1022, 262, 7570, 4479, 338, 1964, 5531, 290, 12267, 7602, 11, 290, 373, 1912, 319, 262]
+
+  expected_tokens_med = [198, 198, 1544, 468, 262, 2694,\
+    290, 262, 481, 284, 3853, 475, 339, 2391, 2314, 2222,\
+    2241, 284, 466, 340, 13, 679, 318, 7787, 284, 307,\
+    3436, 290, 7787, 284, 2222, 1854, 656, 340, 13, 679,\
+    318, 7787, 284, 307, 33046, 290, 7787, 284, 307, 8606,\
+    13, 198, 198, 4864, 11, 339, 318, 407, 3436, 287, 465,\
+    3252, 286, 5287, 13, 198, 198, 22210, 4952, 502, 326,\
+    3252, 2125, 470, 262, 6808, 2728, 286, 262, 1917, 13,\
+    198, 198, 2025, 37560, 198, 198, 4864, 11, 611, 356, 804,\
+    9211, 356, 1064, 326, 4213, 836, 470, 423, 284, 307, 7042, 287]
+
+
+  MAX_CONTEXT = len(encode(default_prompt))+100
+  openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
+  dim = 768
+  n_heads = 12
+  
+  if os.path.exists("gpt2.pickle") == False:
+    get_model("gpt2")
+  filehandler = open("gpt2.pickle", 'rb')  
+  gpt2 = pickle.load(filehandler)
+  gpt2.model.to_buffer()
+  
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
   print((f"Response:", "green"), text)
-  exit()
+  rand = Rand()
+  MAX_CONTEXT = len(encode("What happened in 1939?"))+100
+  openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
+  text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_b)
+  print((f"Response:", "green"), text)
+
+  MAX_CONTEXT = len(encode(default_prompt))+100
+  openclk = opencl_kernels.Opencl_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)
+  dim = 1024
+  n_heads = 16
+
+  if os.path.exists("gpt2-medium.pickle") == False:
+    get_model("gpt2-medium")
+  filehandler = open("gpt2-medium.pickle", 'rb')  
+  gpt2 = pickle.load(filehandler)
+  gpt2.model.to_buffer()
+  rand = Rand()
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_med)
+  print((f"Response:", "green"), text)
+  
+  
+  dim = 1280
+  n_heads = 20
+  openclk = opencl_kernels.Opencl_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
+  if os.path.exists("gpt2-large.pickle") == False:
+    get_model("gpt2-large")
+  filehandler = open("gpt2-large.pickle", 'rb')  
+  gpt2 = pickle.load(filehandler)
+  gpt2.model.to_buffer()
+  rand = Rand()
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
+  print((f"Response:", "green"), text)
