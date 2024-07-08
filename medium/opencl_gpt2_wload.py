@@ -133,124 +133,88 @@ class Transformer:
       hi.ln_2.bias = np.float32(hi.ln_2.bias)
       print(type(hi.ln_2.bias[0]))
 
-  def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
-    if hasattr(self, 'ln_1_weight') == False:
+  def to_buffer(self):
       print("copying ln_1_weight")
-      self.ln_1_weight = []
-      for i in range(len(self.h)):
-        self.ln_1_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.ln_1_weight[i]))
+      for i in range(12):
+        self.ln_1_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_1_weight[i])
 
-    if hasattr(self, 'ln_1_bias') == False:
       print("copying ln_1_bias")
-      self.ln_1_bias = []
-      for i in range(len(self.h)):
-        self.ln_1_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.ln_1_bias[i]))
+      for i in range(12):
+        self.ln_1_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_1_bias[i])
 
-    if hasattr(self, 'attn_c_attn_weight') == False:
       print("copying attn_c_attn_weight")
-      self.attn_c_attn_weight = []
-      for i in range(len(self.h)):
-        self.attn_c_attn_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.attn_c_attn_weight[i].transpose(1,0).flatten()))
+      for i in range(12):
+        self.attn_c_attn_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_attn_weight[i].transpose(1,0).flatten())
 
-    if hasattr(self, 'attn_c_attn_bias') == False: #dont use yet
       print("copying attn_c_attn_bias")
-      self.attn_c_attn_bias = []
-      for i in range(len(self.h)):
-        self.attn_c_attn_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.attn_c_attn_bias[i]))
+      for i in range(12):
+        self.attn_c_attn_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_attn_bias[i])
     
-    if hasattr(self, 'attn_c_proj_weight') == False:
       print("copying attn_c_proj_weight")
-      self.attn_c_proj_weight = []
       self.attn_c_proj_weight2 = []
-      for i in range(len(self.h)):
-        self.attn_c_proj_weight2.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(gpt2_2.model.attn_c_proj_weight[i])))
-        self.attn_c_proj_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.attn_c_proj_weight[i].flatten()))
+      for i in range(12):
+        self.attn_c_proj_weight2.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(self.attn_c_proj_weight[i])))
+        self.attn_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_proj_weight[i].flatten())
 
-    if hasattr(self, 'attn_c_proj_bias') == False:
       print("copying attn_c_proj_bias")
-      self.attn_c_proj_bias = []
-      for i in range(len(self.h)):
-        self.attn_c_proj_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.attn_c_proj_bias[i]))
+      for i in range(12):
+        self.attn_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_proj_bias[i])
 
-    if hasattr(self, 'ln_2_weight') == False:
       print("copying ln_2_weight")
-      self.ln_2_weight = []
-      for i in range(len(self.h)):
-        self.ln_2_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.ln_2_weight[i]))
+      for i in range(12):
+        self.ln_2_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_2_weight[i])
 
-    if hasattr(self, 'ln_2_bias') == False:
       print("copying ln_2_bias")
-      self.ln_2_bias = []
-      for i in range(len(self.h)):
-        self.ln_2_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.ln_2_bias[i]))
+      for i in range(12):
+        self.ln_2_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_2_bias[i])
 
-    if hasattr(self, 'mlp_c_fc_bias') == False:
       print("copying mlp_c_fc_bias")
-      self.mlp_c_fc_bias = []
-      for i in range(len(self.h)):
-        self.mlp_c_fc_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.mlp_c_fc_bias[i]))
+      for i in range(12):
+        self.mlp_c_fc_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_fc_bias[i])
 
-    if hasattr(self, 'attn_c_attn_weight') == False:
-      print("copying attn_c_attn_weight")
-      self.attn_c_attn_weight = []
-      for i in range(len(self.h)):
-        self.attn_c_attn_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.attn_c_attn_weight[i].transpose(1,0).flatten()))
-
-    if hasattr(self, 'mlp_c_proj_weight_unf') == False: #todo, what difference does the .flatten() make to the kernel? transposed?
       print("copying mlp_c_proj_weight_unf")
       self.mlp_c_proj_weight_unf = []
-      self.mlp_c_proj_weight = []
-      for i in range(len(self.h)):
-        self.mlp_c_proj_weight_unf.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(gpt2_2.model.mlp_c_proj_weight[i])))
-        self.mlp_c_proj_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.mlp_c_proj_weight[i].flatten()))
+      for i in range(12):
+        self.mlp_c_proj_weight_unf.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(self.mlp_c_proj_weight[i])))
+        self.mlp_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_weight[i].flatten())
 
-    if hasattr(self, 'mlp_c_proj_bias') == False:
       print("copying mlp_c_proj_bias")
-      self.mlp_c_proj_bias = []
-      for i in range(len(self.h)):
-        self.mlp_c_proj_bias.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.mlp_c_proj_bias[i]))
+      for i in range(12):
+        self.mlp_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_bias[i])
 
-    if hasattr(self, 'ln_f_weight') == False:
       print("copying ln_f_weight")
-      self.ln_f_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.ln_f_weight)
+      self.ln_f_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f_weight)
     
-    if hasattr(self, 'ln_f_bias') == False:
       print("copying ln_f_bias")
-      self.ln_f_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.ln_f_bias)
+      self.ln_f_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f_bias)
 
-    if hasattr(self, 'mlp_c_fc_weight') == False:
       print("copying mlp_c_fc_weight")
-      self.mlp_c_fc_weight = []
-      for i in range(len(self.h)):
-        self.mlp_c_fc_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.mlp_c_fc_weight[i].transpose(1,0).flatten()))
+      for i in range(12):
+        self.mlp_c_fc_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_fc_weight[i].transpose(1,0).flatten())
 
-    if hasattr(self, 'lm_head_weight') == False:
-      print("copying lm_head_weight")
-      self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.lm_head_weight.flatten())
-
-    if hasattr(self, 'lm_head_weight_unf') == False: #todo
       print("copying lm_head_weight_unf")
-      self.lm_head_weight_unf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.lm_head_weight)
+      self.lm_head_weight_unf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head_weight)
 
-    if hasattr(self, 'wte_weight') == False:
+      print("copying lm_head_weight")
+      self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head_weight.flatten())
+
       print("copying self_wte_weight")
-      self.wte_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.wte_weight)
+      self.wte_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wte_weight)
 
-    if hasattr(self, 'wpe_weight') == False:
       print("copying self_wpe_weight")
-      self.wpe_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.wpe_weight)
+      self.wpe_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wpe_weight)
 
-    if hasattr(self, 'attn_cache_kv') == False:
       print("creating attn_cache_kv")
       self.attn_cache_kv = []
-      for i in range(len(self.h)):
+      for i in range(12):
         a = np.zeros((2*MAX_CONTEXT*n_heads*64)).astype(np.float32)
         self.attn_cache_kv.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a))
 
+  def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if start_pos > 0:
       h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
       attn_dim = dim
-      for i in range(0,len(self.h)):
+      for i in range(0,12):
         h = openclk.kernel_0(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
         self.attn_c_attn_bias[i],attn_dim,\
@@ -263,8 +227,9 @@ class Transformer:
       ret = openclk.kernel_1(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0]  
       return ret
     else:
+      print(type(self.wte_weight))
       x = openclk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
-      for i in range(len(self.h)-1):
+      for i in range(12-1):
         x = openclk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT)
     unif_samples = rand.rand()
@@ -369,14 +334,9 @@ if __name__ == "__main__":
   dim = 768
   n_heads = 12
 
-  filehandler = open("weights_128.pickle", 'rb')  
-  gpt2 = pickle.load(filehandler)
-  gpt2.model.convert()
   filehandler = open("new_converted_model_128_3.pickle", 'rb')  
-  gpt2_2 = pickle.load(filehandler)
-
-  print(np.shape(gpt2.model.h[0].attn.c_attn.weight),np.shape(gpt2_2.model.attn_c_attn_weight[0]))
-  print(type(gpt2.model.h[0].attn.c_attn.weight[0][0]),type(gpt2_2.model.attn_c_attn_weight[0][0][0]))
+  gpt2 = pickle.load(filehandler)
+  gpt2.model.to_buffer()
   
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
   print((f"Response:", "green"), text)
