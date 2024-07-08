@@ -342,7 +342,7 @@ if __name__ == "__main__":
   openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
   dim = 768
   n_heads = 12
-
+  
   if os.path.exists("gpt2.pickle") == False:
     get_model("gpt2")
   filehandler = open("gpt2.pickle", 'rb')  
@@ -371,7 +371,7 @@ if __name__ == "__main__":
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_med)
   print((f"Response:", "green"), text)
   
-  '''
+  
   dim = 1280
   n_heads = 20
   openclk = opencl_kernels.Opencl_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
@@ -383,4 +383,4 @@ if __name__ == "__main__":
   rand = Rand()
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
   print((f"Response:", "green"), text)
-  '''
+  

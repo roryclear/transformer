@@ -771,6 +771,7 @@ class Opencl_Kernels:
             __global float *xq, __global float *mx)
         {{
         int gidx0 = get_global_id(0);
+        if(gidx0 < {num_tokens*self.n_heads}) {{
         int x = gidx0 / {num_tokens};
         int y = gidx0 % {num_tokens};
             float m = 0;
@@ -778,6 +779,7 @@ class Opencl_Kernels:
                 m += xq[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z];
             }}
             mx[x*{num_tokens} + y] = m;  
+            }}
         }}
         __kernel void ms4(
             __global float *xq, global const float *mx)
@@ -909,8 +911,11 @@ class Opencl_Kernels:
         g = math.ceil(self.n_heads*num_tokens*num_tokens / ls) * ls
         prg.ms0(queue, (g,1), (ls,1), self.xq_g, self.xqkv_g)
         prg.ms(queue, (g,1), (ls,1), self.xq_g)
-        g2 = self.n_heads*num_tokens #todo, will break for larger inputs
-        prg.ms3(queue, (g2,1), (g2,1), self.xq_g,self.res_g)
+        if self.n_heads*num_tokens > ls:
+            g2 =  math.ceil(self.n_heads*num_tokens / ls) * ls
+        else:
+            g2 = self.n_heads*num_tokens
+        prg.ms3(queue, (g2,1), (min(self.n_heads*num_tokens,ls),1), self.xq_g,self.res_g)
         prg.ms4(queue, (g,1), (ls,1), self.xq_g,self.res_g)
 
         
