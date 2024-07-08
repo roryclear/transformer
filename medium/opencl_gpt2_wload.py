@@ -11,7 +11,9 @@ import opencl_kernels
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 import pyopencl as cl
+from transformers import AutoModelForCausalLM, AutoTokenizer
 opencl = True
+
 
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
@@ -63,47 +65,8 @@ class Rand:
     return rng_np_buffer[0]
     
 class Transformer:
-  def __init__():
+  def __init__(self):
     return None
-
-  def convert(self):
-    print("CONVERT")
-    self.wte.weight = np.float32(self.wte.weight)
-    print(type(self.wte.weight[0][0]))
-    self.wpe.weight = np.float32(self.wpe.weight)
-    print(type(self.wpe.weight[0][0]))
-    self.lm_head.weight = np.float32(self.lm_head.weight)
-    print(type(self.lm_head.weight[0][0]))
-    self.ln_f.weight = np.float32(self.ln_f.weight)
-    print(type(self.ln_f.weight[0]))
-    self.ln_f.bias = np.float32(self.ln_f.bias)
-    print(type(self.ln_f.bias[0]))
-    print("transformer block")
-    for hi in self.h:
-      hi.attn.c_attn.weight = np.float32(hi.attn.c_attn.weight)
-      print(type(hi.attn.c_attn.weight[0][0]))
-      hi.attn.c_attn.bias = np.float32(hi.attn.c_attn.bias)
-      print(type(hi.attn.c_attn.bias[0]))
-      hi.attn.c_proj.weight = np.float32(hi.attn.c_proj.weight)
-      print(type(hi.attn.c_proj.weight[0][0]))
-      hi.attn.c_proj.bias = np.float32(hi.attn.c_proj.bias)
-      print(type(hi.attn.c_proj.bias[0]))
-      hi.mlp.c_fc.weight = np.float32(hi.mlp.c_fc.weight)
-      print(type(hi.mlp.c_fc.weight[0][0]))
-      hi.mlp.c_fc.bias = np.float32(hi.mlp.c_fc.bias)
-      print(type(hi.mlp.c_fc.bias[0]))
-      hi.mlp.c_proj.weight = np.float32(hi.mlp.c_proj.weight)
-      print(type(hi.mlp.c_proj.weight[0][0]))
-      hi.mlp.c_proj.bias = np.float32(hi.mlp.c_proj.bias)
-      print(type(hi.mlp.c_proj.bias[0]))
-      hi.ln_1.weight = np.float32(hi.ln_1.weight)
-      print(type(hi.ln_1.weight[0]))
-      hi.ln_1.bias = np.float32(hi.ln_1.bias)
-      print(type(hi.ln_1.bias[0]))
-      hi.ln_2.weight = np.float32(hi.ln_2.weight)
-      print(type(hi.ln_2.weight[0]))
-      hi.ln_2.bias = np.float32(hi.ln_2.bias)
-      print(type(hi.ln_2.bias[0]))
 
   def to_buffer(self):
       print("copying ln_1_weight")
@@ -236,6 +199,91 @@ class GPT2:
       toks.append(tok)
     return decode(toks)
 
+
+def get_model(model_size = "gpt2"):
+  gpt2_blank = GPT2(None)
+  gpt2_blank.model = Transformer()
+  n_layers = {"gpt2":12,"gpt2-medium":24}
+  model = AutoModelForCausalLM.from_pretrained(model_size)
+
+  print("converting wpe_weight")
+  gpt2_blank.model.wpe_weight = model.transformer.wpe.weight.detach().cpu().numpy().astype(np.float32)
+
+  print("converting ln_f.weight")
+  gpt2_blank.model.ln_f_weight = model.transformer.ln_f.weight.detach().cpu().numpy().astype(np.float32)
+
+  print("converting ln_f.bias")
+  gpt2_blank.model.ln_f_bias = model.transformer.ln_f.bias.detach().cpu().numpy().astype(np.float32)
+
+  print("converting mlp_c_proj.bias")
+  gpt2_blank.model.mlp_c_proj_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.mlp_c_proj_bias.append(model.transformer.h[x].mlp.c_proj.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting mlp_c_proj.weight")
+  gpt2_blank.model.mlp_c_proj_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.mlp_c_proj_weight.append(model.transformer.h[x].mlp.c_proj.weight.detach().cpu().numpy().astype(np.float32))
+
+  print("converting mlp_c_fc.bias")
+  gpt2_blank.model.mlp_c_fc_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.mlp_c_fc_bias.append(model.transformer.h[x].mlp.c_fc.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting mlp_c_fc.weight")
+  gpt2_blank.model.mlp_c_fc_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.mlp_c_fc_weight.append(model.transformer.h[x].mlp.c_fc.weight.detach().cpu().numpy().astype(np.float32))
+
+  print("converting attn_c_proj.bias")
+  gpt2_blank.model.attn_c_proj_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.attn_c_proj_bias.append(model.transformer.h[x].attn.c_proj.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting attn_c_proj.weight")
+  gpt2_blank.model.attn_c_proj_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.attn_c_proj_weight.append(model.transformer.h[x].attn.c_proj.weight.detach().cpu().numpy().astype(np.float32))
+
+  print("converting attn_c_attn.bias")
+  gpt2_blank.model.attn_c_attn_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.attn_c_attn_bias.append(model.transformer.h[x].attn.c_attn.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting attn_c_attn.weight")
+  gpt2_blank.model.attn_c_attn_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.attn_c_attn_weight.append(model.transformer.h[x].attn.c_attn.weight.detach().cpu().numpy().astype(np.float32))
+
+  print("converting ln_1.bias")
+  gpt2_blank.model.ln_1_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.ln_1_bias.append(model.transformer.h[x].ln_1.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting ln_1.weight")
+  gpt2_blank.model.ln_1_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.ln_1_weight.append(model.transformer.h[x].ln_1.weight.detach().cpu().numpy().astype(np.float32))
+
+  print("converting ln_2.bias")
+  gpt2_blank.model.ln_2_bias = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.ln_2_bias.append(model.transformer.h[x].ln_2.bias.detach().cpu().numpy().astype(np.float32))
+
+  print("converting ln_2.weight")
+  gpt2_blank.model.ln_2_weight = []
+  for x in range(n_layers[model_size]):
+      gpt2_blank.model.ln_2_weight.append(model.transformer.h[x].ln_2.weight.detach().cpu().numpy().astype(np.float32))
+    
+  print("converting wte.weight")
+  gpt2_blank.model.wte_weight = model.transformer.wte.weight.detach().cpu().numpy().astype(np.float32)
+
+  print("converting lm_head.weight")
+  gpt2_blank.model.lm_head_weight = model.lm_head.weight.detach().cpu().numpy().astype(np.float32).transpose(1,0)
+
+  with open(model_size+".pickle", 'wb') as outp:
+      pickle.dump(gpt2_blank, outp)
+
 # **** main code ****
 
 if __name__ == "__main__":
@@ -294,6 +342,8 @@ if __name__ == "__main__":
   dim = 768
   n_heads = 12
 
+  if os.path.exists("gpt2.pickle") == False:
+    get_model("gpt2")
   filehandler = open("gpt2.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   gpt2.model.to_buffer()
@@ -311,7 +361,9 @@ if __name__ == "__main__":
   dim = 1024
   n_heads = 16
 
-  filehandler = open("new_converted_model_medium.pickle", 'rb')  
+  if os.path.exists("gpt2-medium.pickle") == False:
+    get_model("gpt2-medium")
+  filehandler = open("gpt2-medium.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   gpt2.model.to_buffer()
   rand = Rand()
