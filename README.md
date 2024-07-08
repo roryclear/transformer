@@ -1,6 +1,6 @@
 # Transformer
 Use git lfs to clone with weights
-## Fastest OpenCL GPT-2 (124M) inference*
+## Fast OpenCL GPT-2 (124M) inference
 - [ ] Fastest Inference
 
 - [X] Support for all GPT-2 Models
