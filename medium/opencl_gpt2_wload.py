@@ -163,7 +163,7 @@ class Transformer:
       self.attn_c_proj_weight = []
       self.attn_c_proj_weight2 = []
       for i in range(len(self.h)):
-        self.attn_c_proj_weight2.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].attn.c_proj.weight))
+        self.attn_c_proj_weight2.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(gpt2_2.model.attn_c_proj_weight[i])))
         self.attn_c_proj_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.attn_c_proj_weight[i].flatten()))
 
     if hasattr(self, 'attn_c_proj_bias') == False:
@@ -201,7 +201,7 @@ class Transformer:
       self.mlp_c_proj_weight_unf = []
       self.mlp_c_proj_weight = []
       for i in range(len(self.h)):
-        self.mlp_c_proj_weight_unf.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.h[i].mlp.c_proj.weight))
+        self.mlp_c_proj_weight_unf.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(gpt2_2.model.mlp_c_proj_weight[i])))
         self.mlp_c_proj_weight.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=gpt2_2.model.mlp_c_proj_weight[i].flatten()))
 
     if hasattr(self, 'mlp_c_proj_bias') == False:
@@ -377,13 +377,6 @@ if __name__ == "__main__":
 
   print(np.shape(gpt2.model.h[0].attn.c_attn.weight),np.shape(gpt2_2.model.attn_c_attn_weight[0]))
   print(type(gpt2.model.h[0].attn.c_attn.weight[0][0]),type(gpt2_2.model.attn_c_attn_weight[0][0][0]))
-
-  #todo get rid of this
-  for i in range(12):
-    gpt2.model.h[i].attn.c_proj.weight = gpt2_2.model.attn_c_proj_weight[i]
-    gpt2.model.h[i].attn.c_proj.weight = np.asfortranarray(gpt2.model.h[i].attn.c_proj.weight)
-    gpt2.model.h[i].mlp.c_proj.weight = gpt2_2.model.mlp_c_proj_weight[i]
-    gpt2.model.h[i].mlp.c_proj.weight = np.asfortranarray(gpt2.model.h[i].mlp.c_proj.weight)
   
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
   print((f"Response:", "green"), text)
