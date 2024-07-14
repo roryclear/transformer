@@ -13,6 +13,20 @@ prg = None
 
 device = Metal.MTLCreateSystemDefaultDevice()
 
+def run_metal(encoder,pipeline_state,command_buffer,gs,ls,args):
+    encoder.setComputePipelineState_(pipeline_state)
+    i = 0
+    for arg in args:
+        encoder.setBuffer_offset_atIndex_(arg, 0, i)
+        i+=1
+    threadsPerGrid = Metal.MTLSizeMake(gs,1,1)
+    threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
+    encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
+    encoder.endEncoding()
+    command_buffer.commit()
+    command_buffer.waitUntilCompleted()
+    return
+
 def create_metal_buffer(a):
   a_buffer = device.newBufferWithLength_options_(len(a.flatten())*4 ,1)
   m = a_buffer.contents().as_buffer(len(a.flatten())*4)
@@ -78,23 +92,7 @@ class Opencl_Kernels:
         library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
         fxn = library.newFunctionWithName_("mm")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
-        encoder.setComputePipelineState_(pipeline_state)
-
-        encoder.setBuffer_offset_atIndex_(tokens_g, 0, 0)
-        encoder.setBuffer_offset_atIndex_(weight_g, 0, 1)
-        encoder.setBuffer_offset_atIndex_(weight_2_g, 0, 2)
-        encoder.setBuffer_offset_atIndex_(tok_emb_g, 0, 3)
-
-        threadsPerGrid = Metal.MTLSizeMake(math.ceil(size / ls),1,1)
-        threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
-        encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
-        encoder.endEncoding()
-        command_buffer.commit()
-        command_buffer.waitUntilCompleted()
-        #if prg_str not in self.prg_cache:
-        #    self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
-        #prg = self.prg_cache[prg_str]
-        #prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, weight_2_g,tok_emb_g)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(size / ls),ls,[tokens_g,weight_g,weight_2_g,tok_emb_g])
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
@@ -953,17 +951,7 @@ class Opencl_Kernels:
         library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
         fxn = library.newFunctionWithName_("mm")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
-        encoder.setComputePipelineState_(pipeline_state)
-        encoder.setBuffer_offset_atIndex_(x_g, 0, 0)
-        encoder.setBuffer_offset_atIndex_(ln_1_weight_g, 0, 1)
-        encoder.setBuffer_offset_atIndex_(ln_1_bias_g, 0, 2)
-        encoder.setBuffer_offset_atIndex_(self.h_g, 0, 3)
-        threadsPerGrid = Metal.MTLSizeMake(math.ceil(size / ls),1,1)
-        threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
-        encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
-        encoder.endEncoding()
-        command_buffer.commit()
-        command_buffer.waitUntilCompleted()
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(size / ls),ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g])
 
         #how much do we need to init again?
         mtl_queue = device.newCommandQueue()
@@ -973,17 +961,7 @@ class Opencl_Kernels:
         library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
         fxn = library.newFunctionWithName_("mm2")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
-        encoder.setComputePipelineState_(pipeline_state)
-        encoder.setBuffer_offset_atIndex_(x_g, 0, 0)
-        encoder.setBuffer_offset_atIndex_(attn_weight_g, 0, 1)
-        encoder.setBuffer_offset_atIndex_(attn_bias_g, 0, 2)
-        encoder.setBuffer_offset_atIndex_(self.xqkv_g, 0, 3)
-        threadsPerGrid = Metal.MTLSizeMake(math.ceil(b_cols*num_tokens / ls),1,1)
-        threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
-        encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
-        encoder.endEncoding()
-        command_buffer.commit()
-        command_buffer.waitUntilCompleted()
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols*num_tokens / ls),ls,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g])
 
         output = np.asarray(self.xqkv_g.contents().as_buffer(max_content*self.dim*3*4))
         output = np.frombuffer(output, dtype=np.float32)
