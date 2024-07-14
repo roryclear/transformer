@@ -84,7 +84,7 @@ class Opencl_Kernels:
         encoder.setBuffer_offset_atIndex_(weight_2_g, 0, 2)
         encoder.setBuffer_offset_atIndex_(tok_emb_g, 0, 3)
 
-        threadsPerGrid = Metal.MTLSizeMake(math.ceil(size / ls)*ls,1,1)
+        threadsPerGrid = Metal.MTLSizeMake(math.ceil(size / ls),1,1)
         threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
         encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
         #encoder.dispatchThreadgroups_threadsPerThreadgroup_(Metal.MTLSizeMake(1,1,1), Metal.MTLSizeMake(1,1,1))
