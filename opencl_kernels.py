@@ -19,7 +19,7 @@ class Opencl_Kernels:
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
         if hasattr(self, 'add_res_g') == False:
-            self.add_res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.dim).astype(np.float32))
+            self.add_res_g = cl.Buffer(ctx, mf.READ_ONLY, self.dim*4)
         prg_str = f"""
         __kernel void add(
             __global const float *a, __global const float *b, __global float *res)
@@ -38,7 +38,7 @@ class Opencl_Kernels:
         tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
         ls = 256
         size = no_tokens*self.dim
-        tok_emb_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(no_tokens*self.dim).astype(np.float32))
+        tok_emb_g = cl.Buffer(ctx, mf.READ_ONLY, no_tokens*self.dim*4)
         prg_str = f"""
         __kernel void mm(
             __global int *tokens, __global const float *weight, __global const float *weight2,  __global float *tok_emb)
@@ -61,11 +61,11 @@ class Opencl_Kernels:
         rows = self.dim
         cols = 50257
         if hasattr(self, 'logits_g') == False:
-            self.logits_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(50257).astype(np.float32))
+            self.logits_g = cl.Buffer(ctx, mf.READ_ONLY, 50257*4)
         if hasattr(self, 'res') == False:
             self.res = np.zeros(1).astype(np.float32)
         if hasattr(self, 'res_g') == False:
-            self.res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(1).astype(np.float32))
+            self.res_g = cl.Buffer(ctx, mf.READ_ONLY, 1*4)
         seg2 = math.ceil(50257 / ls)
         prg_str = f"""
         __kernel void mm4(
@@ -215,11 +215,11 @@ class Opencl_Kernels:
         b_cols = self.dim*3 #todo
         b_rows = self.dim
         seg = int(size / ls) #todo
-        x0_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(n_tokens*self.dim).astype(np.float32))
-        logits_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(50257).astype(np.float32))
-        c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(n_tokens*b_cols).astype(np.float32))
+        x0_g = cl.Buffer(ctx, mf.READ_ONLY, n_tokens*self.dim*4)
+        logits_g = cl.Buffer(ctx, mf.READ_ONLY, 50257*4)
+        c_g = cl.Buffer(ctx, mf.READ_ONLY, n_tokens*b_cols*4)
         res = np.zeros(1).astype(np.float32)
-        res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(1).astype(np.float32))
+        res_g = cl.Buffer(ctx, mf.READ_ONLY, 1*4)
         prg_str = f"""
         __kernel void mm(__global const float *x_in,
             __global float *x, __global const float *weight, __global const float *bias)
@@ -442,13 +442,12 @@ class Opencl_Kernels:
     def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g):
         ls = 256
-        #zeros2 = np.zeros(self.n_heads*(start_pos+1)).astype(np.float32)
         seg = int(self.dim / ls) #todo
         seg3 = math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
         if hasattr(self, 'temp_g') == False:
-            self.temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.n_heads*self.max_context).astype(np.float32))
+            self.temp_g = cl.Buffer(ctx, mf.READ_ONLY ,self.n_heads*self.max_context*4)
         if hasattr(self, 'xq_temp_g') == False:
-            self.xq_temp_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.dim).astype(np.float32))
+            self.xq_temp_g = cl.Buffer(ctx, mf.READ_ONLY, self.dim*4)
         prg_str = f"""
         __kernel void mm(
             __global float *a, __global const float *c, __global const float *d, __global const float *e,
@@ -635,23 +634,23 @@ class Opencl_Kernels:
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content):
         if hasattr(self, 'h_g') == False:
-            self.h_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(max_content*self.dim).astype(np.float32))
+            self.h_g = cl.Buffer(ctx, mf.READ_ONLY, max_content*self.dim*4)
         if hasattr(self, 'h2_g') == False:
-            self.h2_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(max_content*self.dim).astype(np.float32))
+            self.h2_g = cl.Buffer(ctx, mf.READ_ONLY, max_content*self.dim*4)
         if hasattr(self, 'xq_g') == False:
-            self.xq_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.n_heads*64*max_content).astype(np.float32))
+            self.xq_g = cl.Buffer(ctx, mf.READ_ONLY, self.n_heads*64*max_content*4)
         if hasattr(self, 'xv_g') == False:
-            self.xv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.n_heads*64*max_content).astype(np.float32))
+            self.xv_g = cl.Buffer(ctx, mf.READ_ONLY, self.n_heads*64*max_content*4)
         if hasattr(self, 'c_g') == False:
-            self.c_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.n_heads*64*max_content).astype(np.float32))
+            self.c_g = cl.Buffer(ctx, mf.READ_ONLY, self.n_heads*64*max_content*4)
         if hasattr(self, 'xqt_g') == False:
-            self.xqt_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(self.n_heads*64*max_content).astype(np.float32))
+            self.xqt_g = cl.Buffer(ctx, mf.READ_ONLY, self.n_heads*64*max_content*4)
         if hasattr(self, 'res_g') == False:
-            self.res_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(max_content*self.n_heads).astype(np.float32))
+            self.res_g = cl.Buffer(ctx, mf.READ_ONLY, max_content*self.n_heads*4)
         if hasattr(self, 'xqkv_g') == False:
-            self.xqkv_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(max_content*self.dim*3).astype(np.float32))
+            self.xqkv_g = cl.Buffer(ctx, mf.READ_ONLY, max_content*self.dim*3*4)
         if hasattr(self, 'd_g') == False:
-            self.d_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.zeros(max_content*self.dim*4).astype(np.float32))
+            self.d_g = cl.Buffer(ctx, mf.READ_ONLY, max_content*self.dim*4*4)
         a_rows = num_tokens
         a_cols = 64
         b_rows = self.dim
