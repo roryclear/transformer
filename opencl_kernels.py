@@ -963,7 +963,7 @@ class Opencl_Kernels:
         encoder.setBuffer_offset_atIndex_(ln_1_weight_g, 0, 1)
         encoder.setBuffer_offset_atIndex_(ln_1_bias_g, 0, 2)
         encoder.setBuffer_offset_atIndex_(self.h_g, 0, 3)
-        threadsPerGrid = Metal.MTLSizeMake(math.ceil(size / ls)*ls,1,1)
+        threadsPerGrid = Metal.MTLSizeMake(math.ceil(size / ls),1,1)
         threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
         encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
         encoder.endEncoding()
