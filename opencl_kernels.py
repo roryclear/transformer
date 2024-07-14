@@ -91,11 +91,6 @@ class Opencl_Kernels:
         encoder.endEncoding()
         command_buffer.commit()
         command_buffer.waitUntilCompleted()
-
-        output = np.asarray(tok_emb_g.contents().as_buffer(no_tokens*self.dim*4))
-        output = np.frombuffer(output, dtype=np.float32)
-        print("output =",output)
-
         #if prg_str not in self.prg_cache:
         #    self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         #prg = self.prg_cache[prg_str]
@@ -970,10 +965,29 @@ class Opencl_Kernels:
         command_buffer.commit()
         command_buffer.waitUntilCompleted()
 
+        #how much do we need to init again?
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm2")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        encoder.setComputePipelineState_(pipeline_state)
+        encoder.setBuffer_offset_atIndex_(x_g, 0, 0)
+        encoder.setBuffer_offset_atIndex_(attn_weight_g, 0, 1)
+        encoder.setBuffer_offset_atIndex_(attn_bias_g, 0, 2)
+        encoder.setBuffer_offset_atIndex_(self.xqkv_g, 0, 3)
+        threadsPerGrid = Metal.MTLSizeMake(math.ceil(b_cols*num_tokens / ls),1,1)
+        threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
+        encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
+        encoder.endEncoding()
+        command_buffer.commit()
+        command_buffer.waitUntilCompleted()
 
-        output = np.asarray(x_g.contents().as_buffer(768*4))
+        output = np.asarray(self.xqkv_g.contents().as_buffer(max_content*self.dim*3*4))
         output = np.frombuffer(output, dtype=np.float32)
-        print("x =",output)
+        print("xqkv_g =",output[0:1000])
         exit()
 
         '''
