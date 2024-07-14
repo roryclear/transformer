@@ -11,6 +11,8 @@ queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
 prg = None
 
+device = Metal.MTLCreateSystemDefaultDevice()
+
 def create_metal_buffer(a):
   a_buffer = device.newBufferWithLength_options_(len(a.flatten())*4 ,1)
   m = a_buffer.contents().as_buffer(len(a.flatten())*4)
@@ -26,7 +28,6 @@ def metal_buffer_np(a,size):
   out = np.asarray(a.contents().as_buffer(size*4))
   return np.frombuffer(out, dtype=np.float32)
 
-device = Metal.MTLCreateSystemDefaultDevice()
 
 class Opencl_Kernels:
     def __init__(self,dim,n_heads,max_context):
@@ -95,7 +96,6 @@ class Opencl_Kernels:
         output = np.asarray(tok_emb_g.contents().as_buffer(no_tokens*self.dim*4))
         output = np.frombuffer(output, dtype=np.float32)
         print("output =",output)
-        exit()
 
         #if prg_str not in self.prg_cache:
         #    self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
@@ -121,7 +121,7 @@ class Opencl_Kernels:
         {{
             __attribute__ ((aligned (16))) __local float temp[{seg}];
             __attribute__ ((aligned (16))) __local float mean;
-            int lidx0 = get_local_id(0);
+            int lidx0 = get_global_id(0);
             float total = 0;
             for(int i = 0; i < {seg}; i++) {{
                 total += h[lidx0*{seg} + i];
@@ -199,7 +199,7 @@ class Opencl_Kernels:
         __global const float *a, __global float *res)
         {{
             __attribute__ ((aligned (16))) __local float temp[{ls}];
-            int lidx0 = get_local_id(0);
+            int lidx0 = get_global_id(0);
             float t = 0;
             for(int i = 0; i < {seg2}; i++) {{
                 t += a[lidx0*{seg2} + i];
@@ -274,9 +274,9 @@ class Opencl_Kernels:
         {{
             __attribute__ ((aligned (16))) __local float temp[{ls}];
             __attribute__ ((aligned (16))) __local float temp2[{n_tokens}];
-            int lidx0 = get_local_id(0);
-            int gidx0 = get_group_id(0);
-            int r = gidx0; //todo clean
+            int gidx0 = get_global_id(0);
+            int lidx0 = gidx0 % {ls};
+            int r = gidx0 / {ls}; 
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
                 x[{self.dim}*r + lidx0*{seg} + i] = x_in[{self.dim}*r + lidx0*{seg} + i];
@@ -349,7 +349,7 @@ class Opencl_Kernels:
         {{
             __attribute__ ((aligned (16))) __local float temp[{seg}];
             __attribute__ ((aligned (16))) __local float mean;
-            int lidx0 = get_local_id(0);
+            int lidx0 = get_global_id(0);
             float total = 0;
             for(int i = 0; i < {seg}; i++) {{
                 total += x[lidx0*{seg} + i];
@@ -429,7 +429,7 @@ class Opencl_Kernels:
         __global const float *a, __global float *res)
         {{
             __attribute__ ((aligned (16))) __local float temp[{ls}];
-            int lidx0 = get_local_id(0);
+            int lidx0 = get_global_id(0);
             float t = 0;
             for(int i = 0; i < {seg2}; i++) {{
                 t += a[lidx0*{seg2} + i];
@@ -504,7 +504,7 @@ class Opencl_Kernels:
         {{
             __attribute__ ((aligned (16))) __local float temp[{ls}];
             __attribute__ ((aligned (16))) __local float mean;
-            int lidx0 = get_local_id(0);
+            int lidx0 = get_global_id(0);
             float total = 0;
             for(int i = 0; i < {seg}; i++) {{
                 total += a[lidx0*{seg} + i];
@@ -581,7 +581,7 @@ class Opencl_Kernels:
             __attribute__ ((aligned (16))) __local float bias4_temp[{self.dim*3}];
             __attribute__ ((aligned (16))) __local float h_temp[{self.dim}];
             __attribute__ ((aligned (16))) __local float h[{self.dim}];
-            int lidx0 = get_local_id(0);
+            int lidx0 = get_global_id(0);
             if(lidx0 < {self.n_heads}){{
             float m = -INFINITY;
             for(int i = 0; i < {start_pos+1}; i++) {{
@@ -714,9 +714,9 @@ class Opencl_Kernels:
         {{
             __attribute__ ((aligned (16))) __local float temp[{ls}];
             __attribute__ ((aligned (16))) __local float temp2[{num_tokens}];
-            int lidx0 = get_local_id(0);
-            int gidx0 = get_group_id(0);
-            int r = gidx0; //todo clean
+            int gidx0 = get_global_id(0);
+            int lidx0 = gidx0 % {ls};
+            int r = gidx0 / {ls}; //todo clean
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
                 copy[{self.dim}*r + lidx0*{seg} + i] = x[{self.dim}*r + lidx0*{seg} + i];
@@ -879,9 +879,9 @@ class Opencl_Kernels:
         {{
             __attribute__ ((aligned (16))) __local float temp[{ls}];
             __attribute__ ((aligned (16))) __local float temp2[{num_tokens}];
-            int lidx0 = get_local_id(0);
-            int gidx0 = get_group_id(0);
-            int r = gidx0; //todo clean
+            int gidx0 = get_global_id(0);
+            int lidx0 = gidx0 % {ls};
+            int r = gidx0 / {ls}; //todo clean
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
                 copy[{self.dim}*r + lidx0*{seg} + i] = x[{self.dim}*r + lidx0*{seg} + i];
