@@ -2,6 +2,7 @@ import numpy as np
 import pyopencl as cl
 import time
 import math
+import Metal
 
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
@@ -9,6 +10,23 @@ ctx = cl.Context(devices=my_gpu_devices)
 queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
 prg = None
+
+def create_metal_buffer(a):
+  a_buffer = device.newBufferWithLength_options_(len(a.flatten())*4 ,1)
+  m = a_buffer.contents().as_buffer(len(a.flatten())*4)
+  m[:] = bytes(a)
+  return a_buffer
+
+def create_metal_buffer_empty(size):
+  a_buffer = device.newBufferWithLength_options_(size ,1)
+  return a_buffer
+
+
+def metal_buffer_np(a,size):
+  out = np.asarray(a.contents().as_buffer(size*4))
+  return np.frombuffer(out, dtype=np.float32)
+
+device = Metal.MTLCreateSystemDefaultDevice()
 
 class Opencl_Kernels:
     def __init__(self,dim,n_heads,max_context):
@@ -35,24 +53,54 @@ class Opencl_Kernels:
         return self.add_res_g
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
-        tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
+        tokens_g = create_metal_buffer(tokens.astype(np.int32))
         ls = 256
         size = no_tokens*self.dim
-        tok_emb_g = cl.Buffer(ctx, mf.READ_ONLY, no_tokens*self.dim*4)
+        tok_emb_g = create_metal_buffer_empty(no_tokens*self.dim*4)
         prg_str = f"""
-        __kernel void mm(
-            __global int *tokens, __global const float *weight, __global const float *weight2,  __global float *tok_emb)
+        #include <metal_stdlib>
+        #include <metal_simdgroup_matrix>
+        using namespace metal;
+        kernel void mm(
+            device int *tokens, device const float *weight, device const float *weight2,  device float *tok_emb, uint3 gid [[thread_position_in_grid]])
         {{
-            int gidx0 = get_global_id(0);
+            int gidx0 = gid.x;
             int i = gidx0 / {self.dim};
             int j = gidx0 % {self.dim};
             tok_emb[i*{self.dim} + j] = weight[tokens[i]*{self.dim} + j] + weight2[i*{self.dim} + j];
         }}
         """
-        if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
-        prg = self.prg_cache[prg_str]
-        prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, weight_2_g,tok_emb_g)
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        encoder.setComputePipelineState_(pipeline_state)
+
+        encoder.setBuffer_offset_atIndex_(tokens_g, 0, 0)
+        encoder.setBuffer_offset_atIndex_(weight_g, 0, 1)
+        encoder.setBuffer_offset_atIndex_(weight_2_g, 0, 2)
+        encoder.setBuffer_offset_atIndex_(tok_emb_g, 0, 3)
+
+        threadsPerGrid = Metal.MTLSizeMake(math.ceil(size / ls)*ls,1,1)
+        threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
+        encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
+        #encoder.dispatchThreadgroups_threadsPerThreadgroup_(Metal.MTLSizeMake(1,1,1), Metal.MTLSizeMake(1,1,1))
+        encoder.endEncoding()
+        command_buffer.commit()
+        command_buffer.waitUntilCompleted()
+
+        output = np.asarray(tok_emb_g.contents().as_buffer(no_tokens*self.dim*4))
+        output = np.frombuffer(output, dtype=np.float32)
+        print("output =",output)
+        exit()
+
+        #if prg_str not in self.prg_cache:
+        #    self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
+        #prg = self.prg_cache[prg_str]
+        #prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, weight_2_g,tok_emb_g)
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):

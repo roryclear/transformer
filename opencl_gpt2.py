@@ -12,14 +12,30 @@ from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 import pyopencl as cl
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import Metal
 opencl = True
 
+device = Metal.MTLCreateSystemDefaultDevice()
 
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
 ctx = cl.Context(devices=my_gpu_devices)
 mf = cl.mem_flags
 
+def create_metal_buffer(a):
+  a_buffer = device.newBufferWithLength_options_(len(a.flatten())*4 ,1)
+  m = a_buffer.contents().as_buffer(len(a.flatten())*4)
+  m[:] = bytes(a)
+  return a_buffer
+
+def create_metal_buffer_empty(size):
+  a_buffer = device.newBufferWithLength_options_(size ,1)
+  return a_buffer
+
+
+def metal_buffer_np(a,size):
+  out = np.asarray(a.contents().as_buffer(size*4))
+  return np.frombuffer(out, dtype=np.float32)
 
 tokens = open('tokens.txt','r',encoding="utf-8").readlines()
 token_dict = dict()
@@ -71,73 +87,73 @@ class Transformer:
   def to_buffer(self):
       print("copying ln_1_weight")
       for i in range(len(self.ln_1_weight)):
-        self.ln_1_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_1_weight[i])
+        self.ln_1_weight[i] = create_metal_buffer(self.ln_1_weight[i])
 
       print("copying ln_1_bias")
       for i in range(len(self.ln_1_weight)):
-        self.ln_1_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_1_bias[i])
+        self.ln_1_bias[i] = create_metal_buffer(self.ln_1_bias[i])
 
       print("copying attn_c_attn_weight")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_attn_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_attn_weight[i].transpose(1,0).flatten())
+        self.attn_c_attn_weight[i] = create_metal_buffer(self.attn_c_attn_weight[i].transpose(1,0).flatten())
 
       print("copying attn_c_attn_bias")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_attn_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_attn_bias[i])
+        self.attn_c_attn_bias[i] = create_metal_buffer(self.attn_c_attn_bias[i])
     
       print("copying attn_c_proj_weight")
       self.attn_c_proj_weight2 = []
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_weight2.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(self.attn_c_proj_weight[i])))
-        self.attn_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_proj_weight[i].flatten())
+        self.attn_c_proj_weight2.append(create_metal_buffer(np.asfortranarray(self.attn_c_proj_weight[i])))
+        self.attn_c_proj_weight[i] = create_metal_buffer(self.attn_c_proj_weight[i].flatten())
 
       print("copying attn_c_proj_bias")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_proj_bias[i])
+        self.attn_c_proj_bias[i] = create_metal_buffer(self.attn_c_proj_bias[i])
 
       print("copying ln_2_weight")
       for i in range(len(self.ln_1_weight)):
-        self.ln_2_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_2_weight[i])
+        self.ln_2_weight[i] = create_metal_buffer(self.ln_2_weight[i])
 
       print("copying ln_2_bias")
       for i in range(len(self.ln_1_weight)):
-        self.ln_2_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_2_bias[i])
+        self.ln_2_bias[i] = create_metal_buffer(self.ln_2_bias[i])
 
       print("copying mlp_c_fc_bias")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_fc_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_fc_bias[i])
+        self.mlp_c_fc_bias[i] = create_metal_buffer(self.mlp_c_fc_bias[i])
 
       print("copying mlp_c_proj_weight_unf")
       self.mlp_c_proj_weight_unf = []
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_proj_weight_unf.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(self.mlp_c_proj_weight[i])))
-        self.mlp_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_weight[i].flatten())
+        self.mlp_c_proj_weight_unf.append(create_metal_buffer(np.asfortranarray(self.mlp_c_proj_weight[i])))
+        self.mlp_c_proj_weight[i] = create_metal_buffer(self.mlp_c_proj_weight[i].flatten())
 
       print("copying mlp_c_proj_bias")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_bias[i])
+        self.mlp_c_proj_bias[i] = create_metal_buffer(self.mlp_c_proj_bias[i])
 
       print("copying ln_f_weight")
-      self.ln_f_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f_weight)
+      self.ln_f_weight = create_metal_buffer(self.ln_f_weight)
     
       print("copying ln_f_bias")
-      self.ln_f_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f_bias)
+      self.ln_f_bias = create_metal_buffer(self.ln_f_bias)
 
       print("copying mlp_c_fc_weight")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_fc_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_fc_weight[i].transpose(1,0).flatten())
+        self.mlp_c_fc_weight[i] = create_metal_buffer(self.mlp_c_fc_weight[i].transpose(1,0).flatten())
 
       print("copying lm_head_weight_unf")
-      self.lm_head_weight_unf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head_weight)
+      self.lm_head_weight_unf = create_metal_buffer(self.lm_head_weight)
 
       print("copying lm_head_weight")
-      self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head_weight.flatten())
+      self.lm_head_weight = create_metal_buffer(self.lm_head_weight.flatten())
 
       print("copying self_wte_weight")
-      self.wte_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wte_weight)
+      self.wte_weight = create_metal_buffer(self.wte_weight.astype(np.float32))
 
       print("copying self_wpe_weight")
-      self.wpe_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wpe_weight)
+      self.wpe_weight = create_metal_buffer(self.wpe_weight)
 
       print("creating attn_cache_kv")
       self.attn_cache_kv = []
