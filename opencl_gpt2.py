@@ -158,7 +158,7 @@ class Transformer:
       print("creating attn_cache_kv")
       self.attn_cache_kv = []
       for i in range(len(self.ln_1_weight)):
-        self.attn_cache_kv.append(cl.Buffer(ctx, mf.READ_ONLY, 2*MAX_CONTEXT*n_heads*64*4))
+        self.attn_cache_kv.append(create_metal_buffer_empty(2*MAX_CONTEXT*n_heads*64*4))
 
   def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if start_pos > 0:
