@@ -27,6 +27,20 @@ def run_metal(encoder,pipeline_state,command_buffer,gs,ls,args):
     command_buffer.waitUntilCompleted()
     return
 
+def run_metal_2(encoder,pipeline_state,command_buffer,gs,ls,args):
+    encoder.setComputePipelineState_(pipeline_state)
+    i = 0
+    for arg in args:
+        encoder.setBuffer_offset_atIndex_(arg, 0, i)
+        i+=1
+    threadsPerGrid = Metal.MTLSizeMake(gs,1,1)
+    threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
+    encoder.dispatchThreads_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
+    encoder.endEncoding()
+    command_buffer.commit()
+    command_buffer.waitUntilCompleted()
+    return
+
 def create_metal_buffer(a):
   a_buffer = device.newBufferWithLength_options_(len(a.flatten())*4 ,1)
   m = a_buffer.contents().as_buffer(len(a.flatten())*4)
@@ -51,6 +65,7 @@ class Opencl_Kernels:
         self.max_context = max_context
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
+        ls = 256
         if hasattr(self, 'add_res_g') == False:
             self.add_res_g = cl.Buffer(ctx, mf.READ_ONLY, self.dim*4)
         prg_str = f"""
@@ -64,7 +79,8 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        prg.add(queue, (self.dim,1), (256,1), a_g, b_g,self.add_res_g) #todo check shape
+        prg.add(queue, (self.dim,1), (ls,1), a_g, b_g,self.add_res_g) #todo check shape
+        
         return self.add_res_g
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
@@ -93,6 +109,7 @@ class Opencl_Kernels:
         fxn = library.newFunctionWithName_("mm")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(size / ls),ls,[tokens_g,weight_g,weight_2_g,tok_emb_g])
+
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
@@ -749,7 +766,6 @@ class Opencl_Kernels:
             for(int i = 0; i < {seg}; i++) {{
                 x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
             }}
-           
         }}
         kernel void mm2(
             device const float *x, device const float *attn_weight, device const float *attn_bias,device float *res, uint3 gid [[thread_position_in_grid]])
@@ -951,7 +967,14 @@ class Opencl_Kernels:
         library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
         fxn = library.newFunctionWithName_("mm")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
-        run_metal(encoder,pipeline_state,command_buffer,math.ceil(size / ls),ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g])
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(size / ls)*ls,ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g])
+
+        output = np.asarray(x_g.contents().as_buffer(num_tokens*self.dim*4))
+        output = np.frombuffer(output, dtype=np.float32)
+        for i in range(len(output)):
+            print(i,output[i])
+        exit()
+
 
         #how much do we need to init again?
         mtl_queue = device.newCommandQueue()
@@ -963,12 +986,125 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols*num_tokens / ls),ls,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g])
 
-        output = np.asarray(self.xqkv_g.contents().as_buffer(max_content*self.dim*3*4))
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm3")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil((num_tokens*self.n_heads*64) / ls),ls,[self.xqkv_g, cache_kv_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("tr")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil((num_tokens*self.n_heads*64) / ls),ls,[self.xqkv_g, self.xq_g, self.xv_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("ms0")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,[self.xq_g, self.xqkv_g])
+        
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("ms")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,[self.xq_g])
+
+        #if self.n_heads*num_tokens > ls:
+        #    g2 = math.ceil(self.n_heads*num_tokens / ls)*ls
+        #else:
+            #g2 = math.ceil(self.n_heads*num_tokens)
+        g2 = math.ceil(self.n_heads*num_tokens)
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("ms3")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,1,self.n_heads*num_tokens,[self.xq_g,self.res_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("ms4")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,[self.xq_g,self.res_g])
+
+        output = np.asarray(self.xq_g.contents().as_buffer(self.n_heads*max_content*4))
         output = np.frombuffer(output, dtype=np.float32)
-        print("xqkv_g =",output[0:1000])
+        print(output)
         exit()
 
-        '''
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("ms5")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.n_heads*a_cols*num_tokens / ls),ls,[self.xq_g,self.xv_g,self.c_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("ms6")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(num_tokens*self.n_heads*64 / ls),ls,[self.c_g,self.xqt_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("ms7")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("ms8")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,num_tokens,ls,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("ms9")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols_2*num_tokens / ls),ls,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("ms10")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])      
+
         prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g,self.h_g) 
         g = math.ceil((b_cols*num_tokens / ls)*ls)
         prg.mm2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,self.xqkv_g)
@@ -991,8 +1127,7 @@ class Opencl_Kernels:
         
         g3 = (math.ceil(self.n_heads*a_cols*num_tokens / ls) * ls)
         prg.ms5(queue, (g3,1), (ls,1), self.xq_g,self.xv_g,self.c_g)
-        g4 = num_tokens*self.n_heads*64
-        g4 = math.ceil(g4 / ls)*ls
+        g4 = math.ceil(num_tokens*self.n_heads*64 / ls)*ls
         
         prg.ms6(queue, (g4,1), (ls,1), self.c_g,self.xqt_g)
 
@@ -1006,7 +1141,6 @@ class Opencl_Kernels:
 
         g = math.ceil((b_rows*num_tokens / ls)*ls)
         prg.ms10(queue, (g,1), (ls,1), self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g)
-        '''
         return self.h2_g      
 
     def time_it(func,a,b,i=100):
