@@ -965,10 +965,13 @@ class Opencl_Kernels:
             }}
             float tth = (total + c_fc_bias[x]) * 0.7978845608\
                 * (1 + 0.044715 * pow((total + c_fc_bias[x]),2));
-            float th = 0;
-            if(tth > 10) {{ th = 1;}}
-            if(tth < -10) {{th = -1;}}
-            if(tth < 10 && tth > -10) {{th = tanh(tth);}}
+            float th = tanh(tth);
+            if(isnan(th) && tth < 0) {{
+                th = -1;
+            }}
+            if(isnan(th) && tth >= 0) {{
+                th = 1;
+            }}
             res[y*{b_cols_2} + x] = 0.5 * (total + c_fc_bias[x])\
                 * (1 + th);
         }}
