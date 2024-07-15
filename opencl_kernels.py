@@ -272,18 +272,21 @@ class Opencl_Kernels:
         b_cols = self.dim*3 #todo
         b_rows = self.dim
         seg = int(size / ls) #todo
-        x0_g = cl.Buffer(ctx, mf.READ_ONLY, n_tokens*self.dim*4)
-        logits_g = cl.Buffer(ctx, mf.READ_ONLY, 50257*4)
-        c_g = cl.Buffer(ctx, mf.READ_ONLY, n_tokens*b_cols*4)
+        x0_g = create_metal_buffer_empty(n_tokens*self.dim*4)
+        logits_g = create_metal_buffer_empty(50257*4)
+        c_g = create_metal_buffer_empty(n_tokens*b_cols*4)
         res = np.zeros(1).astype(np.float32)
-        res_g = cl.Buffer(ctx, mf.READ_ONLY, 1*4)
+        res_g = create_metal_buffer_empty(1*4)
         prg_str = f"""
-        __kernel void mm(__global const float *x_in,
-            __global float *x, __global const float *weight, __global const float *bias)
+        #include <metal_stdlib>
+        #include <metal_simdgroup_matrix>
+        using namespace metal;
+        kernel void mm(device const float *x_in,
+            device float *x, device const float *weight, device const float *bias, uint3 gid [[thread_position_in_grid]])
         {{
-            __attribute__ ((aligned (16))) __local float temp[{ls}];
-            __attribute__ ((aligned (16))) __local float temp2[{n_tokens}];
-            int gidx0 = get_global_id(0);
+            threadgroup float temp[{ls}];
+            threadgroup float temp2[{n_tokens}];
+            int gidx0 = gid.x;
             int lidx0 = gidx0 % {ls};
             int r = gidx0 / {ls}; 
             temp2[r] = 0;
@@ -292,7 +295,7 @@ class Opencl_Kernels:
                 temp2[r] += x[{self.dim}*r + lidx0*{seg} + i];
             }}
             temp[lidx0] = temp2[r];
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0<{n_tokens}) {{
                 temp2[lidx0] = 0;
                 for(int i = 0; i < {ls}; i++) {{
@@ -300,17 +303,17 @@ class Opencl_Kernels:
                 }}
                 temp2[lidx0] = temp2[lidx0] / {size};  
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int i = 0; i < {seg}; i++) {{
                 x[{self.dim}*r + i + lidx0*{seg}] -= temp2[r];
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
                 temp2[r] += pow(x[{self.dim}*r + lidx0*{seg} + i],2);
             }}
             temp[lidx0] = temp2[r];
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0<{n_tokens}) {{
                 temp2[lidx0] = 0;
                 for(int i = 0; i < {ls}; i++) {{
@@ -318,15 +321,15 @@ class Opencl_Kernels:
                 }}
                 temp2[lidx0] = pow(temp2[lidx0] / {size} + 1e-5,0.5);
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int i = 0; i < {seg}; i++) {{
                 x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
             }}
         }}
-        __kernel void mm2(
-            __global const float *x, __global const float *attn_weight, __global const float *attn_bias,__global float *res)
+        kernel void mm2(
+            device const float *x, device const float *attn_weight, device const float *attn_bias,device float *res, uint3 gid [[thread_position_in_grid]])
         {{
-            int gidx0 = get_global_id(0);
+            int gidx0 = gid.x;
             int i = gidx0 / {n_tokens};
             int y = gidx0 % {n_tokens};
             float total = 0;
@@ -335,36 +338,36 @@ class Opencl_Kernels:
             }}
             res[y*{b_cols} + i] = total + attn_bias[i];
         }}
-        __kernel void mm3(
-            __global const float *xqkv, __global float *new_cache)
+        kernel void mm3(
+            device const float *xqkv, device float *new_cache, uint3 gid [[thread_position_in_grid]])
         {{
-            int gidx0 = get_global_id(0);
+            int gidx0 = gid.x;
             int i = gidx0 / {self.n_heads*64};
             int j = gidx0 % {self.n_heads*64};
             new_cache[i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim*1} + j];
             new_cache[{max_content*self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*2 + j]; 
         }}
-         __kernel void mm4(
-            __global const float *xqkv, __global float *new_cache)
+         kernel void mm4(
+            device const float *xqkv, device float *new_cache, uint3 gid [[thread_position_in_grid]])
         {{
-            int gidx0 = get_global_id(0);
+            int gidx0 = gid.x;
             int i = gidx0 / {self.n_heads*64};
             int j = gidx0 % {self.n_heads*64};
             new_cache[i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + j + {self.dim}];
             new_cache[{max_content*self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + j + {self.dim}*2]; 
         }}
-        __kernel void mm5(
-            __global float *x, __global const float *ln_f_weight, __global const float *ln_f_bias)
+        kernel void mm5(
+            device float *x, device const float *ln_f_weight, device const float *ln_f_bias, uint3 gid [[thread_position_in_grid]])
         {{
-            __attribute__ ((aligned (16))) __local float temp[{seg}];
-            __attribute__ ((aligned (16))) __local float mean;
-            int lidx0 = get_global_id(0);
+            threadgroup float temp[{seg}];
+            threadgroup float mean;
+            int lidx0 = gid.x;
             float total = 0;
             for(int i = 0; i < {seg}; i++) {{
                 total += x[lidx0*{seg} + i];
             }}
             temp[lidx0] = total;
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0==0) {{
                 total = 0;
                 for(int i = 0; i < {ls}; i++) {{
@@ -372,17 +375,17 @@ class Opencl_Kernels:
                 }}
                 mean = total / {size};  
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int i = 0; i < {seg}; i++) {{
                 x[i + lidx0*{seg} + {(n_tokens - 1)*self.dim}] -= mean;
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             total = 0;
             for(int i = 0; i < {seg}; i++) {{
                 total += pow(x[lidx0*{seg} + i + {(n_tokens - 1)*self.dim}],2);
             }}
             temp[lidx0] = total;
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0==0) {{
                 total = 0;
                 for(int i = 0; i < {ls}; i++) {{
@@ -390,15 +393,15 @@ class Opencl_Kernels:
                 }}
                 mean = pow(total / {size} + 1e-5,0.5);
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int i = 0; i < {seg}; i++) {{
                 x[i + lidx0*{seg}] = (x[i + lidx0*{seg} + {(n_tokens - 1)*self.dim}] * ln_f_weight[i + lidx0*{seg}]) / mean + ln_f_bias[i + lidx0*{seg}];
             }}
         }}
-        __kernel void matmul(
-            __global const float *a, __global const float *b, __global float *res)
+        kernel void matmul(
+            device const float *a, device const float *b, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
-            int x = get_global_id(0);
+            int x = gid.x;
             if(x < {b_cols2}) {{
                 float total = 0;
                 for(int k = 0; k < {b_rows2}; k++) {{
@@ -407,44 +410,44 @@ class Opencl_Kernels:
                 res[x] = total / {temperature}; 
             }}
         }}
-        __kernel void mm6(
-            __global const float *a, __global float *res)
+        kernel void mm6(
+            device const float *a, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
             res[0] = a[0]; //todo why is this needed?, used to be a MAX
         }}
 
-        __kernel void mm7(
-        __global float *a, __global const float *res)
+        kernel void mm7(
+        device float *a, device const float *res, uint3 gid [[thread_position_in_grid]])
         {{
-            barrier(CLK_LOCAL_MEM_FENCE);
-            int gidx0 = get_global_id(0);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            int gidx0 = gid.x;
             a[gidx0] = exp(a[gidx0] - res[0]);
         }}
 
-        __kernel void mm8(
-            __global const float *a, __global float *res)
+        kernel void mm8(
+            device const float *a, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
             res[0] = a[0];
         }}
 
-        __kernel void mm9(
-        __global float *a, __global const float *res)
+        kernel void mm9(
+        device float *a, device const float *res, uint3 gid [[thread_position_in_grid]])
         {{
-            int gidx0 = get_global_id(0);
+            int gidx0 = gid.x;
             a[gidx0] = a[gidx0] / res[0];
         }}
 
-        __kernel void mm10(
-        __global const float *a, __global float *res)
+        kernel void mm10(
+        device const float *a, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
-            __attribute__ ((aligned (16))) __local float temp[{ls}];
-            int lidx0 = get_global_id(0);
+            threadgroup float temp[{ls}];
+            int lidx0 = gid.x;
             float t = 0;
             for(int i = 0; i < {seg2}; i++) {{
                 t += a[lidx0*{seg2} + i];
             }}
             temp[lidx0] = t;
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0 == 0) {{
                 t = 0;
                 for(int i = 0; i < {ls}; i++) {{
@@ -454,18 +457,18 @@ class Opencl_Kernels:
             }}
         }}
 
-        __kernel void mm11(
-        __global float *a)
+        kernel void mm11(
+        device float *a, uint3 gid [[thread_position_in_grid]])
         {{
             for(int i = 1; i < 50257; i++) {{
                 a[i] += a[i-1];
             }}
         }}
 
-        __kernel void mm12(
-        __global float *a)
+        kernel void mm12(
+        device float *a, uint3 gid [[thread_position_in_grid]])
         {{
-            int gidx0 = get_global_id(0);
+            int gidx0 = gid.x;
             if((a[gidx0] / a[50256]) < {random_num}) {{
                 a[gidx0] = 1;
             }} else {{
@@ -473,6 +476,24 @@ class Opencl_Kernels:
             }}
         }}
         """
+
+        #command_buffer = mtl_queue.commandBuffer()
+        #mtl_queue = device.newCommandQueue()
+        #encoder = command_buffer.computeCommandEncoder()
+        #options = Metal.MTLCompileOptions.alloc().init()
+        #library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        #pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        #fxn = library.newFunctionWithName_("mm")
+        #run_metal(encoder,pipeline_state,command_buffer,n_tokens,ls,[x_g, x0_g, weight_g, bias_g])
+
+        output = np.asarray(x_g.contents().as_buffer(max_content*self.dim*4))
+        output = np.frombuffer(output, dtype=np.float32)
+        for i in range(1000):
+            print(i,output[i])
+        exit()      
+
+        
+        exit()
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
         prg = self.prg_cache[prg_str]
@@ -940,11 +961,16 @@ class Opencl_Kernels:
             int y = gidx0 % {num_tokens};
             float total = 0;
             for(int k = 0; k < {b_rows}; k++) {{
-                total += a[y*{b_rows} + k] * c_fc_weight[x*{b_rows} + k]; 
+                total += a[y*{b_rows} + k] * c_fc_weight[x*{b_rows} + k];  //TODO A LEADS TO NANs
             }}
+            float tth = (total + c_fc_bias[x]) * 0.7978845608\
+                * (1 + 0.044715 * pow((total + c_fc_bias[x]),2));
+            float th = 0;
+            if(tth > 10) {{ th = 1;}}
+            if(tth < -10) {{th = -1;}}
+            if(tth < 10 && tth > -10) {{th = tanh(tth);}}
             res[y*{b_cols_2} + x] = 0.5 * (total + c_fc_bias[x])\
-                * (1 + tanh((total + c_fc_bias[x]) * 0.7978845608\
-                * (1 + 0.044715 * pow((total + c_fc_bias[x]),2))));
+                * (1 + th);
         }}
         kernel void ms10(
             device const float *a, device const float *c_proj_weight,device const float *c_proj_bias, device float *res, uint3 gid [[thread_position_in_grid]])
@@ -955,9 +981,6 @@ class Opencl_Kernels:
             float total = 0;
             for(int k = 0; k < {b_cols_2}; k++) {{
                 total += a[y*{b_cols_2} + k] * c_proj_weight[x*{b_cols_2} + k];
-                //total += a[min(k,1612)];
-                //total = a[1612]; //bad value??
-                //total += 1 * c_proj_weight[x*{b_cols_2} + k];
             }}
             res[y*{b_rows} + x] += total + c_proj_bias[x];
         }}
@@ -1088,13 +1111,15 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols_2*num_tokens / ls),ls,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g])
         
-
-        output = np.asarray(self.d_g.contents().as_buffer(max_content*self.dim*4*4))
-        output = np.frombuffer(output, dtype=np.float32)
-        for i in range(2000):
-            print(i,output[i]) #1612 is nan
-        exit()   
         
+        output = np.asarray(self.d_g.contents().as_buffer(max_content*self.dim*4))
+        output = np.frombuffer(output, dtype=np.float32)
+        print("1612 is",output[1612])
+        for i in range(len(output)):
+            if np.isnan(output[i]):
+                print("NAN at",i)
+                exit()
+
         mtl_queue = device.newCommandQueue()
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
@@ -1103,14 +1128,17 @@ class Opencl_Kernels:
         fxn = library.newFunctionWithName_("ms10")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])
+
+        #output = np.asarray(self.h2_g.contents().as_buffer(max_content*self.dim*4))
+        #output = np.frombuffer(output, dtype=np.float32)
+        #for i in range(10):
+        #    print(i,output[i])
+        #print("\n")
+        return self.h2_g
+        exit()     
+
         #RORY TODO produced NAN up to 768 (self.dim), it's because of "a" (self.d_g)
         #ALL VALUES IN D_G look correct, except [1612], which in NAN instead of ~10.7 (openCL's output)
-
-        output = np.asarray(self.h2_g.contents().as_buffer(max_content*self.dim*4))
-        output = np.frombuffer(output, dtype=np.float32)
-        for i in range(800):
-            print(i,output[i])
-        exit()   
 
         prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g,self.h_g) 
         g = math.ceil((b_cols*num_tokens / ls)*ls)
