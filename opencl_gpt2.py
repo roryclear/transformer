@@ -104,8 +104,8 @@ class Transformer:
       print("copying attn_c_proj_weight")
       self.attn_c_proj_weight2 = []
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_weight2.append(create_metal_buffer(np.asfortranarray(self.attn_c_proj_weight[i])))
-        self.attn_c_proj_weight[i] = create_metal_buffer(self.attn_c_proj_weight[i].flatten())
+        self.attn_c_proj_weight2.append(create_metal_buffer(np.asfortranarray(self.attn_c_proj_weight[i].transpose())))
+        self.attn_c_proj_weight[i] = create_metal_buffer(self.attn_c_proj_weight[i])
 
       print("copying attn_c_proj_bias")
       for i in range(len(self.ln_1_weight)):
@@ -126,7 +126,7 @@ class Transformer:
       print("copying mlp_c_proj_weight_unf")
       self.mlp_c_proj_weight_unf = []
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_proj_weight_unf.append(create_metal_buffer(np.asfortranarray(self.mlp_c_proj_weight[i])))
+        self.mlp_c_proj_weight_unf.append(create_metal_buffer(self.mlp_c_proj_weight[i].transpose()))
         self.mlp_c_proj_weight[i] = create_metal_buffer(self.mlp_c_proj_weight[i].flatten())
 
       print("copying mlp_c_proj_bias")
@@ -182,6 +182,7 @@ class Transformer:
         x = openclk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT)
     unif_samples = rand.rand()
+    exit()
     ret = openclk.kernel_3(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\
     ,self.ln_f_weight, self.ln_f_bias,n_tokens,MAX_CONTEXT,self.lm_head_weight_unf,temperature,unif_samples).astype(np.int32)[0]
     return ret
