@@ -890,8 +890,8 @@ class Opencl_Kernels:
             device float *x, device const float *ln_2_weight, device const float *ln_2_bias
             ,device float *copy, uint3 gid [[thread_position_in_grid]])
         {{
-            float temp[{ls}];
-            float temp2[{num_tokens}];
+            threadgroup float temp[{ls}];
+            threadgroup float temp2[{num_tokens}];
             int gidx0 = gid.x;
             int lidx0 = gidx0 % {ls};
             int r = gidx0 / {ls}; //todo clean
@@ -969,13 +969,6 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(size / ls)*ls,ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g])
 
-        output = np.asarray(x_g.contents().as_buffer(num_tokens*self.dim*4))
-        output = np.frombuffer(output, dtype=np.float32)
-        for i in range(len(output)):
-            print(i,output[i])
-        exit()
-
-
         #how much do we need to init again?
         mtl_queue = device.newCommandQueue()
         command_buffer = mtl_queue.commandBuffer()
@@ -1022,10 +1015,10 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,[self.xq_g])
 
-        #if self.n_heads*num_tokens > ls:
-        #    g2 = math.ceil(self.n_heads*num_tokens / ls)*ls
-        #else:
-            #g2 = math.ceil(self.n_heads*num_tokens)
+        if self.n_heads*num_tokens > ls:
+            g2 = math.ceil(self.n_heads*num_tokens / ls)*ls
+        else:
+            g2 = math.ceil(self.n_heads*num_tokens)
         g2 = math.ceil(self.n_heads*num_tokens)
 
         mtl_queue = device.newCommandQueue()
@@ -1045,11 +1038,6 @@ class Opencl_Kernels:
         fxn = library.newFunctionWithName_("ms4")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,[self.xq_g,self.res_g])
-
-        output = np.asarray(self.xq_g.contents().as_buffer(self.n_heads*max_content*4))
-        output = np.frombuffer(output, dtype=np.float32)
-        print(output)
-        exit()
 
         mtl_queue = device.newCommandQueue()
         command_buffer = mtl_queue.commandBuffer()
@@ -1086,6 +1074,12 @@ class Opencl_Kernels:
         fxn = library.newFunctionWithName_("ms8")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,num_tokens,ls,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g])
+
+        output = np.asarray(self.h_g.contents().as_buffer(max_content*self.dim*4))
+        output = np.frombuffer(output, dtype=np.float32)
+        for i in range(10000):
+            print(i,output[i])
+        exit()
 
         mtl_queue = device.newCommandQueue()
         command_buffer = mtl_queue.commandBuffer()
