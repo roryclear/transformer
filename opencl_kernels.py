@@ -954,7 +954,10 @@ class Opencl_Kernels:
             int y = gidx0 % {num_tokens};
             float total = 0;
             for(int k = 0; k < {b_cols_2}; k++) {{
-                total += a[y*{b_cols_2} + k] * c_proj_weight[x*{b_cols_2} + k]; 
+                total += a[y*{b_cols_2} + k] * c_proj_weight[x*{b_cols_2} + k];
+                //total += a[min(k,1612)];
+                //total = a[1612]; //bad value??
+                //total += 1 * c_proj_weight[x*{b_cols_2} + k];
             }}
             res[y*{b_rows} + x] += total + c_proj_bias[x];
         }}
@@ -1084,7 +1087,14 @@ class Opencl_Kernels:
         fxn = library.newFunctionWithName_("ms9")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols_2*num_tokens / ls),ls,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g])
+        
 
+        output = np.asarray(self.d_g.contents().as_buffer(max_content*self.dim*4*4))
+        output = np.frombuffer(output, dtype=np.float32)
+        for i in range(2000):
+            print(i,output[i]) #1612 is nan
+        exit()   
+        
         mtl_queue = device.newCommandQueue()
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
@@ -1093,10 +1103,12 @@ class Opencl_Kernels:
         fxn = library.newFunctionWithName_("ms10")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])
-        
+        #RORY TODO produced NAN up to 768 (self.dim), it's because of "a" (self.d_g)
+        #ALL VALUES IN D_G look correct, except [1612], which in NAN instead of ~10.7 (openCL's output)
+
         output = np.asarray(self.h2_g.contents().as_buffer(max_content*self.dim*4))
         output = np.frombuffer(output, dtype=np.float32)
-        for i in range(10000):
+        for i in range(800):
             print(i,output[i])
         exit()   
 
