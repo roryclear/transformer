@@ -1075,11 +1075,6 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,num_tokens,ls,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g])
 
-        output = np.asarray(self.h_g.contents().as_buffer(max_content*self.dim*4))
-        output = np.frombuffer(output, dtype=np.float32)
-        for i in range(10000):
-            print(i,output[i])
-        exit()
 
         mtl_queue = device.newCommandQueue()
         command_buffer = mtl_queue.commandBuffer()
@@ -1097,7 +1092,8 @@ class Opencl_Kernels:
         library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
         fxn = library.newFunctionWithName_("ms10")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
-        run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])      
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])
+        return self.h2_g    
 
         prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g,self.h_g) 
         g = math.ceil((b_cols*num_tokens / ls)*ls)
