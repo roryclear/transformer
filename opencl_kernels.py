@@ -89,11 +89,11 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.dim / ls),ls,[a_g, b_g,self.add_res_g])
 
-        output = np.asarray(self.add_res_g.contents().as_buffer(self.dim*4*4))
-        output = np.frombuffer(output, dtype=np.float32)
-        for i in range(self.dim*4):
-            print(i,output[i])
-        exit()
+        #output = np.asarray(self.add_res_g.contents().as_buffer(self.dim*4*4))
+        #output = np.frombuffer(output, dtype=np.float32)
+        #for i in range(self.dim*4):
+        #    print(i,output[i])
+        #exit()
 
         return self.add_res_g
         if prg_str not in self.prg_cache:
@@ -674,24 +674,28 @@ class Opencl_Kernels:
         seg = int(self.dim / ls) #todo
         seg3 = math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
         if hasattr(self, 'temp_g') == False:
-            self.temp_g = cl.Buffer(ctx, mf.READ_ONLY ,self.n_heads*self.max_context*4)
+            self.temp_g = create_metal_buffer_empty(self.n_heads*self.max_context*4)
         if hasattr(self, 'xq_temp_g') == False:
-            self.xq_temp_g = cl.Buffer(ctx, mf.READ_ONLY, self.dim*4)
+            self.xq_temp_g = create_metal_buffer_empty(self.dim*4)
+        #threadgroup_barrier(mem_flags::mem_threadgroup);
         prg_str = f"""
-        __kernel void mm(
-            __global float *a, __global const float *c, __global const float *d, __global const float *e,
-            __global const float *xqkv, __global float *keys_values,
-            __global float *xq_temp)
+        #include <metal_stdlib>
+        #include <metal_simdgroup_matrix>
+        using namespace metal;
+        kernel void mm(
+            device float *a, device const float *c, device const float *d, device const float *e,
+            device const float *xqkv, device float *keys_values,
+            device float *xq_temp, uint3 gid [[thread_position_in_grid]])
         {{
-            __attribute__ ((aligned (16))) __local float temp[{ls}];
-            __attribute__ ((aligned (16))) __local float mean;
-            int lidx0 = get_global_id(0);
+            threadgroup float temp[{ls}];
+            threadgroup float mean;
+            int lidx0 = gid.x;
             float total = 0;
             for(int i = 0; i < {seg}; i++) {{
                 total += a[lidx0*{seg} + i];
             }}
             temp[lidx0] = total;
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0==0) {{
                 total = 0;
                 for(int i = 0; i < {ls}; i++) {{
@@ -699,14 +703,14 @@ class Opencl_Kernels:
                 }}
                 mean = total / {self.dim};  
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             total = 0;
             for(int i = 0; i < {seg}; i++) {{
                 a[i + lidx0*{seg}] -= mean;
                 total += pow(a[lidx0*{seg} + i],2);
             }}
             temp[lidx0] = total;
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0==0) {{
                 total = 0;
                 for(int i = 0; i < {ls}; i++) {{
@@ -714,7 +718,7 @@ class Opencl_Kernels:
                 }}
                 mean = pow(total / {self.dim} + 1e-5,0.5);
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int i = 0; i < {int(self.dim*3 / ls)}; i++) {{
                 xq_temp[lidx0*{int(self.dim*3 / ls)} + i] = xqkv[lidx0*{int(self.dim*3 / ls)} + i];
                 float total = 0;
@@ -732,12 +736,11 @@ class Opencl_Kernels:
                 }}
             }}
         }}
-
-        __kernel void mm2(
-            __global float *keys_values,
-            __global float *temp3, __global float *xq_temp)
+        kernel void mm2(
+            device float *keys_values,
+            device float *temp3, device float *xq_temp, uint3 gid [[thread_position_in_grid]])
         {{
-            int lidx0 = get_global_id(0);
+            int lidx0 = gid.x;
                 int x = (lidx0) % {start_pos+1};
                 int k = (lidx0) / {start_pos+1};
                 float acc0 = 0;
@@ -746,23 +749,24 @@ class Opencl_Kernels:
                 }}                  
                 temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(64)
         }}
-            __kernel void mm3(
-            __global float *a,
-            __global float *keys_values,
-            __global const float *weight,__global const float *bias,
-            __global const float *weight2, __global const float *bias2,
-            __global const float *weight3, __global const float *bias3,
-            __global const float *weight4,
-            __global float *bias4,
-            __global float *temp3, __global float *xq_temp)
+        kernel void mm3(
+            device float *a,
+            device float *keys_values,
+            device const float *weight,device const float *bias,
+            device const float *weight2, device const float *bias2,
+            device const float *weight3, device const float *bias3,
+            device const float *weight4,
+            device float *bias4,
+            device float *temp3, device float *xq_temp,
+            uint3 gid [[thread_position_in_grid]])
         {{
-            __attribute__ ((aligned (16))) __local float temp[{ls}];
-            __attribute__ ((aligned (16))) __local float mean;
-            __attribute__ ((aligned (16))) __local float bias3_temp[{self.dim*4}];
-            __attribute__ ((aligned (16))) __local float bias4_temp[{self.dim*3}];
-            __attribute__ ((aligned (16))) __local float h_temp[{self.dim}];
-            __attribute__ ((aligned (16))) __local float h[{self.dim}];
-            int lidx0 = get_global_id(0);
+            threadgroup float temp[{ls}];
+            threadgroup float mean;
+            threadgroup float bias3_temp[{self.dim*4}];
+            threadgroup float bias4_temp[{self.dim*3}];
+            threadgroup float h_temp[{self.dim}];
+            threadgroup float h[{self.dim}];
+            int lidx0 = gid.x;
             if(lidx0 < {self.n_heads}){{
             float m = -INFINITY;
             for(int i = 0; i < {start_pos+1}; i++) {{
@@ -779,7 +783,7 @@ class Opencl_Kernels:
                 temp3[i + lidx0*{start_pos+1}] = temp3[i + lidx0*{start_pos+1}] / t;
             }}
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int g = 0; g < {seg}; g++) {{
                 int y = (g + lidx0*{seg}) / 64;
                 int x = (g + lidx0*{seg}) % 64;
@@ -789,7 +793,7 @@ class Opencl_Kernels:
                 }}
                 xq_temp[x + y*64] = acc0;
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int i = 0; i < {seg}; i++) {{
                 float acc = 0;
                 for(int x = 0; x < {self.dim}; x++) {{
@@ -798,13 +802,13 @@ class Opencl_Kernels:
                 h[lidx0*{seg} + i] = a[lidx0*{seg} + i] + acc + bias[lidx0*{seg} + i];
                 h_temp[lidx0*{seg} + i] = h[lidx0*{seg} + i];
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             float total = 0;
             for(int i = 0; i < {seg}; i++) {{
                 total += h[lidx0*{seg} + i];
             }}
             temp[lidx0] = total;
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0==0) {{
                 total = 0;
                 for(int i = 0; i < {ls}; i++) {{
@@ -812,14 +816,14 @@ class Opencl_Kernels:
                 }}
                 mean = total / {self.dim};  
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             total = 0;
             for(int i = 0; i < {seg}; i++) {{
                 h[i + lidx0*{seg}] = h[i + lidx0*{seg}] - mean;
                 total += pow(h[lidx0*{seg} + i],2);
             }}        
             temp[lidx0] = total;
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0==0) {{
                 total = 0;
                 for(int i = 0; i < {ls}; i++) {{
@@ -827,7 +831,7 @@ class Opencl_Kernels:
                 }}
                 mean = pow(total / {self.dim} + 1e-5,0.5);
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int i = 0; i < {int(self.dim*4 / ls)}; i++) {{
                 bias3_temp[i + lidx0*{int(self.dim*4 / ls)}] = bias3[i + lidx0*{int(self.dim*4 / ls)}];
                 for(int j = 0; j < {self.dim}; j++) {{
@@ -837,7 +841,7 @@ class Opencl_Kernels:
                 * (1 + tanh(bias3_temp[i + lidx0*{int(self.dim*4 / ls)}] * 0.7978845608\
                 * (1 + 0.044715 * pow(bias3_temp[i + lidx0*{int(self.dim*4 / ls)}],2))));
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);  
+            threadgroup_barrier(mem_flags::mem_threadgroup);  
             for(int i = 0; i < {int(self.dim / ls)}; i++) {{
                 bias4_temp[lidx0 + i*{ls}] = bias4[lidx0 + i*{ls}];
                 for(int j = 0; j < {self.dim*4}; j++) {{
@@ -846,8 +850,45 @@ class Opencl_Kernels:
                 a[lidx0 + i*{ls}] = bias4_temp[lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
             }}
         }}
-        
         """
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,1,ls,[a_g,c_g,d_g,e_g,xqkv_g\
+        ,keys_values_g,self.xq_temp_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm2")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,seg3,ls,[keys_values_g,self.temp_g, self.xq_temp_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm3")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,seg3,ls,[a_g\
+        ,keys_values_g,weight_g,bias_g,\
+        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g])
+
+        #output = np.asarray(a_g.contents().as_buffer(self.dim*4))
+        #output = np.frombuffer(output, dtype=np.float32)
+        #for i in range(self.dim):
+        #    print(i,output[i])
+        #exit()
+        return a_g
+
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
