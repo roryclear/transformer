@@ -172,7 +172,7 @@ class Transformer:
         self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],\
         self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
-        self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
+        self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i],i)
       unif_samples = rand.rand()
       ret = openclk.kernel_1(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0]  
       return ret
