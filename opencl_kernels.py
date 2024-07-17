@@ -444,7 +444,9 @@ class Opencl_Kernels:
             int lidx0 = gid.x;
             float t = 0;
             for(int i = 0; i < {seg2}; i++) {{
+                if(lidx0*{seg2} + i < 50257) {{
                 t += a[lidx0*{seg2} + i];
+                }}
             }}
             temp[lidx0] = t;
             threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -514,9 +516,72 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,1,ls,[x_g, ln_f_weight_g, ln_f_bias_g])
 
-        output = np.asarray(x_g.contents().as_buffer(max_content*self.dim*4))
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("matmul")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols2 / ls),ls,[x_g, lm_head_weight_g,logits_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm6")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,1,1,[logits_g,res_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm7")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(50257 / ls),ls,[logits_g,res_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm8")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,1,1,[logits_g,res_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm9")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(50257 / ls),ls,[logits_g,res_g])
+
+
+        #output = np.asarray(logits_g.contents().as_buffer(50257*4))
+        #output = np.frombuffer(output, dtype=np.float32)
+        #for i in range(50257):
+        #    print(i,output[i])
+        #    
+        #print(output.mean())
+        #exit()
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm10")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,1,ls,[logits_g,res_g])
+
+        output = np.asarray(res_g.contents().as_buffer(1*4))
         output = np.frombuffer(output, dtype=np.float32)
-        for i in range(10000):
+        for i in range(1):
             print(i,output[i])
         exit()
            
@@ -528,7 +593,6 @@ class Opencl_Kernels:
         ls = 256
         prg.mm4(queue, (math.ceil((n_tokens*self.n_heads*64) / ls) * ls,1), (ls,1), c_g, new_cache_g) 
         prg.mm5(queue, (ls,1), (ls,1), x_g, ln_f_weight_g, ln_f_bias_g)
-
         group_size = math.ceil(b_cols2 / ls) * ls
         prg.matmul(queue, (group_size,1), (ls,1), x_g, lm_head_weight_g,logits_g)
         prg.mm6(queue, (1,1), (1,1), logits_g, res_g) 
