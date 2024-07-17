@@ -230,6 +230,12 @@ class Opencl_Kernels:
         kernel void mm9(
         device const float *a, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
+            float t = 0;
+            for(int i = 0; i < 50257; i++) {{
+                t+=a[i];
+            }}
+            res[0] = t;
+            /*
             threadgroup float temp[{ls}];
             int lidx0 = gid.x;
             float t = 0;
@@ -245,6 +251,7 @@ class Opencl_Kernels:
                 }}
                 res[0] = t;
             }}
+            */
         }}
 
         kernel void mm10(
@@ -276,6 +283,114 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,1,ls,[h_g, weight_g, bias_g])
 
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("matvec")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(50257 / 16),16,[h_g, weight2_g,self.logits_g]) #TODO use ls?
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm5")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,1,1,[self.logits_g,self.res_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm6")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm7")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,1,1,[self.logits_g,self.res_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm8")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm9")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,1,1,[self.logits_g,self.res_g]) #TODO this kernel is correct, but terrible and slow
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm8")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm10")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,1,1,[self.logits_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm11")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(50257 / ls),ls,[self.logits_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm9")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,1,ls,[self.logits_g,self.res_g])
+
+        res = np.asarray(self.res_g.contents().as_buffer(1*4))
+        res = np.frombuffer(res, dtype=np.float32)
+        return res
+        #for i in range(50257):
+        #    if np.isnan(output[i]):
+        #        print(output[i])
+        #        exit()
+        #    print(i,output[i])
+        #output = np.asarray(self.res_g.contents().as_buffer(1*4))
+        #output = np.frombuffer(output, dtype=np.float32)
+        #for i in range(1):
+        #    if np.isnan(output[i]):
+        #        print(output[i])
+        #        exit()
+        #    print(i,output[i])   
+        #exit()
+
+        
         #if prg_str not in self.prg_cache:
         #    self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
@@ -899,18 +1014,7 @@ class Opencl_Kernels:
         run_metal(encoder,pipeline_state,command_buffer,seg3,ls,[a_g\
         ,keys_values_g,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g])
-
-
-        if j == 11:
-            output = np.asarray(a_g.contents().as_buffer(self.dim*4))
-            output = np.frombuffer(output, dtype=np.float32)
-            for i in range(self.dim):
-                if np.isnan(output[i]):
-                    print(output[i])
-                    exit()
-                print(i,output[i])
-            exit()
-
+        
         return a_g
 
         if prg_str not in self.prg_cache:
