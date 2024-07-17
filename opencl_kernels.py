@@ -710,9 +710,10 @@ class Opencl_Kernels:
         return a_g    
         
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
-        ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content):
-        if hasattr(self, 'h_g') == False:
-            self.h_g = create_metal_buffer_empty(max_content*self.dim*4)
+        ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content,j=0):
+        #if hasattr(self, 'h_g') == False:
+        #    self.h_g = create_metal_buffer_empty(max_content*self.dim*4)
+        self.h_g = create_metal_buffer_empty(max_content*self.dim*4) #TODO above should work
         if hasattr(self, 'h2_g') == False:
             self.h2_g = create_metal_buffer_empty(max_content*self.dim*4)
         if hasattr(self, 'xq_g') == False:
@@ -786,6 +787,7 @@ class Opencl_Kernels:
             threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int i = 0; i < {seg}; i++) {{
                 x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
+                if(isnan(x[{self.dim}*r + i + lidx0*{seg}])) {{ x[{self.dim}*r + i + lidx0*{seg}] = 0; }} //TODO shouldn't need this
             }}
         }}
         kernel void mm2(
@@ -998,6 +1000,15 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(size / ls)*ls,ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g])
 
+
+        #if j == 1:
+        #    output = np.asarray(x_g.contents().as_buffer(max_content*self.dim*4))
+        #    output = np.frombuffer(output, dtype=np.float32)
+        #    for i in range(10000):
+        #        print(i,output[i])
+        #    print("\n")
+        #    exit()
+
         #how much do we need to init again?
         mtl_queue = device.newCommandQueue()
         command_buffer = mtl_queue.commandBuffer()
@@ -1115,13 +1126,14 @@ class Opencl_Kernels:
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols_2*num_tokens / ls),ls,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g])
         
         
-        output = np.asarray(self.d_g.contents().as_buffer(max_content*self.dim*4))
-        output = np.frombuffer(output, dtype=np.float32)
-        print("1612 is",output[1612])
-        for i in range(len(output)):
-            if np.isnan(output[i]):
-                print("NAN at",i)
-                exit()
+        #output = np.asarray(self.d_g.contents().as_buffer(max_content*self.dim*4))
+        #output = np.frombuffer(output, dtype=np.float32)
+        #print("1612 is",output[1612])
+        #for i in range(len(output)):
+        #    if np.isnan(output[i]):
+        #        print("NAN at",i)
+        #        exit()
+        #all values are wrong on second run
 
         mtl_queue = device.newCommandQueue()
         command_buffer = mtl_queue.commandBuffer()
@@ -1132,13 +1144,14 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])
 
-        #output = np.asarray(self.h2_g.contents().as_buffer(max_content*self.dim*4))
-        #output = np.frombuffer(output, dtype=np.float32)
-        #for i in range(10):
-        #    print(i,output[i])
-        #print("\n")
-        return self.h2_g
-        exit()     
+        if j == 1:
+            output = np.asarray(self.h2_g.contents().as_buffer(max_content*self.dim*4))
+            output = np.frombuffer(output, dtype=np.float32)
+            for i in range(10000):
+                print(i,output[i])
+            print("\n")
+            exit()
+        return self.h2_g   
 
         #RORY TODO produced NAN up to 768 (self.dim), it's because of "a" (self.d_g)
         #ALL VALUES IN D_G look correct, except [1612], which in NAN instead of ~10.7 (openCL's output)
