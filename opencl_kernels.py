@@ -67,15 +67,35 @@ class Opencl_Kernels:
     def add(self,a_g,b_g,b_s=0,a_s=0):
         ls = 256
         if hasattr(self, 'add_res_g') == False:
-            self.add_res_g = cl.Buffer(ctx, mf.READ_ONLY, self.dim*4)
+            self.add_res_g = create_metal_buffer_empty(self.dim*4*4) #TODO can this be smaller?
         prg_str = f"""
-        __kernel void add(
-            __global const float *a, __global const float *b, __global float *res)
+        #include <metal_stdlib>
+        #include <metal_simdgroup_matrix>
+        using namespace metal;
+        kernel void add(
+            device const float *a, device const float *b, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
-        int gidx0 = get_global_id(0);
-            res[gidx0] = a[{int(a_s)*self.dim} + gidx0] + b[gidx0 + {b_s*self.dim}];   
+        int gidx0 = gid.x;
+        res[gidx0] = a[{int(a_s)*self.dim} + gidx0] + b[gidx0 + {b_s*self.dim}];   
         }}
         """
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("add")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.dim / ls),ls,[a_g, b_g,self.add_res_g])
+
+        output = np.asarray(self.add_res_g.contents().as_buffer(self.dim*4*4))
+        output = np.frombuffer(output, dtype=np.float32)
+        for i in range(self.dim*4):
+            print(i,output[i])
+        exit()
+
+        return self.add_res_g
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
@@ -615,11 +635,16 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,1,ls,[logits_g,res_g])
 
-        output = np.asarray(res_g.contents().as_buffer(1*4))
-        output = np.frombuffer(output, dtype=np.float32)
-        for i in range(1):
-            print(i,output[i])
-        exit()
+        #output = np.asarray(res_g.contents().as_buffer(1*4))
+        #output = np.frombuffer(output, dtype=np.float32)
+        #for i in range(1):
+        #    print(i,output[i])
+        #exit()
+
+        res = np.asarray(res_g.contents().as_buffer(1*4))
+        res = np.frombuffer(res, dtype=np.float32)
+        return res
+        
            
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
