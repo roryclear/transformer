@@ -144,7 +144,7 @@ class Transformer:
         self.mlp_c_fc_weight[i] = create_metal_buffer(self.mlp_c_fc_weight[i].transpose(1,0).flatten())
 
       print("copying lm_head_weight_unf")
-      self.lm_head_weight_unf = create_metal_buffer(self.lm_head_weight)
+      self.lm_head_weight_unf = create_metal_buffer(self.lm_head_weight.transpose())
 
       print("copying lm_head_weight")
       self.lm_head_weight = create_metal_buffer(self.lm_head_weight.flatten())
