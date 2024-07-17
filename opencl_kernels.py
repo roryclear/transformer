@@ -359,7 +359,7 @@ class Opencl_Kernels:
         kernel void mm5(
             device float *x, device const float *ln_f_weight, device const float *ln_f_bias, uint3 gid [[thread_position_in_grid]])
         {{
-            threadgroup float temp[{seg}];
+            threadgroup float temp[{ls}];
             threadgroup float mean;
             int lidx0 = gid.x;
             float total = 0;
@@ -476,24 +476,50 @@ class Opencl_Kernels:
             }}
         }}
         """
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        mtl_queue = device.newCommandQueue()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,n_tokens,ls,[x_g, x0_g, weight_g, bias_g])
 
-        #command_buffer = mtl_queue.commandBuffer()
-        #mtl_queue = device.newCommandQueue()
-        #encoder = command_buffer.computeCommandEncoder()
-        #options = Metal.MTLCompileOptions.alloc().init()
-        #library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
-        #pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
-        #fxn = library.newFunctionWithName_("mm")
-        #run_metal(encoder,pipeline_state,command_buffer,n_tokens,ls,[x_g, x0_g, weight_g, bias_g])
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm2")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols*n_tokens / ls),ls,[x0_g, attn_weight_g,attn_bias_g,c_g])
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm4")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil((n_tokens*self.n_heads*64) / ls),ls,[c_g, new_cache_g])
+
+
+        mtl_queue = device.newCommandQueue()
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, err = device.newLibraryWithSource_options_error_(prg_str, options, None)
+        fxn = library.newFunctionWithName_("mm5")
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        run_metal(encoder,pipeline_state,command_buffer,1,ls,[x_g, ln_f_weight_g, ln_f_bias_g])
 
         output = np.asarray(x_g.contents().as_buffer(max_content*self.dim*4))
         output = np.frombuffer(output, dtype=np.float32)
-        for i in range(1000):
+        for i in range(10000):
             print(i,output[i])
-        exit()      
-
-        
         exit()
+           
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
         prg = self.prg_cache[prg_str]
@@ -1144,13 +1170,6 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])
 
-        if j == 1:
-            output = np.asarray(self.h2_g.contents().as_buffer(max_content*self.dim*4))
-            output = np.frombuffer(output, dtype=np.float32)
-            for i in range(10000):
-                print(i,output[i])
-            print("\n")
-            exit()
         return self.h2_g   
 
         #RORY TODO produced NAN up to 768 (self.dim), it's because of "a" (self.d_g)
