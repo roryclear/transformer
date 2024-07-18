@@ -1,5 +1,5 @@
 # Transformer
-## Fast OpenCL GPT-2 (124M) inference
+## Fast OpenCL GPT-2 inference
 - [ ] Fastest Inference
 
 - [X] Support for all GPT-2 Models
