@@ -47,7 +47,7 @@ def metal_buffer_np(a,size):
   return np.frombuffer(out, dtype=np.float32)
 
 
-class Opencl_Kernels:
+class Metal_Kernels:
     def __init__(self,dim,n_heads,max_context):
         self.prg_cache = {}
         self.dim = dim
