@@ -974,7 +974,7 @@ class Opencl_Kernels:
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("mm3")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
-        run_metal(encoder,pipeline_state,command_buffer,seg3,ls,[a_g\
+        run_metal(encoder,pipeline_state,command_buffer,1,ls,[a_g\
         ,keys_values_g,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g])
         
