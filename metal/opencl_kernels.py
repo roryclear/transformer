@@ -1,15 +1,7 @@
 import numpy as np
-import pyopencl as cl
 import time
 import math
 import Metal
-
-platform = cl.get_platforms()
-my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
-ctx = cl.Context(devices=my_gpu_devices)
-queue = cl.CommandQueue(ctx)
-mf = cl.mem_flags
-prg = None
 
 device = Metal.MTLCreateSystemDefaultDevice()
 mtl_queue = device.newCommandQueue()
@@ -363,44 +355,11 @@ class Opencl_Kernels:
         res = np.asarray(self.res_g.contents().as_buffer(1*4))
         res = np.frombuffer(res, dtype=np.float32)
         return res
-        #for i in range(50257):
-        #    if np.isnan(output[i]):
-        #        print(output[i])
-        #        exit()
-        #    print(i,output[i])
-        #output = np.asarray(self.res_g.contents().as_buffer(1*4))
-        #output = np.frombuffer(output, dtype=np.float32)
-        #for i in range(1):
-        #    if np.isnan(output[i]):
-        #        print(output[i])
-        #        exit()
-        #    print(i,output[i])   
-        #exit()
-
-        
-        #if prg_str not in self.prg_cache:
-        #    self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
-        prg = self.prg_cache[prg_str]
-        prg.mm4(queue, (ls,1), (ls,1), h_g, weight_g, bias_g)
-        gidx = math.ceil(cols / 16) * 16
-        prg.matvec(queue, (gidx,1), (16,1), h_g, weight2_g,self.logits_g)
-
-        prg.mm5(queue, (1,1), (1,1), self.logits_g, self.res_g) 
-        prg.mm6(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g, self.res_g)
-        prg.mm7(queue, (1,1), (1,1), self.logits_g, self.res_g)
-        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g, self.res_g)
-        prg.mm9(queue, (ls,1), (ls,1), self.logits_g, self.res_g)
-        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g, self.res_g)
-        prg.mm10(queue, (1,1), (1,1), self.logits_g)
-        prg.mm11(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g)
-        prg.mm9(queue, (ls,1), (ls,1), self.logits_g, self.res_g)
-        cl.enqueue_copy(queue, self.res, self.res_g)
-        return self.res
 
     def kernel_3(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,lm_head_weight_g,temperature,random_num):
         ls = 256
-        size = self.dim #todo hardcoded
+        size = self.dim 
         b_cols2 = 50257
         b_rows2 = self.dim
         seg2 = math.ceil(50257 / ls)
@@ -638,15 +597,12 @@ class Opencl_Kernels:
         fxn = prg.newFunctionWithName_("mm4")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil((n_tokens*self.n_heads*64) / ls),ls,[c_g, new_cache_g])
-
-
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("mm5")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,1,ls,[x_g, ln_f_weight_g, ln_f_bias_g])
-
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
@@ -654,7 +610,6 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols2 / ls),ls,[x_g, lm_head_weight_g,logits_g])
 
-        
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         options = Metal.MTLCompileOptions.alloc().init()
@@ -663,50 +618,35 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,1,1,[logits_g,res_g])
 
-        
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("mm7")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(50257 / ls),ls,[logits_g,res_g])
 
-        
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("mm8")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,1,1,[logits_g,res_g])
 
-        
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("mm9")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(50257 / ls),ls,[logits_g,res_g])
 
-
-        #output = np.asarray(logits_g.contents().as_buffer(50257*4))
-        #output = np.frombuffer(output, dtype=np.float32)
-        #for i in range(50257):
-        #    print(i,output[i])
-        #    
-        #print(output.mean())
-        #exit()
-
-        
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = library.newFunctionWithName_("mm10")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,1,ls,[logits_g,res_g])
 
-        
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = library.newFunctionWithName_("mm9")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(50257 / ls),ls,[logits_g,res_g])
-
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
@@ -722,8 +662,7 @@ class Opencl_Kernels:
         fxn = library.newFunctionWithName_("mm12")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(50257 / ls),ls,[logits_g])
-
-        
+       
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = library.newFunctionWithName_("mm10")
@@ -738,29 +677,6 @@ class Opencl_Kernels:
 
         res = np.asarray(res_g.contents().as_buffer(1*4))
         res = np.frombuffer(res, dtype=np.float32)
-        return res
-        
-           
-        if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
-        prg = self.prg_cache[prg_str]
-        prg.mm(queue, (ls*n_tokens,1), (ls,1),x_g, x0_g, weight_g, bias_g)
-        prg.mm2(queue, (math.ceil((b_cols*n_tokens / ls)*ls),1), (ls,1), x0_g, attn_weight_g,attn_bias_g,c_g)
-        ls = 256
-        prg.mm4(queue, (math.ceil((n_tokens*self.n_heads*64) / ls) * ls,1), (ls,1), c_g, new_cache_g) 
-        prg.mm5(queue, (ls,1), (ls,1), x_g, ln_f_weight_g, ln_f_bias_g)
-        group_size = math.ceil(b_cols2 / ls) * ls
-        prg.matmul(queue, (group_size,1), (ls,1), x_g, lm_head_weight_g,logits_g)
-        prg.mm6(queue, (1,1), (1,1), logits_g, res_g) 
-        prg.mm7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
-        prg.mm8(queue, (1,1), (1,1), logits_g, res_g)
-        prg.mm9(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
-        prg.mm10(queue, (ls,1), (ls,1), logits_g, res_g)
-        prg.mm9(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
-        prg.mm11(queue, (1,1), (1,1), logits_g)
-        prg.mm12(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g)
-        prg.mm10(queue, (ls,1), (ls,1), logits_g, res_g)
-        cl.enqueue_copy(queue, res, res_g)
         return res
 
     def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
@@ -978,19 +894,7 @@ class Opencl_Kernels:
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g])
         
         return a_g
-
-        if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
-        prg = self.prg_cache[prg_str]
-
-        prg.mm(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
-        ,keys_values_g,self.xq_temp_g)
-        prg.mm2(queue, (ls*seg3,1), (ls,1),keys_values_g,self.temp_g, self.xq_temp_g)
-        prg.mm3(queue, (ls,1), (ls,1),a_g\
-        ,keys_values_g,weight_g,bias_g,\
-        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g)
-        return a_g    
-        
+ 
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content,j=0):
         #if hasattr(self, 'h_g') == False:
@@ -1283,46 +1187,31 @@ class Opencl_Kernels:
         fxn = prg.newFunctionWithName_("mm")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(size / ls)*ls,ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g])
-
-
-        #if j == 1:
-        #    output = np.asarray(x_g.contents().as_buffer(max_content*self.dim*4))
-        #    output = np.frombuffer(output, dtype=np.float32)
-        #    for i in range(10000):
-        #        print(i,output[i])
-        #    print("\n")
-        #    exit()
-
-        #how much do we need to init again?
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("mm2")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols*num_tokens / ls),ls,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g])
-
-        
+       
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("mm3")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil((num_tokens*self.n_heads*64) / ls),ls,[self.xqkv_g, cache_kv_g])
-
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("tr")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil((num_tokens*self.n_heads*64) / ls),ls,[self.xqkv_g, self.xq_g, self.xv_g])
-
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("ms0")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,[self.xq_g, self.xqkv_g])
-        
-        
+               
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("ms")
@@ -1348,36 +1237,30 @@ class Opencl_Kernels:
         fxn = prg.newFunctionWithName_("ms4")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,[self.xq_g,self.res_g])
-
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("ms5")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.n_heads*a_cols*num_tokens / ls),ls,[self.xq_g,self.xv_g,self.c_g])
-
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("ms6")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(num_tokens*self.n_heads*64 / ls),ls,[self.c_g,self.xqt_g])
-
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("ms7")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g])
-
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("ms8")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,num_tokens,ls,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g])
-
-
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
@@ -1385,65 +1268,12 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols_2*num_tokens / ls),ls,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g])
         
-        
-        #output = np.asarray(self.d_g.contents().as_buffer(max_content*self.dim*4))
-        #output = np.frombuffer(output, dtype=np.float32)
-        #print("1612 is",output[1612])
-        #for i in range(len(output)):
-        #    if np.isnan(output[i]):
-        #        print("NAN at",i)
-        #        exit()
-        #all values are wrong on second run
-
-        
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("ms10")
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])
-
         return self.h2_g   
-
-        #RORY TODO produced NAN up to 768 (self.dim), it's because of "a" (self.d_g)
-        #ALL VALUES IN D_G look correct, except [1612], which in NAN instead of ~10.7 (openCL's output)
-
-        prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g,self.h_g) 
-        g = math.ceil((b_cols*num_tokens / ls)*ls)
-        prg.mm2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,self.xqkv_g)
-        g = math.ceil((num_tokens*self.n_heads*64) / ls) * ls
-        prg.mm3(queue, (g,1), (ls,1), self.xqkv_g, cache_kv_g)
-
-        ls = 256
-        prg.tr(queue, (g,1), (ls,1), self.xqkv_g, self.xq_g, self.xv_g)
-
-        g = math.ceil(self.n_heads*num_tokens*num_tokens / ls) * ls
-        prg.ms0(queue, (g,1), (ls,1), self.xq_g, self.xqkv_g)
-        prg.ms(queue, (g,1), (ls,1), self.xq_g)
-        if self.n_heads*num_tokens > ls:
-            g2 =  math.ceil(self.n_heads*num_tokens / ls) * ls
-        else:
-            g2 = self.n_heads*num_tokens
-        prg.ms3(queue, (g2,1), (min(self.n_heads*num_tokens,ls),1), self.xq_g,self.res_g)
-        prg.ms4(queue, (g,1), (ls,1), self.xq_g,self.res_g)
-
-        
-        g3 = (math.ceil(self.n_heads*a_cols*num_tokens / ls) * ls)
-        prg.ms5(queue, (g3,1), (ls,1), self.xq_g,self.xv_g,self.c_g)
-        g4 = math.ceil(num_tokens*self.n_heads*64 / ls)*ls
-        
-        prg.ms6(queue, (g4,1), (ls,1), self.c_g,self.xqt_g)
-
-        g = math.ceil((b_rows*num_tokens / ls)*ls)
-        prg.ms7(queue, (g,1), (ls,1), self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g)
-        prg.ms8(queue, (ls*num_tokens,1), (ls,1), self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g)
-
-        g = math.ceil((b_cols_2*num_tokens / ls)*ls)
-        prg.ms9(queue, (g,1), (ls,1), self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g)
-
-
-        g = math.ceil((b_rows*num_tokens / ls)*ls)
-        prg.ms10(queue, (g,1), (ls,1), self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g)
-        return self.h2_g      
 
     def time_it(func,a,b,i=100):
         f = None
