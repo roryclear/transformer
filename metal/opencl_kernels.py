@@ -770,8 +770,8 @@ class Opencl_Kernels:
         seg3 = math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
         if hasattr(self, 'temp_g') == False:
             self.temp_g = create_metal_buffer_empty(self.n_heads*self.max_context*4)
-        if hasattr(self, 'xq_temp_g') == False:
-            self.xq_temp_g = create_metal_buffer_empty(self.dim*4)
+        #if hasattr(self, 'xq_temp_g') == False:
+        self.xq_temp_g = create_metal_buffer_empty(self.dim*4) #TODO shouldn't have to create a new buffer every time
         #threadgroup_barrier(mem_flags::mem_threadgroup);
         prg_str = f"""
         #include <metal_stdlib>
@@ -832,8 +832,8 @@ class Opencl_Kernels:
             }}
         }}
         kernel void mm2(
-            device float *keys_values,
-            device float *temp3, device float *xq_temp, uint3 gid [[thread_position_in_grid]])
+            device const float *keys_values,
+            device float *temp3, device const float *xq_temp, uint3 gid [[thread_position_in_grid]])
         {{
             int lidx0 = gid.x;
                 int x = (lidx0) % {start_pos+1};
@@ -962,7 +962,6 @@ class Opencl_Kernels:
         pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,1,ls,[a_g,c_g,d_g,e_g,xqkv_g\
         ,keys_values_g,self.xq_temp_g])
-
         
         command_buffer = mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
