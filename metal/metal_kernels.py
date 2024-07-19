@@ -369,7 +369,7 @@ class Metal_Kernels:
         c_g = create_metal_buffer_empty(n_tokens*b_cols*4,self.device)
         res = np.zeros(1).astype(np.float32)
         res_g = create_metal_buffer_empty(1*4,self.device)
-
+        
         prg_str = f"""
         #include <metal_stdlib>
         #include <metal_simdgroup_matrix>
@@ -747,17 +747,18 @@ class Metal_Kernels:
             }}
         }}
         kernel void mm2(
-            device const float *keys_values,
-            device float *temp3, device const float *xq_temp, uint3 gid [[thread_position_in_grid]])
+            device const float *keys_values, device float *temp3, device const float *xq_temp, uint3 gid [[thread_position_in_grid]])
         {{
             int lidx0 = gid.x;
-                int x = (lidx0) % {start_pos+1};
-                int k = (lidx0) / {start_pos+1};
-                float acc0 = 0;
-                for(int i = 0; i < 64; i++) {{
-                    acc0 += xq_temp[i + 64*k] * keys_values[x*{self.n_heads*64} + i + 64*k];
-                }}                  
-                temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(64)
+            int x = (lidx0) % {start_pos+1};
+            int k = (lidx0) / {start_pos+1};
+            float acc0 = 0;
+            for(int i = 0; i < 64; i++) {{
+                acc0 += xq_temp[i + 64*k] * keys_values[x*{self.n_heads*64} + i + 64*k];
+            }}          
+            if(x + k*{start_pos+1} < {self.n_heads*self.max_context}) {{      
+            temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(64)
+            }}
         }}
         kernel void mm3(
             device float *a,
@@ -870,7 +871,7 @@ class Metal_Kernels:
             library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
             self.prg_cache[prg_str] = library
         prg = self.prg_cache[prg_str]
-        
+                
         command_buffer = self.mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("mm")
@@ -878,11 +879,12 @@ class Metal_Kernels:
         run_metal(encoder,pipeline_state,command_buffer,1,ls,[a_g,c_g,d_g,e_g,xqkv_g\
         ,keys_values_g,self.xq_temp_g])
         
+        
         command_buffer = self.mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("mm2")
         pipeline_state, err = self.device.newComputePipelineStateWithFunction_error_(fxn, None)
-        run_metal(encoder,pipeline_state,command_buffer,seg3,ls,[keys_values_g,self.temp_g, self.xq_temp_g])
+        run_metal(encoder,pipeline_state,command_buffer,seg3,ls,[keys_values_g ,self.temp_g, self.xq_temp_g])
 
         command_buffer = self.mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
@@ -891,7 +893,6 @@ class Metal_Kernels:
         run_metal(encoder,pipeline_state,command_buffer,1,ls,[a_g\
         ,keys_values_g,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g])
-        
         return a_g
  
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
