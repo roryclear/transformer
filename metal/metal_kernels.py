@@ -3,11 +3,22 @@ import time
 import math
 import Metal
 
-def run_metal(encoder,pipeline_state,command_buffer,gs,ls,args):
+test = False
+
+class buffer:
+    def __init__(self,data,size):
+        self.data = data
+        self.size = size
+
+    def np(self):
+        output = np.asarray(self.data.contents().as_buffer(self.size))
+        return np.frombuffer(output, dtype=np.float32)
+
+def run_metal(encoder,pipeline_state,command_buffer,gs,ls,args,device=None):
     encoder.setComputePipelineState_(pipeline_state)
     i = 0
     for arg in args:
-        encoder.setBuffer_offset_atIndex_(arg, 0, i)
+        encoder.setBuffer_offset_atIndex_(arg.data, 0, i)
         i+=1
     threadsPerGrid = Metal.MTLSizeMake(gs,1,1)
     threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
@@ -35,17 +46,11 @@ def create_metal_buffer(a,device):
   a_buffer = device.newBufferWithLength_options_(len(a.flatten())*4 ,1)
   m = a_buffer.contents().as_buffer(len(a.flatten())*4)
   m[:] = bytes(a)
-  return a_buffer
+  return buffer(a_buffer,len(a.flatten())*4)
 
 def create_metal_buffer_empty(size,device):
   a_buffer = device.newBufferWithLength_options_(size ,1)
-  return a_buffer
-
-
-def metal_buffer_np(a,size):
-  out = np.asarray(a.contents().as_buffer(size*4))
-  return np.frombuffer(out, dtype=np.float32)
-
+  return buffer(a_buffer,size)
 
 class Metal_Kernels:
     def __init__(self,dim,n_heads,max_context):
@@ -81,7 +86,7 @@ class Metal_Kernels:
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("add")
         pipeline_state, err = self.device.newComputePipelineStateWithFunction_error_(fxn, None)
-        run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.dim / ls),ls,[a_g, b_g,self.add_res_g])
+        run_metal(encoder,pipeline_state,command_buffer,math.ceil(self.dim / ls),ls,[a_g, b_g,self.add_res_g],self.device)
 
         #output = np.asarray(self.add_res_g.contents().as_buffer(self.dim*4*4))
         #output = np.frombuffer(output, dtype=np.float32)
@@ -350,7 +355,7 @@ class Metal_Kernels:
         pipeline_state, err = self.device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,1,ls,[self.logits_g,self.res_g])
 
-        res = np.asarray(self.res_g.contents().as_buffer(1*4))
+        res = np.asarray(self.res_g.data.contents().as_buffer(self.res_g.size))
         res = np.frombuffer(res, dtype=np.float32)
         return res
 
@@ -674,7 +679,7 @@ class Metal_Kernels:
         #    print(i,output[i])
         #exit()
 
-        res = np.asarray(res_g.contents().as_buffer(1*4))
+        res = np.asarray(res_g.data.contents().as_buffer(res_g.size))
         res = np.frombuffer(res, dtype=np.float32)
         return res
 
@@ -1182,7 +1187,7 @@ class Metal_Kernels:
         prg = self.prg_cache[prg_str]
 
 
-        output = np.asarray(x_g.contents().as_buffer(num_tokens*self.dim*4))
+        output = np.asarray(x_g.data.contents().as_buffer(num_tokens*self.dim*4))
         output = np.frombuffer(output, dtype=np.float32)
         for i in range(len(output)):
             if np.isnan(output[i]):
@@ -1264,7 +1269,7 @@ class Metal_Kernels:
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g])
 
         if j == 0:
-            output = np.asarray(self.h_g.contents().as_buffer(max_content*self.dim*4))
+            output = np.asarray(self.h_g.data.contents().as_buffer(max_content*self.dim*4))
             output = np.frombuffer(output, dtype=np.float32)
             for i in range(len(output)):
                 if np.isnan(output[i]):
@@ -1278,11 +1283,12 @@ class Metal_Kernels:
         run_metal(encoder,pipeline_state,command_buffer,num_tokens,ls,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g])
         
         if j == 0:
-            output = np.asarray(self.h_g.contents().as_buffer(max_content*self.dim*4))
+            output = np.asarray(self.h_g.data.contents().as_buffer(max_content*self.dim*4))
             output = np.frombuffer(output, dtype=np.float32)
             for i in range(len(output)):
                 if np.isnan(output[i]):
                     print("NAN ms8 h_g")
+                    exit()
                     break
         
         command_buffer = self.mtl_queue.commandBuffer()

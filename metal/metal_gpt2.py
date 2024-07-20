@@ -16,20 +16,16 @@ metal = True
 
 device = Metal.MTLCreateSystemDefaultDevice()
 
+
 def create_metal_buffer(a):
   a_buffer = device.newBufferWithLength_options_(len(a.flatten())*4 ,1)
   m = a_buffer.contents().as_buffer(len(a.flatten())*4)
   m[:] = bytes(a)
-  return a_buffer
+  return metal_kernels.buffer(a_buffer,len(a.flatten())*4)
 
 def create_metal_buffer_empty(size):
   a_buffer = device.newBufferWithLength_options_(size ,1)
-  return a_buffer
-
-
-def metal_buffer_np(a,size):
-  out = np.asarray(a.contents().as_buffer(size*4))
-  return np.frombuffer(out, dtype=np.float32)
+  return metal_kernels.buffer(a_buffer,size)
 
 tokens = open('tokens.txt','r',encoding="utf-8").readlines()
 token_dict = dict()
@@ -204,8 +200,8 @@ class GPT2:
         tokens = np.array(toks)
       tok = self.model(tokens, start_pos, temperature, n_tokens).tolist()
       start_pos = len(toks)
-      #if expected_tokens != None:
-      #  np.testing.assert_equal(tok,expected_tokens[start_pos-n_tokens])
+      if expected_tokens != None: #TODO REMOVE 13
+        np.testing.assert_equal(tok,expected_tokens[start_pos-n_tokens])
       toks.append(tok)
     return decode(toks)
 
@@ -342,19 +338,22 @@ if __name__ == "__main__":
     198, 198, 2025, 37560, 198, 198, 4864, 11, 611, 356, 804,\
     9211, 356, 1064, 326, 4213, 836, 470, 423, 284, 307, 7042, 287]
 
-
-  MAX_CONTEXT = len(encode(default_prompt))+100
-  metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
-  dim = 768
-  n_heads = 12
-  
-  if os.path.exists("gpt2.pickle") == False:
-    get_model("gpt2")
-  filehandler = open("gpt2.pickle", 'rb')  
-  gpt2 = pickle.load(filehandler)
-  gpt2.model.to_buffer()
-  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
-  print((f"Response:", "green"), text)
+  for x in range(1):
+    rand = Rand()
+    device = Metal.MTLCreateSystemDefaultDevice()
+    MAX_CONTEXT = len(encode(default_prompt))+100
+    metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
+    dim = 768
+    n_heads = 12
+    print("\nX =",x,"\n")
+    if os.path.exists("gpt2.pickle") == False:
+      get_model("gpt2")
+    filehandler = open("gpt2.pickle", 'rb')  
+    gpt2 = pickle.load(filehandler)
+    gpt2.model.to_buffer()
+    text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
+    print((f"Response:", "green"), text)
+  #exit()
 
   rand = Rand()
   MAX_CONTEXT = len(encode("What happened in 1939?"))+100
