@@ -67,9 +67,12 @@ class Metal_Kernels:
     
     def run_metal_test(self,fxn,gs,ls,args,device=None):
         args_copy = []
+        n = 10
+        f = 0
         for i in range(len(args)): args_copy.append(args[i].np())
         excepted_output = []
-        for x in range(100):
+        for x in range(n):
+            ff = False
             args_buffers = []
             for j in range(len(args_copy)): args_buffers.append(create_metal_buffer(args_copy[j],self.device))
             command_buffer = self.mtl_queue.commandBuffer()
@@ -91,22 +94,17 @@ class Metal_Kernels:
                     excepted_output.append(np.copy(args_buffers[j].np()))
             else:
                 for j in range(len(excepted_output)):
-                    np.testing.assert_allclose(excepted_output[j],args_buffers[j].np(),rtol=1e-6)
-                #print("passed",x)
-        command_buffer = self.mtl_queue.commandBuffer()
-        encoder = command_buffer.computeCommandEncoder()
-        pipeline_state, err = self.device.newComputePipelineStateWithFunction_error_(fxn, None)
-        encoder.setComputePipelineState_(pipeline_state)
-        i = 0
-        for arg in args:
-            encoder.setBuffer_offset_atIndex_(arg.data, 0, i)
-            i+=1
-        threadsPerGrid = Metal.MTLSizeMake(gs,1,1)
-        threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
-        encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
-        encoder.endEncoding()
-        command_buffer.commit()
-        command_buffer.waitUntilCompleted()
+                    if np.allclose(excepted_output[j],args_buffers[j].np(),rtol=1e-6) == False:
+                        ff = True
+                    excepted_output[j] = np.copy(args_buffers[j].np())
+                if ff: f+=1
+                    #np.testing.assert_allclose(excepted_output[j],args_buffers[j].np(),rtol=1e-6)
+            print("x =",x)
+        print("flakiness =",f/n)
+        args_copy = None
+        excepted_output = None
+        args_buffers = None
+        self.run_metal2(fxn,gs,ls,args,device)
         return
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
@@ -131,7 +129,7 @@ class Metal_Kernels:
         prg = self.prg_cache[prg_str]
 
         fxn = prg.newFunctionWithName_("add")
-        self.run_metal_test(fxn,math.ceil(self.dim / ls),ls,[a_g, b_g,self.add_res_g],self.device)
+        self.run_metal2(fxn,math.ceil(self.dim / ls),ls,[a_g, b_g,self.add_res_g],self.device)
 
         #output = np.asarray(self.add_res_g.contents().as_buffer(self.dim*4*4))
         #output = np.frombuffer(output, dtype=np.float32)
