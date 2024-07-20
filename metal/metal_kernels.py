@@ -94,10 +94,11 @@ class Metal_Kernels:
                     excepted_output.append(np.copy(args_buffers[j].np()))
             else:
                 for j in range(len(excepted_output)):
-                    if np.allclose(excepted_output[j],args_buffers[j].np(),rtol=1e-6) == False:
-                        ff = True
+                    np.testing.assert_allclose(excepted_output[j],args_buffers[j].np(),rtol=1e-6)
+                        #ff = True
                     excepted_output[j] = np.copy(args_buffers[j].np())
                 if ff: f+=1
+            print("x =",x)
                     #np.testing.assert_allclose(excepted_output[j],args_buffers[j].np(),rtol=1e-6)
         print("flakiness =",f/n)
         args_copy = None
@@ -950,8 +951,7 @@ class Metal_Kernels:
         kernel void ms0(
             device float *xq, device const float *xqkv, uint3 gid [[thread_position_in_grid]])
         {{
-            int gidx0 = gid.x;
-            if(gidx0 < {self.n_heads*a_rows*a_rows}) {{
+            for(int gidx0 = 0; gidx0 < {self.n_heads*a_rows*a_rows}; gidx0++) {{
                 int x = (gidx0 / {a_rows}) % {a_rows};
                 int z = gidx0 / ({a_rows}*{a_rows}); 
                 int y = gidx0 % {a_rows};
@@ -1144,7 +1144,7 @@ class Metal_Kernels:
         self.run_metal2(fxn,math.ceil((num_tokens*self.n_heads*64) / ls),ls,[self.xqkv_g, self.xq_g, self.xv_g])
 
         fxn = prg.newFunctionWithName_("ms0")        
-        self.run_metal2(fxn,math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,[self.xq_g, self.xqkv_g])
+        self.run_metal2(fxn,1,1,[self.xq_g, self.xqkv_g]) #TODO this is stable now, but slow
 
         fxn = prg.newFunctionWithName_("ms")        
         self.run_metal2(fxn,math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,[self.xq_g])
