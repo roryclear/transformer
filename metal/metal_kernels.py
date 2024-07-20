@@ -69,7 +69,7 @@ class Metal_Kernels:
         args_copy = []
         for i in range(len(args)): args_copy.append(args[i].np())
         excepted_output = []
-        for i in range(10):
+        for x in range(100):
             args_buffers = []
             for j in range(len(args_copy)): args_buffers.append(create_metal_buffer(args_copy[j],self.device))
             command_buffer = self.mtl_queue.commandBuffer()
@@ -92,7 +92,7 @@ class Metal_Kernels:
             else:
                 for j in range(len(excepted_output)):
                     np.testing.assert_allclose(excepted_output[j],args_buffers[j].np(),rtol=1e-6)
-
+                #print("passed",x)
         command_buffer = self.mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         pipeline_state, err = self.device.newComputePipelineStateWithFunction_error_(fxn, None)
@@ -131,7 +131,7 @@ class Metal_Kernels:
         prg = self.prg_cache[prg_str]
 
         fxn = prg.newFunctionWithName_("add")
-        self.run_metal2(fxn,math.ceil(self.dim / ls),ls,[a_g, b_g,self.add_res_g],self.device)
+        self.run_metal_test(fxn,math.ceil(self.dim / ls),ls,[a_g, b_g,self.add_res_g],self.device)
 
         #output = np.asarray(self.add_res_g.contents().as_buffer(self.dim*4*4))
         #output = np.frombuffer(output, dtype=np.float32)
