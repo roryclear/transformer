@@ -67,7 +67,7 @@ class Metal_Kernels:
     
     def run_metal_test(self,fxn,gs,ls,args,device=None):
         args_copy = []
-        n = 10
+        n = 100
         f = 0
         for i in range(len(args)): args_copy.append(args[i].np())
         excepted_output = []
@@ -99,7 +99,6 @@ class Metal_Kernels:
                     excepted_output[j] = np.copy(args_buffers[j].np())
                 if ff: f+=1
                     #np.testing.assert_allclose(excepted_output[j],args_buffers[j].np(),rtol=1e-6)
-            print("x =",x)
         print("flakiness =",f/n)
         args_copy = None
         excepted_output = None
@@ -1133,7 +1132,7 @@ class Metal_Kernels:
 
 
         fxn = prg.newFunctionWithName_("mm")    
-        self.run_metal2(fxn,math.ceil(max_content*self.dim / ls),ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g])
+        self.run_metal2(fxn,num_tokens,ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g])
         
         fxn = prg.newFunctionWithName_("mm2")
         self.run_metal2(fxn,math.ceil(b_cols*num_tokens / ls),ls,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g])
