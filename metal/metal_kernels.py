@@ -1094,52 +1094,53 @@ class Metal_Kernels:
             }}
             res[y*{b_rows} + x] += total + attn_bias[x];
         }}
-        kernel void ms8(
+        
+        kernel void ms8( //TODO, there are other kernels like this to fix
             device float *x, device const float *ln_2_weight, device const float *ln_2_bias
             ,device float *copy, uint3 gid [[thread_position_in_grid]])
         {{
             threadgroup float temp[{ls}];
-            threadgroup float temp2[{num_tokens}];
+            threadgroup float total;
             int gidx0 = gid.x;
             int lidx0 = gidx0 % {ls};
             int r = gidx0 / {ls}; //todo clean
-            temp2[r] = 0;
+            total = 0;
             for(int i = 0; i < {seg}; i++) {{
                 copy[{self.dim}*r + lidx0*{seg} + i] = x[{self.dim}*r + lidx0*{seg} + i];
-                temp2[r] += x[{self.dim}*r + lidx0*{seg} + i];
+                total += x[{self.dim}*r + lidx0*{seg} + i];
             }}
-            temp[lidx0] = temp2[r];
+            temp[lidx0] = total;
             threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0<{num_tokens}) {{
-                temp2[lidx0] = 0;
+                total = 0;
                 for(int i = 0; i < {ls}; i++) {{
-                    temp2[lidx0] += temp[i];
+                    total += temp[i];
                 }}
-                temp2[lidx0] = temp2[lidx0] / {size};  
             }}
             threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int i = 0; i < {seg}; i++) {{
-                x[{self.dim}*r + i + lidx0*{seg}] -= temp2[r];
+                x[{self.dim}*r + i + lidx0*{seg}] -= total / {size};
             }}
             threadgroup_barrier(mem_flags::mem_threadgroup);
-            temp2[r] = 0;
+            total = 0;
             for(int i = 0; i < {seg}; i++) {{
-                temp2[r] += pow(x[{self.dim}*r + lidx0*{seg} + i],2);
+                total += pow(x[{self.dim}*r + lidx0*{seg} + i],2);
             }}
-            temp[lidx0] = temp2[r];
+            temp[lidx0] = total;
             threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0<{num_tokens}) {{
-                temp2[lidx0] = 0;
+                total = 0;
                 for(int i = 0; i < {ls}; i++) {{
-                    temp2[lidx0] += temp[i];
+                    total += temp[i];
                 }}
-                temp2[lidx0] = pow(temp2[lidx0] / {size} + 1e-5,0.5);
+                total = pow(total / {size} + 1e-5,0.5);
             }}
             threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int i = 0; i < {seg}; i++) {{
-                x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * ln_2_weight[i + lidx0*{seg}]) / temp2[r] + ln_2_bias[i + lidx0*{seg}];
+                x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * ln_2_weight[i + lidx0*{seg}]) / total + ln_2_bias[i + lidx0*{seg}];
             }}
         }}
+
         kernel void ms9(
             device const float *a, device const float *c_fc_weight,device const float *c_fc_bias, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
@@ -1175,11 +1176,18 @@ class Metal_Kernels:
             res[y*{b_rows} + x] += total + c_proj_bias[x];
         }}
         """
-
         if prg_str not in self.prg_cache:
             library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
             self.prg_cache[prg_str] = library
         prg = self.prg_cache[prg_str]
+
+
+        output = np.asarray(x_g.contents().as_buffer(num_tokens*self.dim*4))
+        output = np.frombuffer(output, dtype=np.float32)
+        for i in range(len(output)):
+            if np.isnan(output[i]):
+                print("NAN pre MM x_g j =",j)
+                break
 
         command_buffer = self.mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
@@ -1254,6 +1262,14 @@ class Metal_Kernels:
         fxn = prg.newFunctionWithName_("ms7")
         pipeline_state, err = self.device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_rows*num_tokens / ls),ls,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g])
+
+        if j == 0:
+            output = np.asarray(self.h_g.contents().as_buffer(max_content*self.dim*4))
+            output = np.frombuffer(output, dtype=np.float32)
+            for i in range(len(output)):
+                if np.isnan(output[i]):
+                    print("NAN ms7 h_g")
+                    break
         
         command_buffer = self.mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
@@ -1261,12 +1277,20 @@ class Metal_Kernels:
         pipeline_state, err = self.device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,num_tokens,ls,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g])
         
+        if j == 0:
+            output = np.asarray(self.h_g.contents().as_buffer(max_content*self.dim*4))
+            output = np.frombuffer(output, dtype=np.float32)
+            for i in range(len(output)):
+                if np.isnan(output[i]):
+                    print("NAN ms8 h_g")
+                    break
+        
         command_buffer = self.mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("ms9")
         pipeline_state, err = self.device.newComputePipelineStateWithFunction_error_(fxn, None)
         run_metal(encoder,pipeline_state,command_buffer,math.ceil(b_cols_2*num_tokens / ls),ls,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g])
-        
+                
         command_buffer = self.mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         fxn = prg.newFunctionWithName_("ms10")
