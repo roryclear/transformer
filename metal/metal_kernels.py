@@ -637,8 +637,8 @@ class Metal_Kernels:
         seg3 = math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
         if hasattr(self, 'temp_g') == False:
             self.temp_g = create_metal_buffer_empty(self.n_heads*self.max_context*4,self.device)
-        #if hasattr(self, 'xq_temp_g') == False:
-        self.xq_temp_g = create_metal_buffer_empty(self.dim*4,self.device) #TODO shouldn't have to create a new buffer every time
+        if hasattr(self, 'xq_temp_g') == False:
+            self.xq_temp_g = create_metal_buffer_empty(self.dim*4,self.device)
         #threadgroup_barrier(mem_flags::mem_threadgroup);
         prg_str = f"""
         #include <metal_stdlib>
