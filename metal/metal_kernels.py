@@ -252,12 +252,6 @@ class Metal_Kernels:
             a[gidx0] = exp(a[gidx0] - res[0]);
         }}
 
-        kernel void mm7(
-            device const float *a, device float *res, uint3 gid [[thread_position_in_grid]])
-        {{
-            res[0] = a[0];
-        }}
-
         kernel void mm8(
         device float *a, device const float *res, uint3 gid [[thread_position_in_grid]])
         {{
@@ -323,7 +317,7 @@ class Metal_Kernels:
         fxn = prg.newFunctionWithName_("mm6")
         self.run_metal2(fxn,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g])
 
-        fxn = prg.newFunctionWithName_("mm7")
+        fxn = prg.newFunctionWithName_("mm5")
         self.run_metal2(fxn,1,1,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm8")
@@ -511,12 +505,6 @@ class Metal_Kernels:
             a[gidx0] = exp(a[gidx0] - res[0]);
         }}
 
-        kernel void mm8(
-            device const float *a, device float *res, uint3 gid [[thread_position_in_grid]])
-        {{
-            res[0] = a[0];
-        }}
-
         kernel void mm9(
         device float *a, device const float *res, uint3 gid [[thread_position_in_grid]])
         {{
@@ -593,7 +581,7 @@ class Metal_Kernels:
         fxn = prg.newFunctionWithName_("mm7")
         self.run_metal2(fxn,math.ceil(50257 / ls),ls,[logits_g,res_g])
 
-        fxn = prg.newFunctionWithName_("mm8")
+        fxn = prg.newFunctionWithName_("mm6")
         self.run_metal2(fxn,1,1,[logits_g,res_g])
 
         fxn = prg.newFunctionWithName_("mm9")
