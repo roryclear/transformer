@@ -268,28 +268,22 @@ class Metal_Kernels:
         kernel void mm9(
         device const float *a, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
-            float t = 0;
-            for(int i = 0; i < 50257; i++) {{
-                t+=a[i];
-            }}
-            res[0] = t;
-            /*
             threadgroup float temp[{ls}];
             int lidx0 = gid.x;
-            float t = 0;
-            for(int i = 0; i < {seg2}; i++) {{
-                t += a[lidx0*{seg2} + i];
+            temp[lidx0] = 0;
+            for(int i = 0; i < {math.ceil(50257 / ls)}; i++) {{
+                if(lidx0*{math.ceil(50257 / ls)} + i < 50257){{
+                temp[lidx0] += a[lidx0*{math.ceil(50257 / ls)} + i];
+                }}
             }}
-            temp[lidx0] = t;
             threadgroup_barrier(mem_flags::mem_threadgroup);
+            float t = 0;
             if(lidx0 == 0) {{
-                t = 0;
                 for(int i = 0; i < {ls}; i++) {{
-                    t += temp[i];
+                    t+=temp[i];
                 }}
                 res[0] = t;
             }}
-            */
         }}
 
         kernel void mm10(
@@ -336,7 +330,7 @@ class Metal_Kernels:
         self.run_metal2(fxn,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g])
 
         fxn = library.newFunctionWithName_("mm9")
-        self.run_metal2(fxn,1,1,[self.logits_g,self.res_g]) #TODO this kernel is correct, but terrible and slow
+        self.run_metal2(fxn,1,ls,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm8")
         self.run_metal2(fxn,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g])
