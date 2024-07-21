@@ -833,9 +833,8 @@ class Metal_Kernels:
  
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content,j=0):
-        #if hasattr(self, 'h_g') == False:
-        #    self.h_g = create_metal_buffer_empty(max_content*self.dim*4)
-        self.h_g = create_metal_buffer_empty(max_content*self.dim*4,self.device) #TODO above should work
+        if hasattr(self, 'h_g') == False:
+            self.h_g = create_metal_buffer_empty(max_content*self.dim*4,self.device)
         if hasattr(self, 'h2_g') == False:
             self.h2_g = create_metal_buffer_empty(max_content*self.dim*4,self.device)
         if hasattr(self, 'xq_g') == False:
