@@ -1175,15 +1175,6 @@ class Metal_Kernels:
             self.prg_cache[prg_str] = library
         prg = self.prg_cache[prg_str]
 
-
-        #output = np.asarray(x_g.data.contents().as_buffer(num_tokens*self.dim*4))
-        #output = np.frombuffer(output, dtype=np.float32)
-        #for i in range(len(output)):
-        #    if np.isnan(output[i]):
-        #        print("NAN pre MM x_g j =",j)
-        #        break
-
-
         fxn = prg.newFunctionWithName_("mm")
         def gs(ls=None): return num_tokens     
         self.run_metal2(fxn,gs,ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g]) #TODO
@@ -1233,28 +1224,10 @@ class Metal_Kernels:
         fxn = prg.newFunctionWithName_("ms7")
         def gs(ls): return math.ceil(b_rows*num_tokens / ls)
         self.run_metal2(fxn,gs,ls3,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g])
-
-        if j == 0:
-            output = np.asarray(self.h_g.data.contents().as_buffer(max_content*self.dim*4))
-            output = np.frombuffer(output, dtype=np.float32)
-            for i in range(len(output)):
-                if np.isnan(output[i]):
-                    print("NAN ms7 h_g")
-                    break
         
         fxn = prg.newFunctionWithName_("ms8")
         self.run_metal(fxn,num_tokens,ls,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g]) #TODO fix
         
-        if j == 0:
-            output = np.asarray(self.h_g.data.contents().as_buffer(max_content*self.dim*4))
-            output = np.frombuffer(output, dtype=np.float32)
-            for i in range(len(output)):
-                if np.isnan(output[i]):
-                    print("NAN ms8 h_g")
-                    exit()
-                    break
-        
-
         fxn = prg.newFunctionWithName_("ms9")
         def gs(ls): return math.ceil(b_cols_2*num_tokens / ls)
         self.run_metal2(fxn,gs,ls3,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g])
