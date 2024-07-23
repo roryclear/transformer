@@ -784,21 +784,19 @@ class Metal_Kernels:
             float t = 0;
             for(int i = 0; i < {start_pos+1}; i++) {{
                 temp3[i + lidx0*{start_pos+1}] = exp(temp3[i + lidx0*{start_pos+1}] - m);
-                t = t+temp3[i + lidx0*{start_pos+1}];
+                t += temp3[i + lidx0*{start_pos+1}];
             }} //TODO SPLIT HERE???
             for(int i = 0; i < {start_pos+1}; i++) {{
                 temp3[i + lidx0*{start_pos+1}] /= t;
             }}
             }}
             threadgroup_barrier(mem_flags::mem_threadgroup);
-            for(int g = 0; g < {seg3}; g++) {{
-                int y = (g + lidx0*{seg3}) / 64;
-                int x = (g + lidx0*{seg3}) % 64;
+            for(int g = 0; g < {seg3}; g++) {{ 
                 float acc0 = 0;
                 for(int i = 0; i < {start_pos+1}; i++) {{
-                    acc0 += temp3[i + {start_pos+1}*y] * keys_values[{self.dim*self.max_context} + i*{self.n_heads*64} + x + y*64];
+                    acc0 += temp3[i + {start_pos+1}*((g + lidx0*{seg3}) / 64)] * keys_values[{self.dim*self.max_context} + i*{self.n_heads*64} + g + lidx0*{seg3}];
                 }}
-                xq_temp[x + y*64] = acc0;
+                xq_temp[g + lidx0*{seg3}] = acc0;
             }}
             threadgroup_barrier(mem_flags::mem_threadgroup);
             for(int i = 0; i < {seg3}; i++) {{
