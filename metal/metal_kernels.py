@@ -125,7 +125,7 @@ class Metal_Kernels:
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
         if hasattr(self, 'add_res_g') == False:
-            self.add_res_g = create_metal_buffer_empty(self.dim*4*4,self.device) #TODO can this be smaller?
+            self.add_res_g = create_metal_buffer_empty(self.dim*4,self.device)
         prg_str = f"""
         #include <metal_stdlib>
         #include <metal_simdgroup_matrix>
@@ -177,7 +177,7 @@ class Metal_Kernels:
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
         ls = 256
-        seg = int(self.dim / ls) #todo
+        seg = int(self.dim / ls3)
         rows = self.dim
         cols = 50257
         if hasattr(self, 'logits_g') == False:
@@ -194,7 +194,7 @@ class Metal_Kernels:
         kernel void mm4(
             device float *h, device const float *weight, device const float *bias, uint3 gid [[thread_position_in_grid]])
         {{
-            threadgroup float temp[{ls}];
+            threadgroup float temp[{ls3}];
             threadgroup float mean;
             int lidx0 = gid.x;
             float total = 0;
@@ -205,7 +205,7 @@ class Metal_Kernels:
             threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0==0) {{
                 total = 0;
-                for(int i = 0; i < {ls}; i++) {{
+                for(int i = 0; i < {ls3}; i++) {{
                     total += temp[i];
                 }}
                 mean = total / {self.dim};  
@@ -223,7 +223,7 @@ class Metal_Kernels:
             threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0==0) {{
                 total = 0;
-                for(int i = 0; i < {ls}; i++) {{
+                for(int i = 0; i < {ls3}; i++) {{
                     total += temp[i];
                 }}
                 mean = pow(total / {self.dim} + 1e-5,0.5);
@@ -266,18 +266,18 @@ class Metal_Kernels:
         kernel void mm9(
         device const float *a, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
-            threadgroup float temp[{ls}];
+            threadgroup float temp[{ls3}];
             int lidx0 = gid.x;
             temp[lidx0] = 0;
-            for(int i = 0; i < {math.ceil(50257 / ls)}; i++) {{
-                if(lidx0*{math.ceil(50257 / ls)} + i < 50257){{
-                temp[lidx0] += a[lidx0*{math.ceil(50257 / ls)} + i];
+            for(int i = 0; i < {math.ceil(50257 / ls3)}; i++) {{
+                if(lidx0*{math.ceil(50257 / ls3)} + i < 50257){{
+                temp[lidx0] += a[lidx0*{math.ceil(50257 / ls3)} + i];
                 }}
             }}
             threadgroup_barrier(mem_flags::mem_threadgroup);
             float t = 0;
             if(lidx0 == 0) {{
-                for(int i = 0; i < {ls}; i++) {{
+                for(int i = 0; i < {ls3}; i++) {{
                     t+=temp[i];
                 }}
                 res[0] = t;
@@ -310,38 +310,39 @@ class Metal_Kernels:
         prg = self.prg_cache[prg_str]
 
         fxn = prg.newFunctionWithName_("mm4")
-        self.run_metal(fxn,1,ls,[h_g, weight_g, bias_g]) #TODO reduce
+        self.run_metal(fxn,1,ls3,[h_g, weight_g, bias_g])
 
         fxn = prg.newFunctionWithName_("matvec")
-        self.run_metal(fxn,math.ceil(50257 / 16),16,[h_g, weight2_g,self.logits_g]) #TODO use ls?
+        def gs(ls): return math.ceil(50257 / ls)
+        self.run_metal2(fxn,gs,ls3,[h_g, weight2_g,self.logits_g])
 
         fxn = prg.newFunctionWithName_("mm5")
         self.run_metal(fxn,1,1,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm6")
         def gs(ls): return math.ceil(50257 / ls)
-        self.run_metal2(fxn,gs,ls,[self.logits_g,self.res_g]) #TODO
+        self.run_metal2(fxn,gs,ls3,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm5")
         self.run_metal(fxn,1,1,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm8")
-        self.run_metal(fxn,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g]) #TODO,  same as mm6
+        self.run_metal2(fxn,gs,ls3,[self.logits_g,self.res_g])
 
         fxn = library.newFunctionWithName_("mm9")
-        self.run_metal(fxn,1,ls,[self.logits_g,self.res_g]) #TODO, reduce
+        self.run_metal(fxn,1,ls3,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm8")
-        self.run_metal(fxn,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g]) #TODO
+        self.run_metal2(fxn,gs,ls3,[self.logits_g,self.res_g]) 
 
         fxn = prg.newFunctionWithName_("mm10")
         self.run_metal(fxn,1,1,[self.logits_g])
-
+        
         fxn = prg.newFunctionWithName_("mm11")
-        self.run_metal(fxn,math.ceil(50257 / ls),ls,[self.logits_g]) #TODO
+        self.run_metal2(fxn,gs,ls3,[self.logits_g])
 
         fxn = prg.newFunctionWithName_("mm9")        
-        self.run_metal(fxn,1,ls,[self.logits_g,self.res_g]) #TODO, reduce
+        self.run_metal(fxn,1,ls3,[self.logits_g,self.res_g])
 
         res = np.asarray(self.res_g.data.contents().as_buffer(self.res_g.size))
         res = np.frombuffer(res, dtype=np.float32)
@@ -631,13 +632,62 @@ class Metal_Kernels:
     def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,j=0):
         ls = 256
-        seg = int(self.dim / ls) #todo
-        seg3 = math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
+        ls3 = 256 #TODO why is 256 fastet than 32?
+        seg3 = int(self.dim / ls3) #todo
+        seg = int(self.dim / ls)
         if hasattr(self, 'temp_g') == False:
             self.temp_g = create_metal_buffer_empty(self.n_heads*self.max_context*4,self.device)
         if hasattr(self, 'xq_temp_g') == False:
             self.xq_temp_g = create_metal_buffer_empty(self.dim*4,self.device)
         #threadgroup_barrier(mem_flags::mem_threadgroup);
+        prg_str = f"""
+        #include <metal_stdlib>
+        #include <metal_simdgroup_matrix>
+        using namespace metal;
+        kernel void mm4(
+            device float *a,
+            device const float *weight2, device const float *bias2,
+            device const float *weight3, device const float *bias3,
+            device float *mean,
+            device float *h_temp, device float *h, device float *bias3_temp,
+            uint3 gid [[thread_position_in_grid]])
+        {{
+            int lidx0 = gid.x % {ls3};
+            int i = gid.x / {ls3};
+            bias3_temp[i + lidx0*{int(self.dim*4 / ls3)}] = bias3[i + lidx0*{int(self.dim*4 / ls3)}];
+            for(int j = 0; j < {self.dim}; j++) {{
+                bias3_temp[i + lidx0*{int(self.dim*4 / ls3)}] += ((h[j] * weight2[j]) / mean[0] + bias2[j]) * weight3[(i + lidx0*{int(self.dim*4 / ls3)})*{self.dim} + j];
+            }}
+            float tth = bias3_temp[i + lidx0*{int(self.dim*4 / ls3)}] * 0.7978845608\
+            * (1 + 0.044715 * pow(bias3_temp[i + lidx0*{int(self.dim*4 / ls3)}],2));
+            float th = tanh(tth);
+            if(isnan(th) && tth < 0) {{ th = -1;}}
+            if(isnan(th) && tth >= 0) {{ th = 1;}}
+            bias3_temp[i + lidx0*{int(self.dim*4 / ls3)}] = 0.5 * bias3_temp[i + lidx0*{int(self.dim*4 / ls3)}]\
+            * (1 + th);
+        }}
+        kernel void mm5(
+            device float *a,
+            device const float *weight4,device const float *bias4,
+            device float *h_temp, device float *bias3_temp,
+            uint3 gid [[thread_position_in_grid]])
+        {{
+            threadgroup float bias4_temp[{self.dim*3}];
+            int lidx0 = gid.x % {ls3};
+            int i = gid.x / {ls3};
+            bias4_temp[lidx0 + i*{ls3}] = bias4[lidx0 + i*{ls3}];
+            for(int j = 0; j < {self.dim*4}; j++) {{
+                bias4_temp[lidx0 + i*{ls3}] += bias3_temp[j] * weight4[lidx0 + i*{ls3} + j*{self.dim}];
+            }}
+            a[lidx0 + i*{ls3}] = bias4_temp[lidx0 + i*{ls3}] + h_temp[lidx0 + i*{ls3}];
+        }}
+        """
+
+        if prg_str not in self.prg_cache:
+            library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
+            self.prg_cache[prg_str] = library
+        prg = self.prg_cache[prg_str]
+
         prg_str = f"""
         #include <metal_stdlib>
         #include <metal_simdgroup_matrix>
@@ -718,15 +768,11 @@ class Metal_Kernels:
             device const float *weight3, device const float *bias3,
             device const float *weight4,
             device float *bias4,
-            device float *temp3, device float *xq_temp,
+            device float *temp3, device float *xq_temp, device float *mean,
+            device float *h_temp, device float *h,
             uint3 gid [[thread_position_in_grid]])
         {{
-            threadgroup float temp[{ls}];
-            threadgroup float mean;
-            threadgroup float bias3_temp[{self.dim*4}];
-            threadgroup float bias4_temp[{self.dim*3}];
-            threadgroup float h_temp[{self.dim}];
-            threadgroup float h[{self.dim}];
+            threadgroup float temp[{ls3}];
             int lidx0 = gid.x;
             if(lidx0 < {self.n_heads}){{
             float m = -INFINITY;
@@ -745,9 +791,9 @@ class Metal_Kernels:
             }}
             }}
             threadgroup_barrier(mem_flags::mem_threadgroup);
-            for(int g = 0; g < {seg}; g++) {{
-                int y = (g + lidx0*{seg}) / 64;
-                int x = (g + lidx0*{seg}) % 64;
+            for(int g = 0; g < {seg3}; g++) {{
+                int y = (g + lidx0*{seg3}) / 64;
+                int x = (g + lidx0*{seg3}) % 64;
                 float acc0 = 0;
                 for(int i = 0; i < {start_pos+1}; i++) {{
                     acc0 += temp3[i + {start_pos+1}*y] * keys_values[{self.dim*self.max_context} + i*{self.n_heads*64} + x + y*64];
@@ -755,85 +801,79 @@ class Metal_Kernels:
                 xq_temp[x + y*64] = acc0;
             }}
             threadgroup_barrier(mem_flags::mem_threadgroup);
-            for(int i = 0; i < {seg}; i++) {{
+            for(int i = 0; i < {seg3}; i++) {{
                 float acc = 0;
                 for(int x = 0; x < {self.dim}; x++) {{
-                    acc += xq_temp[x] * weight[x*{self.dim} + lidx0*{seg} + i];
+                    acc += xq_temp[x] * weight[x*{self.dim} + lidx0*{seg3} + i];
                 }}
-                h[lidx0*{seg} + i] = a[lidx0*{seg} + i] + acc + bias[lidx0*{seg} + i];
-                h_temp[lidx0*{seg} + i] = h[lidx0*{seg} + i];
+                h[lidx0*{seg3} + i] = a[lidx0*{seg3} + i] + acc + bias[lidx0*{seg3} + i];
+                h_temp[lidx0*{seg3} + i] = h[lidx0*{seg3} + i];
             }}
             threadgroup_barrier(mem_flags::mem_threadgroup);
             float total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                total += h[lidx0*{seg} + i];
+            for(int i = 0; i < {seg3}; i++) {{
+                total += h[lidx0*{seg3} + i];
             }}
             temp[lidx0] = total;
             threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0==0) {{
                 total = 0;
-                for(int i = 0; i < {ls}; i++) {{
+                for(int i = 0; i < {ls3}; i++) {{
                     total += temp[i];
                 }}
-                mean = total / {self.dim};  
+                mean[0] = total / {self.dim};  
             }}
             threadgroup_barrier(mem_flags::mem_threadgroup);
             total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                h[i + lidx0*{seg}] = h[i + lidx0*{seg}] - mean;
-                total += pow(h[lidx0*{seg} + i],2);
+            for(int i = 0; i < {seg3}; i++) {{
+                h[i + lidx0*{seg3}] = h[i + lidx0*{seg3}] - mean[0];
+                total += pow(h[lidx0*{seg3} + i],2);
             }}        
             temp[lidx0] = total;
             threadgroup_barrier(mem_flags::mem_threadgroup);
             if(lidx0==0) {{
                 total = 0;
-                for(int i = 0; i < {ls}; i++) {{
+                for(int i = 0; i < {ls3}; i++) {{
                     total += temp[i];
                 }}
-                mean = pow(total / {self.dim} + 1e-5,0.5);
+                mean[0] = pow(total / {self.dim} + 1e-5,0.5);
             }}
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-            for(int i = 0; i < {int(self.dim*4 / ls)}; i++) {{
-                bias3_temp[i + lidx0*{int(self.dim*4 / ls)}] = bias3[i + lidx0*{int(self.dim*4 / ls)}];
-                for(int j = 0; j < {self.dim}; j++) {{
-                    bias3_temp[i + lidx0*{int(self.dim*4 / ls)}] += ((h[j] * weight2[j]) / mean + bias2[j]) * weight3[(i + lidx0*{int(self.dim*4 / ls)})*{self.dim} + j];
-                }}
-                float tth = bias3_temp[i + lidx0*{int(self.dim*4 / ls)}] * 0.7978845608\
-                * (1 + 0.044715 * pow(bias3_temp[i + lidx0*{int(self.dim*4 / ls)}],2));
-                float th = tanh(tth);
-                if(isnan(th) && tth < 0) {{ th = -1;}}
-                if(isnan(th) && tth >= 0) {{ th = 1;}}
-                bias3_temp[i + lidx0*{int(self.dim*4 / ls)}] = 0.5 * bias3_temp[i + lidx0*{int(self.dim*4 / ls)}]\
-                * (1 + th);
             }}
-            threadgroup_barrier(mem_flags::mem_threadgroup);  
-            for(int i = 0; i < {int(self.dim / ls)}; i++) {{
-                bias4_temp[lidx0 + i*{ls}] = bias4[lidx0 + i*{ls}];
-                for(int j = 0; j < {self.dim*4}; j++) {{
-                    bias4_temp[lidx0 + i*{ls}] += bias3_temp[j] * weight4[lidx0 + i*{ls} + j*{self.dim}];
-                }}
-                a[lidx0 + i*{ls}] = bias4_temp[lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
-            }}
-        }}
         """
+        prg2, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
 
-        if prg_str not in self.prg_cache:
-            library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
-            self.prg_cache[prg_str] = library
-        prg = self.prg_cache[prg_str]
-                
-        fxn = prg.newFunctionWithName_("mm")
+        fxn = prg2.newFunctionWithName_("mm")
         self.run_metal(fxn,1,ls,[a_g,c_g,d_g,e_g,xqkv_g\
         ,keys_values_g,self.xq_temp_g]) #TODO, reduce
-        
-        fxn = prg.newFunctionWithName_("mm2")
-        def gs(ls): return math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
-        self.run_metal2(fxn,gs,ls3,[keys_values_g ,self.temp_g, self.xq_temp_g])
 
-        fxn = prg.newFunctionWithName_("mm3")
-        self.run_metal(fxn,1,ls,[a_g\
+        fxn = prg2.newFunctionWithName_("mm2")
+        def gs(ls): return math.ceil((self.n_heads*(start_pos+1)*(start_pos+1)) / ls)
+        self.run_metal2(fxn,gs,ls,[keys_values_g ,self.temp_g, self.xq_temp_g])
+
+        if hasattr(self, 'bias3_temp') == False:
+            self.bias3_temp = create_metal_buffer_empty(self.dim*4*4,self.device)
+        if hasattr(self, 'mean') == False:
+            self.mean = create_metal_buffer_empty(1*4,self.device)
+        if hasattr(self, 'h_temp') == False:
+            self.h_temp = create_metal_buffer_empty(self.dim*4,self.device)
+        if hasattr(self, 'h') == False:
+            self.h = create_metal_buffer_empty(self.dim*4,self.device)
+
+        fxn = prg2.newFunctionWithName_("mm3")
+        self.run_metal(fxn,1,ls3,[a_g\
         ,keys_values_g,weight_g,bias_g,\
-        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g]) #TODO, reduce
+        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g,self.mean,
+        self.h_temp,self.h])
+        
+        fxn = prg.newFunctionWithName_("mm4")
+        self.run_metal(fxn,int(self.dim*4 / ls3),ls3,[a_g,\
+        weight2_g,bias2_g,weight3_g,bias3_g,self.mean,
+        self.h_temp,self.h,self.bias3_temp])
+
+        fxn = prg.newFunctionWithName_("mm5")
+        self.run_metal(fxn,int(self.dim / ls3),ls3,[a_g,\
+        weight4_g,bias4_g,
+        self.h_temp,self.bias3_temp])
         return a_g
  
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
@@ -1226,4 +1266,7 @@ class Metal_Kernels:
             if f is None or t < f:
                 f = t
         return ret,f
+
+
+
 
