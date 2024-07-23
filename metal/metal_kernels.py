@@ -642,6 +642,42 @@ class Metal_Kernels:
         #include <metal_stdlib>
         #include <metal_simdgroup_matrix>
         using namespace metal;
+        kernel void mm(
+            device float *a,
+            device float *mean, uint3 gid [[thread_position_in_grid]])
+        {{
+            threadgroup float temp[{ls}];
+            int lidx0 = gid.x;
+            float t = 0;
+            for(int i = 0; i < {seg}; i++) {{
+                t += a[lidx0*{seg} + i];
+            }}
+            temp[lidx0] = t;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            if(lidx0==0) {{
+                t = 0;
+                for(int i = 0; i < {ls}; i++) {{
+                    t += temp[i];
+                }}
+                mean[0] = t / {self.dim};  
+            }}
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            t = 0;
+            for(int i = 0; i < {seg}; i++) {{
+                a[i + lidx0*{seg}] -= mean[0];
+                t += pow(a[lidx0*{seg} + i],2);
+            }}
+            temp[lidx0] = t;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            if(lidx0==0) {{
+                t = 0;
+                for(int i = 0; i < {ls}; i++) {{
+                    t += temp[i];
+                }}
+                mean[0] = pow(t / {self.dim} + 1e-5,0.5);
+            }}
+        }}
+
         kernel void mm4(
             device float *a,
             device const float *weight2, device const float *bias2,
@@ -690,41 +726,6 @@ class Metal_Kernels:
         #include <metal_stdlib>
         #include <metal_simdgroup_matrix>
         using namespace metal;
-        kernel void mm(
-            device float *a,
-            device float *mean, uint3 gid [[thread_position_in_grid]])
-        {{
-            threadgroup float temp[{ls}];
-            int lidx0 = gid.x;
-            float t = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                t += a[lidx0*{seg} + i];
-            }}
-            temp[lidx0] = t;
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-            if(lidx0==0) {{
-                t = 0;
-                for(int i = 0; i < {ls}; i++) {{
-                    t += temp[i];
-                }}
-                mean[0] = t / {self.dim};  
-            }}
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-            t = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                a[i + lidx0*{seg}] -= mean[0];
-                t += pow(a[lidx0*{seg} + i],2);
-            }}
-            temp[lidx0] = t;
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-            if(lidx0==0) {{
-                t = 0;
-                for(int i = 0; i < {ls}; i++) {{
-                    t += temp[i];
-                }}
-                mean[0] = pow(t / {self.dim} + 1e-5,0.5);
-            }}
-        }}
         kernel void mm1(
             device const float *a, device const float *c, device const float *d, device const float *e,
             device const float *xqkv, device float *keys_values,
@@ -778,17 +779,15 @@ class Metal_Kernels:
             if(lidx0 < {self.n_heads}){{
             float m = -INFINITY;
             for(int i = 0; i < {start_pos+1}; i++) {{
-                float val = temp3[i + lidx0*{start_pos+1}];
-                m = max(m,val);
+                m = max(m,temp3[i + lidx0*{start_pos+1}]);
             }}
             float t = 0;
             for(int i = 0; i < {start_pos+1}; i++) {{
                 temp3[i + lidx0*{start_pos+1}] = exp(temp3[i + lidx0*{start_pos+1}] - m);
-                float val = temp3[i + lidx0*{start_pos+1}];
-                t = t+val;
-            }}
+                t = t+temp3[i + lidx0*{start_pos+1}];
+            }} //TODO SPLIT HERE???
             for(int i = 0; i < {start_pos+1}; i++) {{
-                temp3[i + lidx0*{start_pos+1}] = temp3[i + lidx0*{start_pos+1}] / t;
+                temp3[i + lidx0*{start_pos+1}] /= t;
             }}
             }}
             threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -855,7 +854,7 @@ class Metal_Kernels:
         if hasattr(self, 'h') == False:
             self.h = create_metal_buffer_empty(self.dim*4,self.device)
         
-        fxn = prg2.newFunctionWithName_("mm")
+        fxn = prg.newFunctionWithName_("mm")
         self.run_metal(fxn,1,256,[a_g\
         ,self.mean]) #TODO, reduce
 
