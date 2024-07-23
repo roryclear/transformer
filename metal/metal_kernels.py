@@ -5,6 +5,9 @@ import Metal
 
 test = False
 
+ls = 256
+ls3 = 32 #threadExecutionWidth correct value to use
+
 class buffer:
     def __init__(self,data,size):
         self.data = data
@@ -33,7 +36,6 @@ class Metal_Kernels:
         self.device = Metal.MTLCreateSystemDefaultDevice()
         self.mtl_queue = self.device.newCommandQueue()
 
-
     def run_metal(self,fxn,gs,ls,args,device=None):
         command_buffer = self.mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
@@ -51,9 +53,28 @@ class Metal_Kernels:
         command_buffer.waitUntilCompleted()
         return
     
+
+    def run_metal2(self,fxn,g,ls,args,device=None):
+        command_buffer = self.mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        pipeline_state, err = self.device.newComputePipelineStateWithFunction_error_(fxn, None)
+        encoder.setComputePipelineState_(pipeline_state)
+        i = 0
+        for arg in args:
+            encoder.setBuffer_offset_atIndex_(arg.data, 0, i)
+            i+=1
+        threadsPerGrid = Metal.MTLSizeMake(g(ls),1,1)
+        threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
+        encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
+        encoder.endEncoding()
+        command_buffer.commit()
+        command_buffer.waitUntilCompleted()
+        return
+    
+
     def run_metal_test(self,fxn,gs,ls,args,device=None):
         args_copy = []
-        n = 100
+        n = 5
         f = 0
         for i in range(len(args)): args_copy.append(args[i].np())
         excepted_output = []
@@ -73,8 +94,10 @@ class Metal_Kernels:
             threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
             encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
             encoder.endEncoding()
+            t = time.perf_counter()
             command_buffer.commit()
             command_buffer.waitUntilCompleted()
+            t = time.perf_counter() - t
             if len(excepted_output) == 0:
                 for j in range(len(args_buffers)):
                     excepted_output.append(np.copy(args_buffers[j].np()))
@@ -84,7 +107,6 @@ class Metal_Kernels:
                         #ff = True
                     excepted_output[j] = np.copy(args_buffers[j].np())
                 if ff: f+=1
-            print("x =",x)
                     #np.testing.assert_allclose(excepted_output[j],args_buffers[j].np(),rtol=1e-6)
         print("flakiness =",f/n)
         args_copy = None
@@ -92,9 +114,16 @@ class Metal_Kernels:
         args_buffers = None
         self.run_metal(fxn,gs,ls,args,device)
         return
+    
+    def run_metal_test2(self,fxn,g,ls,args,device=None):
+        ls = 1
+        while ls < 2048:
+            print("ls =",ls)
+            self.run_metal_test(fxn,g(ls),ls,args,device)
+            ls*=2
+        return None
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
-        ls = 256
         if hasattr(self, 'add_res_g') == False:
             self.add_res_g = create_metal_buffer_empty(self.dim*4*4,self.device) #TODO can this be smaller?
         prg_str = f"""
@@ -105,7 +134,9 @@ class Metal_Kernels:
             device const float *a, device const float *b, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
         int gidx0 = gid.x;
-        res[gidx0] = a[{int(a_s)*self.dim} + gidx0] + b[gidx0 + {b_s*self.dim}];   
+        if(gidx0 < {self.dim}) {{
+            res[gidx0] = a[{int(a_s)*self.dim} + gidx0] + b[gidx0 + {b_s*self.dim}];
+        }}   
         }}
         """
 
@@ -115,12 +146,12 @@ class Metal_Kernels:
         prg = self.prg_cache[prg_str]
 
         fxn = prg.newFunctionWithName_("add")
-        self.run_metal(fxn,math.ceil(self.dim / ls),ls,[a_g, b_g,self.add_res_g],self.device)
+        def g(ls): return math.ceil(self.dim / ls)
+        self.run_metal2(fxn,g,ls3,[a_g, b_g,self.add_res_g],self.device)
         return self.add_res_g
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
         tokens_g = create_metal_buffer(tokens.astype(np.int32),self.device)
-        ls = 256
         size = no_tokens*self.dim
         tok_emb_g = create_metal_buffer_empty(no_tokens*self.dim*4,self.device)
         prg_str = f"""
@@ -140,7 +171,8 @@ class Metal_Kernels:
         options = Metal.MTLCompileOptions.alloc().init()
         library, err = self.device.newLibraryWithSource_options_error_(prg_str, options, None)
         fxn = library.newFunctionWithName_("mm")
-        self.run_metal(fxn,math.ceil(size / ls),ls,[tokens_g,weight_g,weight_2_g,tok_emb_g])
+        def gs(ls): return math.ceil(size / ls)
+        self.run_metal2(fxn,gs,ls3,[tokens_g,weight_g,weight_2_g,tok_emb_g])
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
@@ -219,8 +251,7 @@ class Metal_Kernels:
 
         kernel void mm6(
         device float *a, device const float *res, uint3 gid [[thread_position_in_grid]])
-        {{
-            threadgroup_barrier(mem_flags::mem_threadgroup);
+        {{  
             int gidx0 = gid.x;
             a[gidx0] = exp(a[gidx0] - res[0]);
         }}
@@ -279,7 +310,7 @@ class Metal_Kernels:
         prg = self.prg_cache[prg_str]
 
         fxn = prg.newFunctionWithName_("mm4")
-        self.run_metal(fxn,1,ls,[h_g, weight_g, bias_g])
+        self.run_metal(fxn,1,ls,[h_g, weight_g, bias_g]) #TODO reduce
 
         fxn = prg.newFunctionWithName_("matvec")
         self.run_metal(fxn,math.ceil(50257 / 16),16,[h_g, weight2_g,self.logits_g]) #TODO use ls?
@@ -288,28 +319,29 @@ class Metal_Kernels:
         self.run_metal(fxn,1,1,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm6")
-        self.run_metal(fxn,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g])
+        def gs(ls): return math.ceil(50257 / ls)
+        self.run_metal2(fxn,gs,ls,[self.logits_g,self.res_g]) #TODO
 
         fxn = prg.newFunctionWithName_("mm5")
         self.run_metal(fxn,1,1,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm8")
-        self.run_metal(fxn,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g])
+        self.run_metal(fxn,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g]) #TODO,  same as mm6
 
         fxn = library.newFunctionWithName_("mm9")
-        self.run_metal(fxn,1,ls,[self.logits_g,self.res_g])
+        self.run_metal(fxn,1,ls,[self.logits_g,self.res_g]) #TODO, reduce
 
         fxn = prg.newFunctionWithName_("mm8")
-        self.run_metal(fxn,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g])
+        self.run_metal(fxn,math.ceil(50257 / ls),ls,[self.logits_g,self.res_g]) #TODO
 
         fxn = prg.newFunctionWithName_("mm10")
         self.run_metal(fxn,1,1,[self.logits_g])
 
         fxn = prg.newFunctionWithName_("mm11")
-        self.run_metal(fxn,math.ceil(50257 / ls),ls,[self.logits_g])
+        self.run_metal(fxn,math.ceil(50257 / ls),ls,[self.logits_g]) #TODO
 
         fxn = prg.newFunctionWithName_("mm9")        
-        self.run_metal(fxn,1,ls,[self.logits_g,self.res_g])
+        self.run_metal(fxn,1,ls,[self.logits_g,self.res_g]) #TODO, reduce
 
         res = np.asarray(self.res_g.data.contents().as_buffer(self.res_g.size))
         res = np.frombuffer(res, dtype=np.float32)
@@ -383,6 +415,7 @@ class Metal_Kernels:
         kernel void mm2(
             device const float *x, device const float *attn_weight, device const float *attn_bias,device float *res, uint3 gid [[thread_position_in_grid]])
         {{
+            if(gid.x < {b_cols*n_tokens}) {{ //TODO
             int gidx0 = gid.x;
             int i = gidx0 / {n_tokens};
             int y = gidx0 % {n_tokens};
@@ -391,6 +424,7 @@ class Metal_Kernels:
                 total += x[y*{b_rows} + k] * attn_weight[i*{b_rows} + k]; 
             }}
             res[y*{b_cols} + i] = total + attn_bias[i];
+            }}
         }}
         kernel void mm3(
             device const float *xqkv, device float *new_cache, uint3 gid [[thread_position_in_grid]])
@@ -455,8 +489,8 @@ class Metal_Kernels:
         kernel void matmul(
             device const float *a, device const float *b, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
-            int x = gid.x;
-            if(x < {b_cols2}) {{
+            if(gid.x < {b_cols2}) {{
+                int x = gid.x;
                 float total = 0;
                 for(int k = 0; k < {b_rows2}; k++) {{
                     total += a[k] * b[x*{b_rows2} + k]; 
@@ -473,16 +507,19 @@ class Metal_Kernels:
         kernel void mm7(
         device float *a, device const float *res, uint3 gid [[thread_position_in_grid]])
         {{
-            threadgroup_barrier(mem_flags::mem_threadgroup);
+            if(gid.x < 50257) {{ //TODO
             int gidx0 = gid.x;
             a[gidx0] = exp(a[gidx0] - res[0]);
+            }}
         }}
 
         kernel void mm9(
         device float *a, device const float *res, uint3 gid [[thread_position_in_grid]])
         {{
+            if(gid.x < 50257) {{
             int gidx0 = gid.x;
             a[gidx0] = a[gidx0] / res[0];
+            }}
         }}
 
         kernel void mm10(
@@ -534,52 +571,58 @@ class Metal_Kernels:
 
 
         fxn = prg.newFunctionWithName_("mm")
-        self.run_metal(fxn,n_tokens,ls,[x_g, x0_g, weight_g, bias_g])
+        def gs(ls=None): return n_tokens
+        self.run_metal2(fxn,gs,ls,[x_g, x0_g, weight_g, bias_g]) #TODO
 
         fxn = prg.newFunctionWithName_("mm2")
-        self.run_metal(fxn,math.ceil(b_cols*n_tokens / ls),ls,[x0_g, attn_weight_g,attn_bias_g,c_g])
+        def gs(ls): return math.ceil(b_cols*n_tokens / ls)
+        self.run_metal2(fxn,gs,ls3,[x0_g, attn_weight_g,attn_bias_g,c_g])
 
         fxn = prg.newFunctionWithName_("mm4")
-        self.run_metal(fxn,math.ceil((n_tokens*self.n_heads*64) / ls),ls,[c_g, new_cache_g])
+        def gs(ls): return math.ceil((n_tokens*self.n_heads*64) / ls)
+        self.run_metal2(fxn,gs,ls3,[c_g, new_cache_g])
         
         fxn = prg.newFunctionWithName_("mm5")
-        self.run_metal(fxn,1,ls,[x_g, ln_f_weight_g, ln_f_bias_g])
+        self.run_metal(fxn,1,ls,[x_g, ln_f_weight_g, ln_f_bias_g]) #TODO, reduce
         
         fxn = prg.newFunctionWithName_("matmul")
-        self.run_metal(fxn,math.ceil(b_cols2 / ls),ls,[x_g, lm_head_weight_g,logits_g])
+        def gs(ls): return math.ceil(b_cols2 / ls)
+        self.run_metal2(fxn,gs,ls3,[x_g, lm_head_weight_g,logits_g])
 
         fxn = prg.newFunctionWithName_("mm6")
-        self.run_metal(fxn,1,1,[logits_g,res_g])
+        def gs(ls=None): return 1
+        self.run_metal2(fxn,gs,1,[logits_g,res_g])
 
         fxn = prg.newFunctionWithName_("mm7")
-        self.run_metal(fxn,math.ceil(50257 / ls),ls,[logits_g,res_g])
+        def gs(ls): return math.ceil(50257 / ls)
+        self.run_metal2(fxn,gs,ls3,[logits_g,res_g])
 
         fxn = prg.newFunctionWithName_("mm6")
-        self.run_metal(fxn,1,1,[logits_g,res_g])
+        def gs(ls=None): return 1
+        self.run_metal2(fxn,gs,1,[logits_g,res_g])
 
         fxn = prg.newFunctionWithName_("mm9")
-        self.run_metal(fxn,math.ceil(50257 / ls),ls,[logits_g,res_g])
+        def gs(ls): return math.ceil(50257 / ls)
+        self.run_metal2(fxn,gs,ls3,[logits_g,res_g])
 
         fxn = library.newFunctionWithName_("mm10")
-        self.run_metal(fxn,1,ls,[logits_g,res_g])
+        def gs(ls=None): return 1
+        self.run_metal2(fxn,gs,ls,[logits_g,res_g]) #TODO, need to calculate seg based on ls
 
         fxn = library.newFunctionWithName_("mm9")
-        self.run_metal(fxn,math.ceil(50257 / ls),ls,[logits_g,res_g])
+        def gs(ls): return math.ceil(50257 / ls)
+        self.run_metal2(fxn,gs,ls3,[logits_g,res_g]) #TODO
         
         fxn = library.newFunctionWithName_("mm11")
         self.run_metal(fxn,1,1,[logits_g])
 
         fxn = library.newFunctionWithName_("mm12")
-        self.run_metal(fxn,math.ceil(50257 / ls),ls,[logits_g])
+        def gs(ls): return math.ceil(50257 / ls)
+        self.run_metal2(fxn,gs,ls3,[logits_g]) #TODO
     
         fxn = library.newFunctionWithName_("mm10")
-        self.run_metal(fxn,1,ls,[logits_g,res_g])
-
-        #output = np.asarray(res_g.contents().as_buffer(1*4))
-        #output = np.frombuffer(output, dtype=np.float32)
-        #for i in range(1):
-        #    print(i,output[i])
-        #exit()
+        def gs(ls=None): return 1
+        self.run_metal2(fxn,gs,ls,[logits_g,res_g]) #TODO, need to calculate seg based on ls
 
         res = np.asarray(res_g.data.contents().as_buffer(res_g.size))
         res = np.frombuffer(res, dtype=np.float32)
@@ -781,15 +824,16 @@ class Metal_Kernels:
                 
         fxn = prg.newFunctionWithName_("mm")
         self.run_metal(fxn,1,ls,[a_g,c_g,d_g,e_g,xqkv_g\
-        ,keys_values_g,self.xq_temp_g])
+        ,keys_values_g,self.xq_temp_g]) #TODO, reduce
         
         fxn = prg.newFunctionWithName_("mm2")
-        self.run_metal(fxn,seg3,ls,[keys_values_g ,self.temp_g, self.xq_temp_g])
+        def gs(ls): return math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
+        self.run_metal2(fxn,gs,ls3,[keys_values_g ,self.temp_g, self.xq_temp_g])
 
         fxn = prg.newFunctionWithName_("mm3")
         self.run_metal(fxn,1,ls,[a_g\
         ,keys_values_g,weight_g,bias_g,\
-        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g])
+        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g]) #TODO, reduce
         return a_g
  
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
@@ -875,6 +919,7 @@ class Metal_Kernels:
             device const float *x, device const float *attn_weight, device const float *attn_bias,device float *res, uint3 gid [[thread_position_in_grid]])
         {{
             int gidx0 = gid.x;
+            if(gidx0 < {b_cols*num_tokens}) {{
             int i = gidx0 / {num_tokens};
             int y = gidx0 % {num_tokens};
             float total = 0;
@@ -882,6 +927,7 @@ class Metal_Kernels:
                 total += x[y*{b_rows} + k] * attn_weight[i*{b_rows} + k]; 
             }}
             res[y*{b_cols} + i] = total + attn_bias[i];
+            }}
         }}
         kernel void mm3(
             device const float *xqkv, device float *new_cache, uint3 gid [[thread_position_in_grid]])
@@ -920,7 +966,7 @@ class Metal_Kernels:
             device float *xq, uint3 gid [[thread_position_in_grid]])
         {{
         int gidx0 = gid.x;
-        if(gidx0 < {num_tokens*num_tokens*self.n_heads}) {{
+        if(gidx0 < {self.n_heads*num_tokens*num_tokens}) {{
             int x = (gidx0 / {num_tokens}) / {num_tokens};
             int y = (gidx0 / {num_tokens}) % {num_tokens};
             int z = gidx0 % {num_tokens};
@@ -980,6 +1026,7 @@ class Metal_Kernels:
         kernel void ms7(
             device const float *xq, device const float *attn_weight,device const float *attn_bias, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
+            if(gid.x < {b_rows*num_tokens}) {{ //TODO don't allow larger local size? wasteful
             int gidx0 = gid.x;
             int x = gidx0 / {num_tokens};
             int y = gidx0 % {num_tokens};
@@ -988,6 +1035,7 @@ class Metal_Kernels:
                 total += xq[y*{b_rows} + k] * attn_weight[x*{b_rows} + k]; 
             }}
             res[y*{b_rows} + x] += total + attn_bias[x];
+            }}
         }}
         
         kernel void ms8( //TODO, there are other kernels like this to fix
@@ -1061,6 +1109,7 @@ class Metal_Kernels:
         kernel void ms10(
             device const float *a, device const float *c_proj_weight,device const float *c_proj_bias, device float *res, uint3 gid [[thread_position_in_grid]])
         {{
+            if(gid.x < {b_rows*num_tokens}) {{ //TODO, wasteful?
             int gidx0 = gid.x;
             int x = gidx0 / {num_tokens};
             int y = gidx0 % {num_tokens};
@@ -1069,6 +1118,7 @@ class Metal_Kernels:
                 total += a[y*{b_cols_2} + k] * c_proj_weight[x*{b_cols_2} + k];
             }}
             res[y*{b_rows} + x] += total + c_proj_bias[x];
+            }}
         }}
         """
         if prg_str not in self.prg_cache:
@@ -1077,31 +1127,37 @@ class Metal_Kernels:
         prg = self.prg_cache[prg_str]
 
 
-        output = np.asarray(x_g.data.contents().as_buffer(num_tokens*self.dim*4))
-        output = np.frombuffer(output, dtype=np.float32)
-        for i in range(len(output)):
-            if np.isnan(output[i]):
-                print("NAN pre MM x_g j =",j)
-                break
+        #output = np.asarray(x_g.data.contents().as_buffer(num_tokens*self.dim*4))
+        #output = np.frombuffer(output, dtype=np.float32)
+        #for i in range(len(output)):
+        #    if np.isnan(output[i]):
+        #        print("NAN pre MM x_g j =",j)
+        #        break
 
 
-        fxn = prg.newFunctionWithName_("mm")    
-        self.run_metal(fxn,num_tokens,ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g])
+        fxn = prg.newFunctionWithName_("mm")
+        def gs(ls=None): return num_tokens     
+        self.run_metal2(fxn,gs,ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g]) #TODO
         
         fxn = prg.newFunctionWithName_("mm2")
-        self.run_metal(fxn,math.ceil(b_cols*num_tokens / ls),ls,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g])
+        def gs(ls): return math.ceil(b_cols*num_tokens / ls)
+        self.run_metal2(fxn,gs,ls3,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g])
        
-        fxn = prg.newFunctionWithName_("mm3") 
-        self.run_metal(fxn,math.ceil((num_tokens*self.n_heads*64) / ls),ls,[self.xqkv_g, cache_kv_g])
+        fxn = prg.newFunctionWithName_("mm3")
+        def gs(ls): return math.ceil((num_tokens*self.n_heads*64) / ls)
+        self.run_metal2(fxn,gs,ls3,[self.xqkv_g, cache_kv_g])
         
         fxn = prg.newFunctionWithName_("tr")
-        self.run_metal(fxn,math.ceil((num_tokens*self.n_heads*64) / ls),ls,[self.xqkv_g, self.xq_g, self.xv_g])
+        def gs(ls): return math.ceil((num_tokens*self.n_heads*64) / ls)
+        self.run_metal2(fxn,gs,ls3,[self.xqkv_g, self.xq_g, self.xv_g])
 
-        fxn = prg.newFunctionWithName_("ms0")        
-        self.run_metal(fxn,1,1,[self.xq_g, self.xqkv_g]) #TODO this is stable now, but slow
+        fxn = prg.newFunctionWithName_("ms0")
+        def gs(ls=None): return 1        
+        self.run_metal2(fxn,gs,1,[self.xq_g, self.xqkv_g]) #TODO this is stable now, but slow
 
-        fxn = prg.newFunctionWithName_("ms")        
-        self.run_metal(fxn,math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,[self.xq_g])
+        fxn = prg.newFunctionWithName_("ms") 
+        def gs(ls): return math.ceil(self.n_heads*num_tokens*num_tokens / ls)       
+        self.run_metal2(fxn,gs,ls3,[self.xq_g])
 
         if self.n_heads*num_tokens > ls:
             g2 = math.ceil(self.n_heads*num_tokens / ls)*ls
@@ -1109,20 +1165,25 @@ class Metal_Kernels:
             g2 = math.ceil(self.n_heads*num_tokens)
         g2 = math.ceil(self.n_heads*num_tokens)
 
-        fxn = prg.newFunctionWithName_("ms3")        
-        self.run_metal(fxn,1,self.n_heads*num_tokens,[self.xq_g,self.res_g])
+        fxn = prg.newFunctionWithName_("ms3")
+        def gs(ls): return 1        
+        self.run_metal2(fxn,gs,self.n_heads*num_tokens,[self.xq_g,self.res_g])
 
-        fxn = prg.newFunctionWithName_("ms4")        
-        self.run_metal(fxn,math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,[self.xq_g,self.res_g])
+        fxn = prg.newFunctionWithName_("ms4")
+        def gs(ls): return math.ceil(self.n_heads*num_tokens*num_tokens / ls)  
+        self.run_metal2(fxn,gs,ls3,[self.xq_g,self.res_g])
         
         fxn = prg.newFunctionWithName_("ms5")
-        self.run_metal(fxn,math.ceil(self.n_heads*a_cols*num_tokens / ls),ls,[self.xq_g,self.xv_g,self.c_g])
+        def gs(ls): return math.ceil(self.n_heads*a_cols*num_tokens / ls)
+        self.run_metal2(fxn,gs,ls3,[self.xq_g,self.xv_g,self.c_g])
     
-        fxn = prg.newFunctionWithName_("ms6")    
-        self.run_metal(fxn,math.ceil(num_tokens*self.n_heads*64 / ls),ls,[self.c_g,self.xqt_g])
+        fxn = prg.newFunctionWithName_("ms6")
+        def gs(ls): return math.ceil(num_tokens*self.n_heads*64 / ls)
+        self.run_metal2(fxn,gs,ls,[self.c_g,self.xqt_g])
             
         fxn = prg.newFunctionWithName_("ms7")
-        self.run_metal(fxn,math.ceil(b_rows*num_tokens / ls),ls,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g])
+        def gs(ls): return math.ceil(b_rows*num_tokens / ls)
+        self.run_metal2(fxn,gs,ls3,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g])
 
         if j == 0:
             output = np.asarray(self.h_g.data.contents().as_buffer(max_content*self.dim*4))
@@ -1132,8 +1193,8 @@ class Metal_Kernels:
                     print("NAN ms7 h_g")
                     break
         
-        fxn = prg.newFunctionWithName_("ms8")  
-        self.run_metal(fxn,num_tokens,ls,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g])
+        fxn = prg.newFunctionWithName_("ms8")
+        self.run_metal(fxn,num_tokens,ls,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g]) #TODO fix
         
         if j == 0:
             output = np.asarray(self.h_g.data.contents().as_buffer(max_content*self.dim*4))
@@ -1145,11 +1206,13 @@ class Metal_Kernels:
                     break
         
 
-        fxn = prg.newFunctionWithName_("ms9")    
-        self.run_metal(fxn,math.ceil(b_cols_2*num_tokens / ls),ls,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g])
+        fxn = prg.newFunctionWithName_("ms9")
+        def gs(ls): return math.ceil(b_cols_2*num_tokens / ls)
+        self.run_metal2(fxn,gs,ls3,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g])
                 
-        fxn = prg.newFunctionWithName_("ms10")        
-        self.run_metal(fxn,math.ceil(b_rows*num_tokens / ls),ls,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])
+        fxn = prg.newFunctionWithName_("ms10")
+        def gs(ls): return math.ceil(b_rows*num_tokens / ls)        
+        self.run_metal2(fxn,gs,ls3,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])
         return self.h2_g   
 
     def time_it(func,a,b,i=100):
@@ -1163,3 +1226,4 @@ class Metal_Kernels:
             if f is None or t < f:
                 f = t
         return ret,f
+
