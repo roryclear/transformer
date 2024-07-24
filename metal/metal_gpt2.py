@@ -8,6 +8,7 @@ import math
 import os
 import pickle
 import metal_kernels
+import metal_kernels_large
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -74,7 +75,9 @@ class Transformer:
   def __init__(self):
     return None
 
-  def to_buffer(self):
+  def to_buffer(self,n_heads,dim):
+      self.n_heads = n_heads
+      self.dim = dim
       print("copying ln_1_weight")
       for i in range(len(self.ln_1_weight)):
         self.ln_1_weight[i] = create_metal_buffer(self.ln_1_weight[i])
@@ -153,7 +156,7 @@ class Transformer:
   def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if start_pos > 0:
       h = metalk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
-      attn_dim = dim
+      attn_dim = self.dim
       for i in range(0,len(self.ln_1_weight)):
         h = metalk.kernel_0(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
@@ -206,10 +209,10 @@ class GPT2:
     return decode(toks)
 
 
-def get_model(model_size = "gpt2"):
+def get_model(model_size):
   gpt2_blank = GPT2(None)
   gpt2_blank.model = Transformer()
-  n_layers = {"gpt2":12,"gpt2-medium":24,"gpt2-large":36}
+  n_layers = {"gpt2":12,"gpt2-medium":24,"gpt2-large":36,"gpt2-xl":48}
   model = AutoModelForCausalLM.from_pretrained(model_size)
 
   print("converting wpe_weight")
@@ -336,55 +339,65 @@ if __name__ == "__main__":
   674, 10251, 481, 1282, 611, 356, 12553, 262, 4950, 2000, 1176, 356,\
   423, 13, 198, 198, 2215, 345]
 
-  for x in range(1):
-    rand = Rand()
-    device = Metal.MTLCreateSystemDefaultDevice()
-    MAX_CONTEXT = len(encode(default_prompt))+100
-    metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
-    dim = 768
-    n_heads = 12
-    print("\nX =",x,"\n")
-    if os.path.exists("gpt2.pickle") == False:
-      get_model("gpt2")
-    filehandler = open("gpt2.pickle", 'rb')  
-    gpt2 = pickle.load(filehandler)
-    gpt2.model.to_buffer()
-    text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
-    print((f"Response:", "green"), text)
-  #exit()
+  a = create_metal_buffer_empty(1*4) #TODO can't run medium in isolation without doing this first?
+
+  rand = Rand()
+  MAX_CONTEXT = len(encode(default_prompt))+100
+  metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
+  if os.path.exists("gpt2.pickle") == False:
+    get_model("gpt2")
+  filehandler = open("gpt2.pickle", 'rb')  
+  gpt2 = pickle.load(filehandler)
+  gpt2.model.to_buffer(12,768)
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
+  print((f"Response:", "green"), text)
 
   rand = Rand()
   MAX_CONTEXT = len(encode("What happened in 1939?"))+100
   metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
   filehandler = open("gpt2.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
-  gpt2.model.to_buffer()
-  #metalk.reset()
+  gpt2.model.to_buffer(12,768)
   text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_b)
   print((f"Response:", "green"), text)
-  
+
   MAX_CONTEXT = len(encode(default_prompt))+100
-  metalk = metal_kernels.Metal_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)
-  dim = 1024
-  n_heads = 16
+  metalk = metal_kernels_large.Metal_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)
+  
   if os.path.exists("gpt2-medium.pickle") == False:
     get_model("gpt2-medium")
   filehandler = open("gpt2-medium.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
-  gpt2.model.to_buffer()
+  #gpt2.model.to_buffer2()
+  gpt2.model.to_buffer(16,1024)
   rand = Rand()
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_med)
   print((f"Response:", "green"), text)
-  
+
+  MAX_CONTEXT = len(encode(default_prompt))+100
   dim = 1280
   n_heads = 20
-  metalk = metal_kernels.Metal_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
+  metalk = metal_kernels_large.Metal_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
   if os.path.exists("gpt2-large.pickle") == False:
     get_model("gpt2-large")
   filehandler = open("gpt2-large.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
-  gpt2.model.to_buffer()
+  gpt2.model.to_buffer(20,1280)
   rand = Rand()
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
   print((f"Response:", "green"), text)
-  
+
+  ''' TODO
+  MAX_CONTEXT = len(encode(default_prompt))+100
+  dim = 1600
+  n_heads = 25
+  metalk = metal_kernels.Metal_Kernels(dim=1600,n_heads=25,max_context=MAX_CONTEXT)
+  if os.path.exists("gpt2-xl.pickle") == False:
+    get_model("gpt2-xl")
+  filehandler = open("gpt2-xl.pickle", 'rb')  
+  gpt2 = pickle.load(filehandler)
+  gpt2.model.to_buffer(25,1600)
+  rand = Rand()
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
+  print((f"Response:", "green"), text)
+  '''
