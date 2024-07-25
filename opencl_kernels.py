@@ -10,6 +10,25 @@ queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
 prg = None
 
+class buffer:
+    def __init__(self,data,size):
+        self.data = data
+        self.size = size
+
+    def np(self):
+        ret = np.zeros(self.size/4).astype(np.float32)
+        cl.enqueue_copy(queue, ret, self)
+        return ret
+
+def create_cl_buffer(a):
+  data = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+  return buffer(data,len(a.flatten()))
+
+def create_metal_buffer_empty(size):
+  a = np.zeros(size).astype(np.float32)
+  data = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+  return buffer(data,size)
+
 class Opencl_Kernels:
     def __init__(self,dim,n_heads,max_context):
         self.prg_cache = {}
@@ -35,7 +54,7 @@ class Opencl_Kernels:
         return self.add_res_g
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
-        tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
+        tokens_g = create_cl_buffer(tokens)
         ls = 256
         size = no_tokens*self.dim
         tok_emb_g = cl.Buffer(ctx, mf.READ_ONLY, no_tokens*self.dim*4)
@@ -52,7 +71,7 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, weight_2_g,tok_emb_g)
+        prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g.data, weight_g, weight_2_g,tok_emb_g)
         #tok_emb = np.zeros(no_tokens*self.dim).astype(np.float32)
         #cl.enqueue_copy(queue, tok_emb, tok_emb_g)
         #print(tok_emb)
@@ -632,7 +651,7 @@ class Opencl_Kernels:
         prg.mm3(queue, (ls,1), (ls,1),a_g\
         ,keys_values_g,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g)
-        return a_g    
+        return a_g
         
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content):
