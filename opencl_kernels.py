@@ -14,10 +14,11 @@ class buffer:
     def __init__(self,data,size):
         self.data = data
         self.size = size
+        #TODO cache np if faster?
 
     def np(self):
-        ret = np.zeros(self.size/4).astype(np.float32)
-        cl.enqueue_copy(queue, ret, self)
+        ret = np.zeros(math.ceil(self.size/4)).astype(np.float32)
+        cl.enqueue_copy(queue, ret, self.data)
         return ret
 
 def create_cl_buffer(a):
@@ -70,9 +71,6 @@ class Opencl_Kernels:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
         prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g.data, weight_g.data, weight_2_g.data,tok_emb_g.data)
-        #tok_emb = np.zeros(no_tokens*self.dim).astype(np.float32)
-        #cl.enqueue_copy(queue, tok_emb, tok_emb_g)
-        #print(tok_emb)
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
@@ -222,8 +220,7 @@ class Opencl_Kernels:
         prg.mm10(queue, (1,1), (1,1), self.logits_g.data)
         prg.mm11(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data)
         prg.mm9(queue, (ls,1), (ls,1), self.logits_g.data, self.res_g.data)
-        cl.enqueue_copy(queue, self.res.data, self.res_g.data)
-        return self.res
+        return self.res_g.np()
 
     def kernel_3(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,lm_head_weight_g,temperature,random_num):
@@ -456,8 +453,7 @@ class Opencl_Kernels:
         prg.mm11(queue, (1,1), (1,1), logits_g.data)
         prg.mm12(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data)
         prg.mm10(queue, (ls,1), (ls,1), logits_g.data, res_g.data)
-        cl.enqueue_copy(queue, res, res_g.data) #TODO
-        return res
+        return res_g.np()
 
     def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g):
