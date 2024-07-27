@@ -287,7 +287,7 @@ class Metal_Kernels:
             }}
         }}
         """
-        
+
         if prg_str not in self.prg_cache:
             library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
             self.prg_cache[prg_str] = library
@@ -298,7 +298,7 @@ class Metal_Kernels:
         device float *a, uint3 gid [[thread_position_in_grid]])
         {{
             int gidx0 = gid.x;
-            if((a[gidx0] / a[50256]) < {random_num}) {{
+            if(a[gidx0] < {random_num}) {{ //TODO, used to be (a[gidx0] / a[50256])/{random_num}
                 a[gidx0] = 1;
             }} else {{
                 a[gidx0] = 0;
@@ -555,7 +555,7 @@ class Metal_Kernels:
         device float *a, uint3 gid [[thread_position_in_grid]])
         {{
             int gidx0 = gid.x;
-            if((a[gidx0] / a[50256]) < {random_num}) {{
+            if(a[gidx0] < {random_num}) {{ //TODO, used to be (a[gidx0] / a[50256])/{random_num}
                 a[gidx0] = 1;
             }} else {{
                 a[gidx0] = 0;
@@ -785,7 +785,7 @@ class Metal_Kernels:
             for(int i = 0; i < {start_pos+1}; i++) {{
                 temp3[i + lidx0*{start_pos+1}] = exp(temp3[i + lidx0*{start_pos+1}] - m);
                 t += temp3[i + lidx0*{start_pos+1}];
-            }} //TODO SPLIT HERE???
+            }}
             for(int i = 0; i < {start_pos+1}; i++) {{
                 temp3[i + lidx0*{start_pos+1}] /= t;
             }}

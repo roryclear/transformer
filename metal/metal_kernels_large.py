@@ -298,7 +298,7 @@ class Metal_Kernels:
         device float *a, uint3 gid [[thread_position_in_grid]])
         {{
             int gidx0 = gid.x;
-            if((a[gidx0] / a[50256]) < {random_num}) {{
+            if(a[gidx0] < {random_num}) {{ //TODO, used to be (a[gidx0] / a[50256])/{random_num}
                 a[gidx0] = 1;
             }} else {{
                 a[gidx0] = 0;
@@ -555,7 +555,7 @@ class Metal_Kernels:
         device float *a, uint3 gid [[thread_position_in_grid]])
         {{
             int gidx0 = gid.x;
-            if((a[gidx0] / a[50256]) < {random_num}) {{
+            if(a[gidx0] < {random_num}) {{
                 a[gidx0] = 1;
             }} else {{
                 a[gidx0] = 0;
