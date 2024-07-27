@@ -2,30 +2,18 @@ import numpy as np
 import time
 import math
 import Metal
+import transformer
 
 test = False
 
 ls = 256
 ls3 = 256 #threadExecutionWidth correct value to use
 
-class buffer:
-    def __init__(self,data,size):
-        self.data = data
-        self.size = size
-
-    def np(self):
-        output = np.asarray(self.data.contents().as_buffer(self.size))
-        return np.frombuffer(output, dtype=np.float32)
-
 def create_metal_buffer(a,device):
-  a_buffer = device.newBufferWithLength_options_(len(a.flatten())*4 ,1)
-  m = a_buffer.contents().as_buffer(len(a.flatten())*4)
-  m[:] = bytes(a)
-  return buffer(a_buffer,len(a.flatten())*4)
+  return transformer.create_buffer(a,"Metal",{"device":device})
 
 def create_metal_buffer_empty(size,device):
-  a_buffer = device.newBufferWithLength_options_(size ,1)
-  return buffer(a_buffer,size)
+  return transformer.create_buffer_empty(size,"Metal",{"device":device})
 
 class Metal_Kernels:
     def __init__(self,dim,n_heads,max_context):
@@ -139,7 +127,7 @@ class Metal_Kernels:
         }}   
         }}
         """
-        prg, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
+        prg = transformer.compile(prg_str,"Metal",{"device":self.device})
         fxn = prg.newFunctionWithName_("add")
         def g(ls): return math.ceil(self.dim / ls)
         self.run_metal2(fxn,g,ls,[a_g, b_g,self.add_res_g],self.device)
@@ -164,7 +152,7 @@ class Metal_Kernels:
         """
 
         options = Metal.MTLCompileOptions.alloc().init()
-        library, err = self.device.newLibraryWithSource_options_error_(prg_str, options, None)
+        library = transformer.compile(prg_str,"Metal",{"device":self.device})
         fxn = library.newFunctionWithName_("mm")
         def gs(ls): return math.ceil(size / ls)
         self.run_metal2(fxn,gs,ls3,[tokens_g,weight_g,weight_2_g,tok_emb_g])
@@ -289,7 +277,7 @@ class Metal_Kernels:
         """
         
         if prg_str not in self.prg_cache:
-            library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
+            library = transformer.compile(prg_str,"Metal",{"device":self.device})
             self.prg_cache[prg_str] = library
         prg = self.prg_cache[prg_str]
 
@@ -305,7 +293,7 @@ class Metal_Kernels:
             }}
         }}
         """
-        prg2, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
+        prg2 = transformer.compile(prg_str,"Metal",{"device":self.device})
 
         fxn = prg.newFunctionWithName_("mm4")
         self.run_metal(fxn,1,ls3,[h_g, weight_g, bias_g])
@@ -564,7 +552,7 @@ class Metal_Kernels:
         """
         
         if prg_str not in self.prg_cache:
-            library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
+            library = transformer.compile(prg_str,"Metal",{"device":self.device})
             self.prg_cache[prg_str] = library
         prg = self.prg_cache[prg_str]
 
@@ -718,7 +706,7 @@ class Metal_Kernels:
         """
 
         if prg_str not in self.prg_cache:
-            library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
+            library = transformer.compile(prg_str,"Metal",{"device":self.device})
             self.prg_cache[prg_str] = library
         prg = self.prg_cache[prg_str]
 
@@ -863,7 +851,7 @@ class Metal_Kernels:
         """
         
         if prg_str not in self.prg_cache:
-            library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
+            library = transformer.compile(prg_str,"Metal",{"device":self.device})
             self.prg_cache[prg_str] = library
         prg2 = self.prg_cache[prg_str]
 
@@ -1209,7 +1197,7 @@ class Metal_Kernels:
         }}
         """
         if prg_str not in self.prg_cache:
-            library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
+            library = transformer.compile(prg_str,"Metal",{"device":self.device})
             self.prg_cache[prg_str] = library
         prg = self.prg_cache[prg_str]
 

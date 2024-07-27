@@ -24,6 +24,13 @@ class buffer:
             cl.enqueue_copy(queue, ret, self.data)
             return ret
 
+def compile(prg_str,d,params):
+  if d == "Metal":
+    library, err = params["device"].newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
+    return library
+  if d == "OpenCL":
+    return cl.Program(params["ctx"],prg_str).build()
+
 def create_buffer(a,d,params):
   if d == "Metal":
     device = params["device"]
