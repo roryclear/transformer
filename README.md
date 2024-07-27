@@ -18,4 +18,5 @@
 | tinygrad                  |32 t/s         |23 t/s         |16 t/s     |
 | huggingface/transformers  |60 t/s         |19 t/s         |9 t/s      |  
 | roryclear/transformer     |31 t/s         |15 t/s         |8 t/s      |
+
 *producing 100 tokens from 13 token prompt
