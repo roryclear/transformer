@@ -8,9 +8,7 @@
 
 - [X] Remove all Numpy usage (For calculations)
 
-- [ ] Support for any transformer
-
-- [ ] Refactor to library
+- [ ] Support any transformer
 
 ## Performance:
 ### Metal
