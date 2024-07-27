@@ -2,6 +2,7 @@ import numpy as np
 import pyopencl as cl
 import time
 import math
+import transformer
 
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
@@ -10,23 +11,13 @@ queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
 prg = None
 
-class buffer:
-    def __init__(self,data,size):
-        self.data = data
-        self.size = size
-        #TODO cache np data if faster?
-
-    def np(self):
-        ret = np.zeros(math.ceil(self.size/4)).astype(np.float32)
-        cl.enqueue_copy(queue, ret, self.data)
-        return ret
+params = {"ctx":ctx,"mf":mf}
 
 def create_cl_buffer(a):
-  data = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-  return buffer(data,len(a.flatten()))
+  return transformer.create_buffer(a,"OpenCL",params)
 
 def create_cl_buffer_empty(size):
-  return buffer(cl.Buffer(ctx, mf.READ_ONLY, size),size)
+  return transformer.create_buffer_empty(size,"OpenCL",params)
 
 class Opencl_Kernels:
     def __init__(self,dim,n_heads,max_context):
