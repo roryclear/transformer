@@ -287,7 +287,7 @@ class Metal_Kernels:
             }}
         }}
         """
-
+        
         if prg_str not in self.prg_cache:
             library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
             self.prg_cache[prg_str] = library
@@ -555,7 +555,7 @@ class Metal_Kernels:
         device float *a, uint3 gid [[thread_position_in_grid]])
         {{
             int gidx0 = gid.x;
-            if(a[gidx0] < {random_num}) {{ //TODO, used to be (a[gidx0] / a[50256])/{random_num}
+            if(a[gidx0] < {random_num}) {{
                 a[gidx0] = 1;
             }} else {{
                 a[gidx0] = 0;
@@ -774,40 +774,63 @@ class Metal_Kernels:
             device float *h_temp, device float *h,
             uint3 gid [[thread_position_in_grid]])
         {{
-            threadgroup float temp[{ls3}];
             int lidx0 = gid.x;
+            float t = 0;
             if(lidx0 < {self.n_heads}){{
             float m = -INFINITY;
             for(int i = 0; i < {start_pos+1}; i++) {{
                 m = max(m,temp3[i + lidx0*{start_pos+1}]);
             }}
-            float t = 0;
             for(int i = 0; i < {start_pos+1}; i++) {{
                 temp3[i + lidx0*{start_pos+1}] = exp(temp3[i + lidx0*{start_pos+1}] - m);
                 t += temp3[i + lidx0*{start_pos+1}];
             }}
+            }}
+            if(lidx0 < {self.n_heads}){{
             for(int i = 0; i < {start_pos+1}; i++) {{
                 temp3[i + lidx0*{start_pos+1}] /= t;
             }}
             }}
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-            for(int g = 0; g < {seg3}; g++) {{ 
-                float acc0 = 0;
-                for(int i = 0; i < {start_pos+1}; i++) {{
-                    acc0 += temp3[i + {start_pos+1}*((g + lidx0*{seg3}) / 64)] * keys_values[{self.dim*self.max_context} + i*{self.n_heads*64} + g + lidx0*{seg3}];
-                }}
-                xq_temp[g + lidx0*{seg3}] = acc0;
             }}
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-            for(int i = 0; i < {seg3}; i++) {{
-                float acc = 0;
-                for(int x = 0; x < {self.dim}; x++) {{
-                    acc += xq_temp[x] * weight[x*{self.dim} + lidx0*{seg3} + i];
-                }}
-                h[lidx0*{seg3} + i] = a[lidx0*{seg3} + i] + acc + bias[lidx0*{seg3} + i];
-                h_temp[lidx0*{seg3} + i] = h[lidx0*{seg3} + i];
+        kernel void mm3a(
+            device float *keys_values,
+            device float *temp3, device float *xq_temp,
+            uint3 gid [[thread_position_in_grid]])
+        {{
+            int lidx0 = gid.x % {ls3};
+            int i = gid.x / {ls3};
+            float acc0 = 0;
+            for(int j = 0; j < {start_pos+1}; j++) {{
+                acc0 += temp3[j + {start_pos+1}*((i + lidx0*{seg3}) / 64)] * keys_values[{self.dim*self.max_context} + j*{self.n_heads*64} + i + lidx0*{seg3}];
             }}
+            xq_temp[i + lidx0*{seg3}] = acc0;
+        }}
+
+        kernel void mm3b(
+            device float *a,
+            device const float *weight,device const float *bias,
+            device float *xq_temp,
+            device float *h_temp, device float *h,
+            uint3 gid [[thread_position_in_grid]])
+        {{
+            int lidx0 = gid.x % {ls3};
+            int i = gid.x / {ls3};
+            float acc = 0;
+            for(int x = 0; x < {self.dim}; x++) {{
+                acc += xq_temp[x] * weight[x*{self.dim} + lidx0*{seg3} + i];
+            }}
+            h[lidx0*{seg3} + i] = a[lidx0*{seg3} + i] + acc + bias[lidx0*{seg3} + i];
+            h_temp[lidx0*{seg3} + i] = h[lidx0*{seg3} + i];
+        }}
+
+        kernel void mm3c(
+            device float *mean,
+            device float *h_temp, device float *h,
+            uint3 gid [[thread_position_in_grid]])
+        {{       
+            int lidx0 = gid.x; 
             threadgroup_barrier(mem_flags::mem_threadgroup);
+            threadgroup float temp[{ls3}];
             float total = 0;
             for(int i = 0; i < {seg3}; i++) {{
                 total += h[lidx0*{seg3} + i];
@@ -838,7 +861,11 @@ class Metal_Kernels:
             }}
             }}
         """
-        prg2, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
+        
+        if prg_str not in self.prg_cache:
+            library, err = self.device.newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
+            self.prg_cache[prg_str] = library
+        prg2 = self.prg_cache[prg_str]
 
         if hasattr(self, 'total') == False:
             self.total = create_metal_buffer_empty(1*4,self.device)
@@ -869,6 +896,20 @@ class Metal_Kernels:
         self.run_metal(fxn,1,ls3,[a_g\
         ,keys_values_g,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g,self.mean,
+        self.h_temp,self.h])
+
+        fxn = prg2.newFunctionWithName_("mm3a")
+        self.run_metal(fxn,seg3,ls3,[\
+        keys_values_g,self.temp_g, self.xq_temp_g])
+
+        fxn = prg2.newFunctionWithName_("mm3b")
+        self.run_metal(fxn,seg3,ls3,[a_g\
+        ,weight_g,bias_g,\
+        self.xq_temp_g,
+        self.h_temp,self.h])
+
+        fxn = prg2.newFunctionWithName_("mm3c")
+        self.run_metal(fxn,1,ls3,[self.mean,
         self.h_temp,self.h])
         
         fxn = prg.newFunctionWithName_("mm4")
@@ -1245,3 +1286,4 @@ class Metal_Kernels:
             if f is None or t < f:
                 f = t
         return ret,f
+

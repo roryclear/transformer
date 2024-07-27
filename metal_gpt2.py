@@ -13,20 +13,17 @@ from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import Metal
+import transformer
 metal = True
 
 device = Metal.MTLCreateSystemDefaultDevice()
 
 
 def create_metal_buffer(a):
-  a_buffer = device.newBufferWithLength_options_(len(a.flatten())*4 ,1)
-  m = a_buffer.contents().as_buffer(len(a.flatten())*4)
-  m[:] = bytes(a)
-  return metal_kernels.buffer(a_buffer,len(a.flatten())*4)
+  return transformer.create_buffer(a,"Metal",{"device":device})
 
 def create_metal_buffer_empty(size):
-  a_buffer = device.newBufferWithLength_options_(size ,1)
-  return metal_kernels.buffer(a_buffer,size)
+  return transformer.create_buffer_empty(size,"Metal",{"device":device})
 
 tokens = open('tokens.txt','r',encoding="utf-8").readlines()
 token_dict = dict()
@@ -290,7 +287,7 @@ def get_model(model_size):
   print("converting lm_head.weight")
   gpt2_blank.model.lm_head_weight = model.lm_head.weight.detach().cpu().numpy().astype(np.float32).transpose(1,0)
 
-  with open(model_size+".pickle", 'wb') as outp:
+  with open("metal/"+model_size+".pickle", 'wb') as outp:
       pickle.dump(gpt2_blank, outp)
 
 # **** main code ****
@@ -340,47 +337,47 @@ if __name__ == "__main__":
   423, 13, 198, 198, 2215, 345]
 
   a = create_metal_buffer_empty(1*4) #TODO can't run medium in isolation without doing this first?
-
+  
   rand = Rand()
   MAX_CONTEXT = len(encode(default_prompt))+100
   metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
-  if os.path.exists("gpt2.pickle") == False:
+  if os.path.exists("metal/gpt2.pickle") == False:
     get_model("gpt2")
-  filehandler = open("gpt2.pickle", 'rb')  
+  filehandler = open("metal/gpt2.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   gpt2.model.to_buffer(12,768)
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
   print((f"Response:", "green"), text)
 
+
   rand = Rand()
   MAX_CONTEXT = len(encode("What happened in 1939?"))+100
   metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
-  filehandler = open("gpt2.pickle", 'rb')  
+  filehandler = open("metal/gpt2.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   gpt2.model.to_buffer(12,768)
-  text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_b)
+  text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
   print((f"Response:", "green"), text)
-
-  MAX_CONTEXT = len(encode(default_prompt))+100
-  metalk = metal_kernels_large.Metal_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)
   
-  if os.path.exists("gpt2-medium.pickle") == False:
-    get_model("gpt2-medium")
-  filehandler = open("gpt2-medium.pickle", 'rb')  
+  MAX_CONTEXT = len(encode(default_prompt))+100
+  metalk = metal_kernels.Metal_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)  
+  if os.path.exists("metal/gpt2-medium.pickle") == False:
+    get_model("metal/gpt2-medium")
+  filehandler = open("metal/gpt2-medium.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   #gpt2.model.to_buffer2()
   gpt2.model.to_buffer(16,1024)
   rand = Rand()
-  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_med)
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
   print((f"Response:", "green"), text)
-
+  
   MAX_CONTEXT = len(encode(default_prompt))+100
   dim = 1280
   n_heads = 20
   metalk = metal_kernels_large.Metal_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
-  if os.path.exists("gpt2-large.pickle") == False:
+  if os.path.exists("metal/gpt2-large.pickle") == False:
     get_model("gpt2-large")
-  filehandler = open("gpt2-large.pickle", 'rb')  
+  filehandler = open("metal/gpt2-large.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   gpt2.model.to_buffer(20,1280)
   rand = Rand()
