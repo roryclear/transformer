@@ -10,6 +10,24 @@ queue = cl.CommandQueue(ctx)
 mf = cl.mem_flags
 prg = None
 
+class buffer:
+    def __init__(self,data,size):
+        self.data = data
+        self.size = size
+        #TODO cache np if faster?
+
+    def np(self):
+        ret = np.zeros(math.ceil(self.size/4)).astype(np.float32)
+        cl.enqueue_copy(queue, ret, self.data)
+        return ret
+
+def create_cl_buffer(a):
+  data = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
+  return buffer(data,len(a.flatten()))
+
+def create_cl_buffer_empty(size):
+  return buffer(cl.Buffer(ctx, mf.READ_ONLY, size),size)
+
 class Opencl_Kernels:
     def __init__(self,dim,n_heads,max_context):
         self.prg_cache = {}
@@ -19,7 +37,7 @@ class Opencl_Kernels:
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
         if hasattr(self, 'add_res_g') == False:
-            self.add_res_g = cl.Buffer(ctx, mf.READ_ONLY, self.dim*4)
+            self.add_res_g = create_cl_buffer_empty(self.dim*4)
         prg_str = f"""
         __kernel void add(
             __global const float *a, __global const float *b, __global float *res)
@@ -31,14 +49,14 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        prg.add(queue, (self.dim,1), (256,1), a_g, b_g,self.add_res_g) #todo check shape
+        prg.add(queue, (self.dim,1), (256,1), a_g.data, b_g.data,self.add_res_g.data) #todo check shape
         return self.add_res_g
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
-        tokens_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tokens)
+        tokens_g = create_cl_buffer(tokens)
         ls = 256
         size = no_tokens*self.dim
-        tok_emb_g = cl.Buffer(ctx, mf.READ_ONLY, no_tokens*self.dim*4)
+        tok_emb_g = create_cl_buffer_empty(no_tokens*self.dim*4)
         prg_str = f"""
         __kernel void mm(
             __global int *tokens, __global const float *weight, __global const float *weight2,  __global float *tok_emb)
@@ -52,10 +70,7 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g, weight_g, weight_2_g,tok_emb_g)
-        #tok_emb = np.zeros(no_tokens*self.dim).astype(np.float32)
-        #cl.enqueue_copy(queue, tok_emb, tok_emb_g)
-        #print(tok_emb)
+        prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g.data, weight_g.data, weight_2_g.data,tok_emb_g.data)
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
@@ -64,11 +79,11 @@ class Opencl_Kernels:
         rows = self.dim
         cols = 50257
         if hasattr(self, 'logits_g') == False:
-            self.logits_g = cl.Buffer(ctx, mf.READ_ONLY, 50257*4)
+            self.logits_g = create_cl_buffer_empty(50257*4)
         if hasattr(self, 'res') == False:
             self.res = np.zeros(1).astype(np.float32)
         if hasattr(self, 'res_g') == False:
-            self.res_g = cl.Buffer(ctx, mf.READ_ONLY, 1*4)
+            self.res_g = create_cl_buffer_empty(1*4)
         seg2 = math.ceil(50257 / ls)
         prg_str = f"""
         __kernel void mm4(
@@ -192,21 +207,20 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
-        prg.mm4(queue, (ls,1), (ls,1), h_g, weight_g, bias_g)
+        prg.mm4(queue, (ls,1), (ls,1), h_g.data, weight_g.data, bias_g.data)
         gidx = math.ceil(cols / 16) * 16
-        prg.matvec(queue, (gidx,1), (16,1), h_g, weight2_g,self.logits_g)
+        prg.matvec(queue, (gidx,1), (16,1), h_g.data, weight2_g.data,self.logits_g.data)
 
-        prg.mm5(queue, (1,1), (1,1), self.logits_g, self.res_g) 
-        prg.mm6(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g, self.res_g)
-        prg.mm7(queue, (1,1), (1,1), self.logits_g, self.res_g)
-        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g, self.res_g)
-        prg.mm9(queue, (ls,1), (ls,1), self.logits_g, self.res_g)
-        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g, self.res_g)
-        prg.mm10(queue, (1,1), (1,1), self.logits_g)
-        prg.mm11(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g)
-        prg.mm9(queue, (ls,1), (ls,1), self.logits_g, self.res_g)
-        cl.enqueue_copy(queue, self.res, self.res_g)
-        return self.res
+        prg.mm5(queue, (1,1), (1,1), self.logits_g.data, self.res_g.data) 
+        prg.mm6(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data, self.res_g.data)
+        prg.mm7(queue, (1,1), (1,1), self.logits_g.data, self.res_g.data)
+        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data, self.res_g.data)
+        prg.mm9(queue, (ls,1), (ls,1), self.logits_g.data, self.res_g.data)
+        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data, self.res_g.data)
+        prg.mm10(queue, (1,1), (1,1), self.logits_g.data)
+        prg.mm11(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data)
+        prg.mm9(queue, (ls,1), (ls,1), self.logits_g.data, self.res_g.data)
+        return self.res_g.np()
 
     def kernel_3(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,lm_head_weight_g,temperature,random_num):
@@ -218,11 +232,11 @@ class Opencl_Kernels:
         b_cols = self.dim*3 #todo
         b_rows = self.dim
         seg = int(size / ls) #todo
-        x0_g = cl.Buffer(ctx, mf.READ_ONLY, n_tokens*self.dim*4)
-        logits_g = cl.Buffer(ctx, mf.READ_ONLY, 50257*4)
-        c_g = cl.Buffer(ctx, mf.READ_ONLY, n_tokens*b_cols*4)
+        x0_g = create_cl_buffer_empty(n_tokens*self.dim*4)
+        logits_g = create_cl_buffer_empty(50257*4)
+        c_g = create_cl_buffer_empty(n_tokens*b_cols*4)
         res = np.zeros(1).astype(np.float32)
-        res_g = cl.Buffer(ctx, mf.READ_ONLY, 1*4)
+        res_g = create_cl_buffer_empty(1*4)
         prg_str = f"""
         __kernel void mm(__global const float *x_in,
             __global float *x, __global const float *weight, __global const float *bias)
@@ -422,25 +436,24 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
         prg = self.prg_cache[prg_str]
-        prg.mm(queue, (ls*n_tokens,1), (ls,1),x_g, x0_g, weight_g, bias_g)
-        prg.mm2(queue, (math.ceil((b_cols*n_tokens / ls)*ls),1), (ls,1), x0_g, attn_weight_g,attn_bias_g,c_g)
+        prg.mm(queue, (ls*n_tokens,1), (ls,1),x_g.data, x0_g.data, weight_g.data, bias_g.data)
+        prg.mm2(queue, (math.ceil((b_cols*n_tokens / ls)*ls),1), (ls,1), x0_g.data, attn_weight_g.data,attn_bias_g.data,c_g.data)
         ls = 256
-        prg.mm4(queue, (math.ceil((n_tokens*self.n_heads*64) / ls) * ls,1), (ls,1), c_g, new_cache_g) 
-        prg.mm5(queue, (ls,1), (ls,1), x_g, ln_f_weight_g, ln_f_bias_g)
+        prg.mm4(queue, (math.ceil((n_tokens*self.n_heads*64) / ls) * ls,1), (ls,1), c_g.data, new_cache_g.data) 
+        prg.mm5(queue, (ls,1), (ls,1), x_g.data, ln_f_weight_g.data, ln_f_bias_g.data)
 
         group_size = math.ceil(b_cols2 / ls) * ls
-        prg.matmul(queue, (group_size,1), (ls,1), x_g, lm_head_weight_g,logits_g)
-        prg.mm6(queue, (1,1), (1,1), logits_g, res_g) 
-        prg.mm7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
-        prg.mm8(queue, (1,1), (1,1), logits_g, res_g)
-        prg.mm9(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
-        prg.mm10(queue, (ls,1), (ls,1), logits_g, res_g)
-        prg.mm9(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g, res_g)
-        prg.mm11(queue, (1,1), (1,1), logits_g)
-        prg.mm12(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g)
-        prg.mm10(queue, (ls,1), (ls,1), logits_g, res_g)
-        cl.enqueue_copy(queue, res, res_g)
-        return res
+        prg.matmul(queue, (group_size,1), (ls,1), x_g.data, lm_head_weight_g.data,logits_g.data)
+        prg.mm6(queue, (1,1), (1,1), logits_g.data, res_g.data) 
+        prg.mm7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data, res_g.data)
+        prg.mm8(queue, (1,1), (1,1), logits_g.data, res_g.data)
+        prg.mm9(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data, res_g.data)
+        prg.mm10(queue, (ls,1), (ls,1), logits_g.data, res_g.data)
+        prg.mm9(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data, res_g.data)
+        prg.mm11(queue, (1,1), (1,1), logits_g.data)
+        prg.mm12(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data)
+        prg.mm10(queue, (ls,1), (ls,1), logits_g.data, res_g.data)
+        return res_g.np()
 
     def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g):
@@ -448,9 +461,9 @@ class Opencl_Kernels:
         seg = int(self.dim / ls) #todo
         seg3 = math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
         if hasattr(self, 'temp_g') == False:
-            self.temp_g = cl.Buffer(ctx, mf.READ_ONLY ,self.n_heads*self.max_context*4)
+            self.temp_g = create_cl_buffer_empty(self.n_heads*self.max_context*4)
         if hasattr(self, 'xq_temp_g') == False:
-            self.xq_temp_g = cl.Buffer(ctx, mf.READ_ONLY, self.dim*4)
+            self.xq_temp_g = create_cl_buffer_empty(self.dim*4)
         prg_str = f"""
         __kernel void mm(
             __global float *a, __global const float *c, __global const float *d, __global const float *e,
@@ -626,34 +639,34 @@ class Opencl_Kernels:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
         prg = self.prg_cache[prg_str]
 
-        prg.mm(queue, (ls,1), (ls,1),a_g,c_g,d_g,e_g,xqkv_g\
-        ,keys_values_g,self.xq_temp_g)
-        prg.mm2(queue, (ls*seg3,1), (ls,1),keys_values_g,self.temp_g, self.xq_temp_g)
-        prg.mm3(queue, (ls,1), (ls,1),a_g\
-        ,keys_values_g,weight_g,bias_g,\
-        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g)
-        return a_g    
+        prg.mm(queue, (ls,1), (ls,1),a_g.data,c_g.data,d_g.data,e_g.data,xqkv_g.data\
+        ,keys_values_g.data,self.xq_temp_g.data)
+        prg.mm2(queue, (ls*seg3,1), (ls,1),keys_values_g.data,self.temp_g.data, self.xq_temp_g.data)
+        prg.mm3(queue, (ls,1), (ls,1),a_g.data\
+        ,keys_values_g.data,weight_g.data,bias_g.data,\
+        weight2_g.data,bias2_g.data,weight3_g.data,bias3_g.data,weight4_g.data,bias4_g.data,self.temp_g.data, self.xq_temp_g.data)
+        return a_g
         
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content):
         if hasattr(self, 'h_g') == False:
-            self.h_g = cl.Buffer(ctx, mf.READ_ONLY, max_content*self.dim*4)
+            self.h_g = create_cl_buffer_empty(max_content*self.dim*4)
         if hasattr(self, 'h2_g') == False:
-            self.h2_g = cl.Buffer(ctx, mf.READ_ONLY, max_content*self.dim*4)
+            self.h2_g = create_cl_buffer_empty(max_content*self.dim*4)
         if hasattr(self, 'xq_g') == False:
-            self.xq_g = cl.Buffer(ctx, mf.READ_ONLY, self.n_heads*64*max_content*4)
+            self.xq_g = create_cl_buffer_empty(self.n_heads*64*max_content*4)
         if hasattr(self, 'xv_g') == False:
-            self.xv_g = cl.Buffer(ctx, mf.READ_ONLY, self.n_heads*64*max_content*4)
+            self.xv_g = create_cl_buffer_empty(self.n_heads*64*max_content*4)
         if hasattr(self, 'c_g') == False:
-            self.c_g = cl.Buffer(ctx, mf.READ_ONLY, self.n_heads*64*max_content*4)
+            self.c_g = create_cl_buffer_empty(self.n_heads*64*max_content*4)
         if hasattr(self, 'xqt_g') == False:
-            self.xqt_g = cl.Buffer(ctx, mf.READ_ONLY, self.n_heads*64*max_content*4)
+            self.xqt_g = create_cl_buffer_empty(self.n_heads*64*max_content*4)
         if hasattr(self, 'res_g') == False:
-            self.res_g = cl.Buffer(ctx, mf.READ_ONLY, max_content*self.n_heads*4)
+            self.res_g = create_cl_buffer_empty(max_content*self.n_heads*4)
         if hasattr(self, 'xqkv_g') == False:
-            self.xqkv_g = cl.Buffer(ctx, mf.READ_ONLY, max_content*self.dim*3*4)
+            self.xqkv_g = create_cl_buffer_empty(max_content*self.dim*3*4)
         if hasattr(self, 'd_g') == False:
-            self.d_g = cl.Buffer(ctx, mf.READ_ONLY, max_content*self.dim*4*4)
+            self.d_g = create_cl_buffer_empty(max_content*self.dim*4*4)
         a_rows = num_tokens
         a_cols = 64
         b_rows = self.dim
@@ -901,43 +914,43 @@ class Opencl_Kernels:
             res[y*{b_rows} + x] += total + c_proj_bias[x];
         }}
         """).build()
-        prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g, ln_1_weight_g, ln_1_bias_g,self.h_g) 
+        prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g.data, ln_1_weight_g.data, ln_1_bias_g.data,self.h_g.data) 
         g = math.ceil((b_cols*num_tokens / ls)*ls)
-        prg.mm2(queue, (g,1), (ls,1), x_g, attn_weight_g,attn_bias_g,self.xqkv_g)
+        prg.mm2(queue, (g,1), (ls,1), x_g.data, attn_weight_g.data,attn_bias_g.data,self.xqkv_g.data)
         g = math.ceil((num_tokens*self.n_heads*64) / ls) * ls
-        prg.mm3(queue, (g,1), (ls,1), self.xqkv_g, cache_kv_g)
+        prg.mm3(queue, (g,1), (ls,1), self.xqkv_g.data, cache_kv_g.data)
 
         ls = 256
-        prg.tr(queue, (g,1), (ls,1), self.xqkv_g, self.xq_g, self.xv_g)
+        prg.tr(queue, (g,1), (ls,1), self.xqkv_g.data, self.xq_g.data, self.xv_g.data)
 
         g = math.ceil(self.n_heads*num_tokens*num_tokens / ls) * ls
-        prg.ms0(queue, (g,1), (ls,1), self.xq_g, self.xqkv_g)
-        prg.ms(queue, (g,1), (ls,1), self.xq_g)
+        prg.ms0(queue, (g,1), (ls,1), self.xq_g.data, self.xqkv_g.data)
+        prg.ms(queue, (g,1), (ls,1), self.xq_g.data)
         if self.n_heads*num_tokens > ls:
             g2 =  math.ceil(self.n_heads*num_tokens / ls) * ls
         else:
             g2 = self.n_heads*num_tokens
-        prg.ms3(queue, (g2,1), (min(self.n_heads*num_tokens,ls),1), self.xq_g,self.res_g)
-        prg.ms4(queue, (g,1), (ls,1), self.xq_g,self.res_g)
+        prg.ms3(queue, (g2,1), (min(self.n_heads*num_tokens,ls),1), self.xq_g.data,self.res_g.data)
+        prg.ms4(queue, (g,1), (ls,1), self.xq_g.data,self.res_g.data)
 
         
         g3 = (math.ceil(self.n_heads*a_cols*num_tokens / ls) * ls)
-        prg.ms5(queue, (g3,1), (ls,1), self.xq_g,self.xv_g,self.c_g)
+        prg.ms5(queue, (g3,1), (ls,1), self.xq_g.data,self.xv_g.data,self.c_g.data)
         g4 = num_tokens*self.n_heads*64
         g4 = math.ceil(g4 / ls)*ls
         
-        prg.ms6(queue, (g4,1), (ls,1), self.c_g,self.xqt_g)
+        prg.ms6(queue, (g4,1), (ls,1), self.c_g.data,self.xqt_g.data)
 
         g = math.ceil((b_rows*num_tokens / ls)*ls)
-        prg.ms7(queue, (g,1), (ls,1), self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g)
-        prg.ms8(queue, (ls*num_tokens,1), (ls,1), self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g)
+        prg.ms7(queue, (g,1), (ls,1), self.xqt_g.data,attn_c_proj_weight_g.data,attn_c_proj_bias_g.data,self.h_g.data)
+        prg.ms8(queue, (ls*num_tokens,1), (ls,1), self.h_g.data, ln_2_weight_g.data, ln_2_bias_g.data,self.h2_g.data)
 
         g = math.ceil((b_cols_2*num_tokens / ls)*ls)
-        prg.ms9(queue, (g,1), (ls,1), self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g)
+        prg.ms9(queue, (g,1), (ls,1), self.h_g.data, c_fc_weight_g.data,c_fc_bias_g.data,self.d_g.data)
 
 
         g = math.ceil((b_rows*num_tokens / ls)*ls)
-        prg.ms10(queue, (g,1), (ls,1), self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g)
+        prg.ms10(queue, (g,1), (ls,1), self.d_g.data, c_proj_weight_g.data,c_proj_bias_g.data,self.h2_g.data)
         return self.h2_g      
 
     def time_it(func,a,b,i=100):

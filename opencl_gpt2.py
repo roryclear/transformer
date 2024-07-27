@@ -71,78 +71,78 @@ class Transformer:
   def to_buffer(self):
       print("copying ln_1_weight")
       for i in range(len(self.ln_1_weight)):
-        self.ln_1_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_1_weight[i])
+        self.ln_1_weight[i] = opencl_kernels.create_cl_buffer(self.ln_1_weight[i])
 
       print("copying ln_1_bias")
       for i in range(len(self.ln_1_weight)):
-        self.ln_1_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_1_bias[i])
+        self.ln_1_bias[i] = opencl_kernels.create_cl_buffer(self.ln_1_bias[i])
 
       print("copying attn_c_attn_weight")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_attn_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_attn_weight[i].transpose(1,0).flatten())
+        self.attn_c_attn_weight[i] = opencl_kernels.create_cl_buffer(self.attn_c_attn_weight[i].transpose(1,0).flatten())
 
       print("copying attn_c_attn_bias")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_attn_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_attn_bias[i])
+        self.attn_c_attn_bias[i] = opencl_kernels.create_cl_buffer(self.attn_c_attn_bias[i])
     
       print("copying attn_c_proj_weight")
       self.attn_c_proj_weight2 = []
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_weight2.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(self.attn_c_proj_weight[i])))
-        self.attn_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_proj_weight[i].flatten())
+        self.attn_c_proj_weight2.append(opencl_kernels.create_cl_buffer(np.asfortranarray(self.attn_c_proj_weight[i])))
+        self.attn_c_proj_weight[i] = opencl_kernels.create_cl_buffer(self.attn_c_proj_weight[i].flatten())
 
       print("copying attn_c_proj_bias")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.attn_c_proj_bias[i])
+        self.attn_c_proj_bias[i] = opencl_kernels.create_cl_buffer(self.attn_c_proj_bias[i])
 
       print("copying ln_2_weight")
       for i in range(len(self.ln_1_weight)):
-        self.ln_2_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_2_weight[i])
+        self.ln_2_weight[i] = opencl_kernels.create_cl_buffer(self.ln_2_weight[i])
 
       print("copying ln_2_bias")
       for i in range(len(self.ln_1_weight)):
-        self.ln_2_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_2_bias[i])
+        self.ln_2_bias[i] = opencl_kernels.create_cl_buffer(self.ln_2_bias[i])
 
       print("copying mlp_c_fc_bias")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_fc_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_fc_bias[i])
+        self.mlp_c_fc_bias[i] = opencl_kernels.create_cl_buffer(self.mlp_c_fc_bias[i])
 
       print("copying mlp_c_proj_weight_unf")
       self.mlp_c_proj_weight_unf = []
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_proj_weight_unf.append(cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.asfortranarray(self.mlp_c_proj_weight[i])))
-        self.mlp_c_proj_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_weight[i].flatten())
+        self.mlp_c_proj_weight_unf.append(opencl_kernels.create_cl_buffer(np.asfortranarray(self.mlp_c_proj_weight[i])))
+        self.mlp_c_proj_weight[i] = opencl_kernels.create_cl_buffer(self.mlp_c_proj_weight[i].flatten())
 
       print("copying mlp_c_proj_bias")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_proj_bias[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_proj_bias[i])
+        self.mlp_c_proj_bias[i] = opencl_kernels.create_cl_buffer(self.mlp_c_proj_bias[i])
 
       print("copying ln_f_weight")
-      self.ln_f_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f_weight)
+      self.ln_f_weight = opencl_kernels.create_cl_buffer(self.ln_f_weight)
     
       print("copying ln_f_bias")
-      self.ln_f_bias = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ln_f_bias)
+      self.ln_f_bias = opencl_kernels.create_cl_buffer(self.ln_f_bias)
 
       print("copying mlp_c_fc_weight")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_fc_weight[i] = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.mlp_c_fc_weight[i].transpose(1,0).flatten())
+        self.mlp_c_fc_weight[i] = opencl_kernels.create_cl_buffer(self.mlp_c_fc_weight[i].transpose(1,0).flatten())
 
       print("copying lm_head_weight_unf")
-      self.lm_head_weight_unf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head_weight)
+      self.lm_head_weight_unf = opencl_kernels.create_cl_buffer(self.lm_head_weight)
 
       print("copying lm_head_weight")
-      self.lm_head_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lm_head_weight.flatten())
+      self.lm_head_weight = opencl_kernels.create_cl_buffer(self.lm_head_weight.flatten())
 
       print("copying self_wte_weight")
-      self.wte_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wte_weight)
+      self.wte_weight = opencl_kernels.create_cl_buffer(self.wte_weight)
 
       print("copying self_wpe_weight")
-      self.wpe_weight = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.wpe_weight)
+      self.wpe_weight = opencl_kernels.create_cl_buffer(self.wpe_weight)
 
       print("creating attn_cache_kv")
       self.attn_cache_kv = []
       for i in range(len(self.ln_1_weight)):
-        self.attn_cache_kv.append(cl.Buffer(ctx, mf.READ_ONLY, 2*MAX_CONTEXT*n_heads*64*4))
+        self.attn_cache_kv.append(opencl_kernels.create_cl_buffer_empty(2*MAX_CONTEXT*n_heads*64*4))
 
   def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if start_pos > 0:
