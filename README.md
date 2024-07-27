@@ -25,4 +25,4 @@
 | huggingface/transformers                      |34 t/s         |15 t/s         |7.7 t/s    |  
 |**roryclear/transformer**                      |**6.3 t/s**    |**2.0 t/s**    |**1.0 t/s**|
 
-*producing 100 tokens from 13 token prompt
+*generating 100 tokens from a 13 token prompt
