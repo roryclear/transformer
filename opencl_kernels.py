@@ -80,7 +80,7 @@ class Opencl_Kernels:
         __kernel void mm4(
             __global float *h, __global const float *weight, __global const float *bias)
         {{
-            __attribute__ ((aligned (16))) __local float temp[{seg}];
+            __attribute__ ((aligned (16))) __local float temp[{ls}];
             __attribute__ ((aligned (16))) __local float mean;
             int lidx0 = get_global_id(0);
             float total = 0;
@@ -138,7 +138,6 @@ class Opencl_Kernels:
         __kernel void mm6(
         __global float *a, __global const float *res)
         {{
-            barrier(CLK_LOCAL_MEM_FENCE);
             int gidx0 = get_global_id(0);
             a[gidx0] = exp(a[gidx0] - res[0]);
         }}
@@ -162,8 +161,8 @@ class Opencl_Kernels:
             __attribute__ ((aligned (16))) __local float temp[{ls}];
             int lidx0 = get_global_id(0);
             float t = 0;
-            for(int i = 0; i < {seg2}; i++) {{
-                t += a[lidx0*{seg2} + i];
+            for(int i = 0; i < {math.ceil(50257 / ls)}; i++) {{
+                t += a[lidx0*{math.ceil(50257 / ls)} + i];
             }}
             temp[lidx0] = t;
             barrier(CLK_LOCAL_MEM_FENCE);
@@ -184,6 +183,13 @@ class Opencl_Kernels:
             }}
         }}
 
+        """
+        if prg_str not in self.prg_cache:
+            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
+        prg = self.prg_cache[prg_str]
+
+        #different every time
+        prg_str = f""" 
         __kernel void mm11(
         __global float *a)
         {{
@@ -195,9 +201,8 @@ class Opencl_Kernels:
             }}
         }}
         """
-        if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
-        prg = self.prg_cache[prg_str]
+        prg2 = cl.Program(ctx,prg_str).build()
+
         prg.mm4(queue, (ls,1), (ls,1), h_g.data, weight_g.data, bias_g.data)
         gidx = math.ceil(cols / 16) * 16
         prg.matvec(queue, (gidx,1), (16,1), h_g.data, weight2_g.data,self.logits_g.data)
@@ -209,7 +214,7 @@ class Opencl_Kernels:
         prg.mm9(queue, (ls,1), (ls,1), self.logits_g.data, self.res_g.data)
         prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data, self.res_g.data)
         prg.mm10(queue, (1,1), (1,1), self.logits_g.data)
-        prg.mm11(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data)
+        prg2.mm11(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data)
         prg.mm9(queue, (ls,1), (ls,1), self.logits_g.data, self.res_g.data)
         cl.enqueue_copy(queue, self.res, self.res_g.data)
         return self.res
@@ -279,6 +284,7 @@ class Opencl_Kernels:
         __kernel void mm2(
             __global const float *x, __global const float *attn_weight, __global const float *attn_bias,__global float *res)
         {{
+        if(get_global_id(0) < {b_cols*n_tokens}) {{ //TODO
             int gidx0 = get_global_id(0);
             int i = gidx0 / {n_tokens};
             int y = gidx0 % {n_tokens};
@@ -287,6 +293,7 @@ class Opencl_Kernels:
                 total += x[y*{b_rows} + k] * attn_weight[i*{b_rows} + k]; 
             }}
             res[y*{b_cols} + i] = total + attn_bias[i];
+        }}
         }}
         __kernel void mm3(
             __global const float *xqkv, __global float *new_cache)
@@ -309,7 +316,7 @@ class Opencl_Kernels:
         __kernel void mm5(
             __global float *x, __global const float *ln_f_weight, __global const float *ln_f_bias)
         {{
-            __attribute__ ((aligned (16))) __local float temp[{seg}];
+            __attribute__ ((aligned (16))) __local float temp[{ls}];
             __attribute__ ((aligned (16))) __local float mean;
             int lidx0 = get_global_id(0);
             float total = 0;
@@ -369,16 +376,10 @@ class Opencl_Kernels:
         __kernel void mm7(
         __global float *a, __global const float *res)
         {{
-            barrier(CLK_LOCAL_MEM_FENCE);
             int gidx0 = get_global_id(0);
             a[gidx0] = exp(a[gidx0] - res[0]);
         }}
 
-        __kernel void mm8(
-            __global const float *a, __global float *res)
-        {{
-            res[0] = a[0];
-        }}
 
         __kernel void mm9(
         __global float *a, __global const float *res)
@@ -439,7 +440,7 @@ class Opencl_Kernels:
         prg.matmul(queue, (group_size,1), (ls,1), x_g.data, lm_head_weight_g.data,logits_g.data)
         prg.mm6(queue, (1,1), (1,1), logits_g.data, res_g.data) 
         prg.mm7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data, res_g.data)
-        prg.mm8(queue, (1,1), (1,1), logits_g.data, res_g.data)
+        prg.mm6(queue, (1,1), (1,1), logits_g.data, res_g.data)
         prg.mm9(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data, res_g.data)
         prg.mm10(queue, (ls,1), (ls,1), logits_g.data, res_g.data)
         prg.mm9(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data, res_g.data)
@@ -460,12 +461,9 @@ class Opencl_Kernels:
             self.xq_temp_g = create_cl_buffer_empty(self.dim*4)
         prg_str = f"""
         __kernel void mm(
-            __global float *a, __global const float *c, __global const float *d, __global const float *e,
-            __global const float *xqkv, __global float *keys_values,
-            __global float *xq_temp)
+            __global float *a, __global float *mean)
         {{
             __attribute__ ((aligned (16))) __local float temp[{ls}];
-            __attribute__ ((aligned (16))) __local float mean;
             int lidx0 = get_global_id(0);
             float total = 0;
             for(int i = 0; i < {seg}; i++) {{
@@ -478,12 +476,12 @@ class Opencl_Kernels:
                 for(int i = 0; i < {ls}; i++) {{
                     total += temp[i];
                 }}
-                mean = total / {self.dim};  
+                mean[0] = total / {self.dim};  
             }}
             barrier(CLK_LOCAL_MEM_FENCE);
             total = 0;
             for(int i = 0; i < {seg}; i++) {{
-                a[i + lidx0*{seg}] -= mean;
+                a[i + lidx0*{seg}] -= mean[0];
                 total += pow(a[lidx0*{seg} + i],2);
             }}
             temp[lidx0] = total;
@@ -493,24 +491,35 @@ class Opencl_Kernels:
                 for(int i = 0; i < {ls}; i++) {{
                     total += temp[i];
                 }}
-                mean = pow(total / {self.dim} + 1e-5,0.5);
+                mean[0] = pow(total / {self.dim} + 1e-5,0.5);
             }}
-            barrier(CLK_LOCAL_MEM_FENCE);
-            for(int i = 0; i < {int(self.dim*3 / ls)}; i++) {{
-                xq_temp[lidx0*{int(self.dim*3 / ls)} + i] = xqkv[lidx0*{int(self.dim*3 / ls)} + i];
-                float total = 0;
-                for(int k = 0; k < {self.dim}; k++) {{
-                    total += ((a[k] * c[k]) / mean + d[k]) * e[(lidx0*{int(self.dim*3 / ls)} + i)*{self.dim} + k];
+            }}        
+        """
+        if prg_str not in self.prg_cache:
+            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
+        prg = self.prg_cache[prg_str]
+
+        prg_str = f"""
+        __kernel void mm4(
+            __global float *a, __global const float *c, __global const float *d, __global const float *e,
+            __global const float *xqkv, __global float *keys_values,
+            __global float *xq_temp, __global const float *mean)
+        {{
+            int lidx0 = get_global_id(0) % {ls};
+            int i = get_global_id(0) / {ls};
+            xq_temp[lidx0*{int(self.dim*3 / ls)} + i] = xqkv[lidx0*{int(self.dim*3 / ls)} + i];
+            float total = 0;
+            for(int k = 0; k < {self.dim}; k++) {{
+                total += ((a[k] * c[k]) / mean[0] + d[k]) * e[(lidx0*{int(self.dim*3 / ls)} + i)*{self.dim} + k];
+            }}
+            if((lidx0*{int(self.dim*3 / ls)} + i) < {g}) {{
+                xq_temp[lidx0*{int(self.dim*3 / ls)} + i] += total;
                 }}
-                if((lidx0*{int(self.dim*3 / ls)} + i) < {g}) {{
-                    xq_temp[lidx0*{int(self.dim*3 / ls)} + i] += total;
-                    }}
-                if((lidx0*{int(self.dim*3 / ls)} + i) >= {g} && (lidx0*{int(self.dim*3 / ls)} + i) < {2*g}) {{
-                    keys_values[{start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {g}] = xqkv[{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {g}] + total;
-                }}
-                if((lidx0*{int(self.dim*3 / ls)} + i) >= {2*g}) {{
-                    keys_values[{self.dim*self.max_context} + {start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] = xqkv[{self.dim*2} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] + total;
-                }}
+            if((lidx0*{int(self.dim*3 / ls)} + i) >= {g} && (lidx0*{int(self.dim*3 / ls)} + i) < {2*g}) {{
+                keys_values[{start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {g}] = xqkv[{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {g}] + total;
+            }}
+            if((lidx0*{int(self.dim*3 / ls)} + i) >= {2*g}) {{
+                keys_values[{self.dim*self.max_context} + {start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] = xqkv[{self.dim*2} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] + total;
             }}
         }}
 
@@ -527,7 +536,7 @@ class Opencl_Kernels:
                 }}                  
                 temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(64)
         }}
-            __kernel void mm3(
+        __kernel void mm3(
             __global float *a,
             __global float *keys_values,
             __global const float *weight,__global const float *bias,
@@ -627,16 +636,20 @@ class Opencl_Kernels:
                 a[lidx0 + i*{ls}] = bias4_temp[lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
             }}
         }}
-        
         """
+
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
-        prg = self.prg_cache[prg_str]
+        prg2 = self.prg_cache[prg_str]
 
-        prg.mm(queue, (ls,1), (ls,1),a_g.data,c_g.data,d_g.data,e_g.data,xqkv_g.data\
-        ,keys_values_g.data,self.xq_temp_g.data)
-        prg.mm2(queue, (ls*seg3,1), (ls,1),keys_values_g.data,self.temp_g.data, self.xq_temp_g.data)
-        prg.mm3(queue, (ls,1), (ls,1),a_g.data\
+        if hasattr(self, 'mean') == False:
+            self.mean = create_cl_buffer_empty(1*4)
+
+        prg.mm(queue, (ls,1), (ls,1),a_g.data,self.mean.data)
+        prg2.mm4(queue, (self.dim*3,1), (ls,1),a_g.data,c_g.data,d_g.data,e_g.data,xqkv_g.data\
+        ,keys_values_g.data,self.xq_temp_g.data,self.mean.data)
+        prg2.mm2(queue, (ls*seg3,1), (ls,1),keys_values_g.data,self.temp_g.data, self.xq_temp_g.data)
+        prg2.mm3(queue, (ls,1), (ls,1),a_g.data\
         ,keys_values_g.data,weight_g.data,bias_g.data,\
         weight2_g.data,bias2_g.data,weight3_g.data,bias3_g.data,weight4_g.data,bias4_g.data,self.temp_g.data, self.xq_temp_g.data)
         return a_g
