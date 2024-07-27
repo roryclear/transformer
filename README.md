@@ -1,5 +1,5 @@
 # Transformer
-## Fast OpenCL GPT-2 inference
+## Fast OpenCL and Metal GPT-2 inference
 - [ ] Fastest Inference
 
 - [X] Support for all GPT-2 Models
@@ -8,6 +8,5 @@
 
 - [ ] Support for any transformer
 
-- [ ] Support other compute languages
 
 - [ ] Refactor to library
