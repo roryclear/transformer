@@ -38,7 +38,7 @@ class Opencl_Kernels:
         }}
         """
         if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
+            self.prg_cache[prg_str] = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
         prg = self.prg_cache[prg_str]
         prg.add(queue, (self.dim,1), (256,1), a_g.data, b_g.data,self.add_res_g.data) #todo check shape
         return self.add_res_g
@@ -59,7 +59,7 @@ class Opencl_Kernels:
         }}
         """
         if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
+            self.prg_cache[prg_str] = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
         prg = self.prg_cache[prg_str]
         prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g.data, weight_g.data, weight_2_g.data,tok_emb_g.data)
         return tok_emb_g
@@ -185,7 +185,7 @@ class Opencl_Kernels:
 
         """
         if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
+            self.prg_cache[prg_str] = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
         prg = self.prg_cache[prg_str]
 
         #different every time
@@ -201,7 +201,7 @@ class Opencl_Kernels:
             }}
         }}
         """
-        prg2 = cl.Program(ctx,prg_str).build()
+        prg2 = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
 
         prg.mm4(queue, (ls,1), (ls,1), h_g.data, weight_g.data, bias_g.data)
         gidx = math.ceil(cols / 16) * 16
@@ -428,7 +428,7 @@ class Opencl_Kernels:
         }}
         """
         if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx, prg_str).build()
+            self.prg_cache[prg_str] = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
         prg = self.prg_cache[prg_str]
         prg.mm(queue, (ls*n_tokens,1), (ls,1),x_g.data, x0_g.data, weight_g.data, bias_g.data)
         prg.mm2(queue, (math.ceil((b_cols*n_tokens / ls)*ls),1), (ls,1), x0_g.data, attn_weight_g.data,attn_bias_g.data,c_g.data)
@@ -496,7 +496,7 @@ class Opencl_Kernels:
             }}        
         """
         if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
+            self.prg_cache[prg_str] = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
         prg = self.prg_cache[prg_str]
 
         prg_str = f"""
@@ -639,7 +639,7 @@ class Opencl_Kernels:
         """
 
         if prg_str not in self.prg_cache:
-            self.prg_cache[prg_str] = cl.Program(ctx,prg_str).build()
+            self.prg_cache[prg_str] = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
         prg2 = self.prg_cache[prg_str]
 
         if hasattr(self, 'mean') == False:
@@ -682,7 +682,7 @@ class Opencl_Kernels:
         seg = int(size / ls) #todo
         b_cols = self.dim*3 # for first part
         b_cols_2 = self.dim*4
-        prg = cl.Program(ctx, f"""
+        prg_str = f"""
         __kernel void mm(
             __global float *x, __global const float *weight, __global const float *bias,
             __global float *copy)
@@ -920,7 +920,8 @@ class Opencl_Kernels:
             }}
             res[y*{b_rows} + x] += total + c_proj_bias[x];
         }}
-        """).build()
+        """
+        prg = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
         prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g.data, ln_1_weight_g.data, ln_1_bias_g.data,self.h_g.data) 
         g = math.ceil((b_cols*num_tokens / ls)*ls)
         prg.mm2(queue, (g,1), (ls,1), x_g.data, attn_weight_g.data,attn_bias_g.data,self.xqkv_g.data)
