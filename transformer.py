@@ -12,6 +12,7 @@ class buffer:
         self.data = data
         self.size = size
         self.d = d
+        self.np_data = None #cache?
         #TODO cache np if faster?
 
     def np(self,params=None):
@@ -20,9 +21,10 @@ class buffer:
             return np.frombuffer(output, dtype=np.float32)
         if self.d == "OpenCL":
             queue = params["queue"]
-            ret = np.zeros(math.ceil(self.size/4)).astype(np.float32)
-            cl.enqueue_copy(queue, ret, self.data)
-            return ret
+            if self.np_data is None:
+              self.np_data = np.zeros(math.ceil(self.size/4)).astype(np.float32)
+            cl.enqueue_copy(queue, self.np_data, self.data)
+            return self.np_data
 
 def compile(prg_str,d,params):
   if d == "Metal":
@@ -32,6 +34,34 @@ def compile(prg_str,d,params):
     return cl.Program(params["ctx"],prg_str).build()
   
 def run(prg,func,params,args,gs,ls,d):
+  if d == "Metal":
+    mtl_queue = params["queue"]
+    device = params["device"]
+    fxn = prg.newFunctionWithName_(func)
+    command_buffer = mtl_queue.commandBuffer()
+    encoder = command_buffer.computeCommandEncoder()
+    pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+    encoder.setComputePipelineState_(pipeline_state)
+    i = 0
+    for arg in args:
+        encoder.setBuffer_offset_atIndex_(arg.data, 0, i)
+        i+=1
+    threadsPerGrid = Metal.MTLSizeMake(gs,1,1)
+    threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
+    encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
+    encoder.endEncoding()
+    command_buffer.commit()
+    command_buffer.waitUntilCompleted()
+  if d == "OpenCL":
+     gs*=ls
+     queue = params["queue"]
+     kernel = getattr(prg,func)
+     data = []
+     for a in args: data.append(a.data) #todo, better way?
+     kernel(queue, (gs,1), (ls,1),*data)
+  return
+
+def run_old(prg,func,params,args,gs,ls,d):
   if d == "Metal":
     mtl_queue = params["queue"]
     device = params["device"]
