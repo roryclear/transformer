@@ -10,7 +10,7 @@ import pyopencl as cl
 
 test = False
 ls = 256
-d = "OpenCL"
+d = "Metal"
 
 kernel_prefix = {"OpenCL":"",
                 "Metal":"#include <metal_stdlib>\n#include <metal_simdgroup_matrix>\nusing namespace metal;\n"}
@@ -236,10 +236,7 @@ class Metal_Kernels:
         transformer.run(prg,"mm10",self.params,[self.logits_g],1,1,d)
         transformer.run(prg2,"mm11",self.params,[self.logits_g],gs,ls,d)
         transformer.run(prg,"mm9",self.params,[self.logits_g,self.res_g],1,ls,d)
-
-        res = np.asarray(self.res_g.data.contents().as_buffer(self.res_g.size))
-        res = np.frombuffer(res, dtype=np.float32)
-        return res
+        return self.res_g.np(self.params)
 
     def kernel_3(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,lm_head_weight_g,temperature,random_num):
@@ -477,10 +474,7 @@ class Metal_Kernels:
         transformer.run(prg,"mm11",self.params,[logits_g],1,1,d)
         transformer.run(prg,"mm12",self.params,[logits_g],gs,ls,d)
         transformer.run(prg,"mm10",self.params,[logits_g,res_g],1,ls,d)
-        
-        res = np.asarray(res_g.data.contents().as_buffer(res_g.size))
-        res = np.frombuffer(res, dtype=np.float32)
-        return res
+        return res_g.np(self.params)
 
     def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,j=0):

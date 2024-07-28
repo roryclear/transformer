@@ -12,7 +12,7 @@ class buffer:
         self.data = data
         self.size = size
         self.d = d
-        self.np = None #cache?
+        self.np_data = None #cache?
         #TODO cache np if faster?
 
     def np(self,params=None):
@@ -21,9 +21,10 @@ class buffer:
             return np.frombuffer(output, dtype=np.float32)
         if self.d == "OpenCL":
             queue = params["queue"]
-            ret = np.zeros(math.ceil(self.size/4)).astype(np.float32)
-            cl.enqueue_copy(queue, ret, self.data)
-            return ret
+            if self.np_data is None:
+              self.np_data = np.zeros(math.ceil(self.size/4)).astype(np.float32)
+            cl.enqueue_copy(queue, self.np_data, self.data)
+            return self.np_data
 
 def compile(prg_str,d,params):
   if d == "Metal":
