@@ -12,6 +12,7 @@ class buffer:
         self.data = data
         self.size = size
         self.d = d
+        self.np = None #cache?
         #TODO cache np if faster?
 
     def np(self,params=None):
@@ -54,7 +55,9 @@ def run(prg,func,params,args,gs,ls,d):
      gs*=ls
      queue = params["queue"]
      kernel = getattr(prg,func)
-     kernel(queue, (gs,1), (ls,1),*args)
+     data = []
+     for a in args: data.append(a.data) #todo, better way?
+     kernel(queue, (gs,1), (ls,1),*data)
   return
 
 def run_old(prg,func,params,args,gs,ls,d):

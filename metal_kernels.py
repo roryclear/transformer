@@ -85,7 +85,7 @@ class Metal_Kernels:
         }}
         """
         library = transformer.compile(prg_str,d,self.params)
-        gs =  math.ceil(size / ls)
+        gs = math.ceil(size / ls)
         transformer.run(library,"mm",self.params,[tokens_g,weight_g,weight_2_g,tok_emb_g],gs,ls,d)
         return tok_emb_g
 

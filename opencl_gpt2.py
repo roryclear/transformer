@@ -8,6 +8,7 @@ import math
 import os
 import pickle
 import opencl_kernels
+import metal_kernels
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 import pyopencl as cl
@@ -148,7 +149,7 @@ class Transformer:
 
   def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if start_pos > 0:
-      h = openclk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
+      h = metalk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
       attn_dim = dim
       for i in range(0,len(self.ln_1_weight)):
         h = openclk.kernel_0(h,self.ln_1_weight[i],\
@@ -163,7 +164,7 @@ class Transformer:
       ret = openclk.kernel_1(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0]  
       return ret
     else:
-      x = openclk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
+      x = metalk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
       for i in range(len(self.ln_1_weight)-1):
         x = openclk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT)
@@ -337,9 +338,9 @@ if __name__ == "__main__":
 
   MAX_CONTEXT = len(encode(default_prompt))+100
   openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
+  metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
   dim = 768
   n_heads = 12
-  
   if os.path.exists("gpt2.pickle") == False:
     get_model("gpt2")
   filehandler = open("gpt2.pickle", 'rb')  
@@ -356,6 +357,7 @@ if __name__ == "__main__":
 
   MAX_CONTEXT = len(encode(default_prompt))+100
   openclk = opencl_kernels.Opencl_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)
+  metalk = metal_kernels.Metal_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)
   dim = 1024
   n_heads = 16
 
@@ -372,6 +374,7 @@ if __name__ == "__main__":
   dim = 1280
   n_heads = 20
   openclk = opencl_kernels.Opencl_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
+  metalk = metal_kernels.Metal_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
   if os.path.exists("gpt2-large.pickle") == False:
     get_model("gpt2-large")
   filehandler = open("gpt2-large.pickle", 'rb')  
