@@ -40,7 +40,7 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
         prg = self.prg_cache[prg_str]
-        prg.add(queue, (self.dim,1), (256,1), a_g.data, b_g.data,self.add_res_g.data) #todo check shape
+        transformer.run(prg,"add",{"queue":queue},[a_g.data, b_g.data,self.add_res_g.data],self.dim,256,"OpenCL")
         return self.add_res_g
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
@@ -61,7 +61,7 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
         prg = self.prg_cache[prg_str]
-        prg.mm(queue, (math.ceil(size / ls)*ls,1), (ls,1), tokens_g.data, weight_g.data, weight_2_g.data,tok_emb_g.data)
+        transformer.run(prg,"mm",{"queue":queue},[tokens_g.data, weight_g.data, weight_2_g.data,tok_emb_g.data],math.ceil(size / ls)*ls,ls,"OpenCL")
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
@@ -202,20 +202,19 @@ class Opencl_Kernels:
         }}
         """
         prg2 = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
-
-        prg.mm4(queue, (ls,1), (ls,1), h_g.data, weight_g.data, bias_g.data)
+        
+        transformer.run(prg,"mm4",{"queue":queue},[h_g.data, weight_g.data, bias_g.data],ls,ls,"OpenCL")
         gidx = math.ceil(cols / 16) * 16
-        prg.matvec(queue, (gidx,1), (16,1), h_g.data, weight2_g.data,self.logits_g.data)
-
-        prg.mm5(queue, (1,1), (1,1), self.logits_g.data, self.res_g.data) 
-        prg.mm6(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data, self.res_g.data)
-        prg.mm7(queue, (1,1), (1,1), self.logits_g.data, self.res_g.data)
-        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data, self.res_g.data)
-        prg.mm9(queue, (ls,1), (ls,1), self.logits_g.data, self.res_g.data)
-        prg.mm8(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data, self.res_g.data)
-        prg.mm10(queue, (1,1), (1,1), self.logits_g.data)
-        prg2.mm11(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), self.logits_g.data)
-        prg.mm9(queue, (ls,1), (ls,1), self.logits_g.data, self.res_g.data)
+        transformer.run(prg,"matvec",{"queue":queue},[h_g.data, weight2_g.data,self.logits_g.data],gidx,16,"OpenCL")
+        transformer.run(prg,"mm5",{"queue":queue},[self.logits_g.data, self.res_g.data],1,1,"OpenCL")
+        transformer.run(prg,"mm6",{"queue":queue},[self.logits_g.data, self.res_g.data],math.ceil(50257 / ls)*ls,ls,"OpenCL")
+        transformer.run(prg,"mm7",{"queue":queue},[self.logits_g.data, self.res_g.data],1,1,"OpenCL")
+        transformer.run(prg,"mm8",{"queue":queue},[self.logits_g.data, self.res_g.data],math.ceil(50257 / ls)*ls,ls,"OpenCL")
+        transformer.run(prg,"mm9",{"queue":queue},[self.logits_g.data, self.res_g.data],ls,ls,"OpenCL")
+        transformer.run(prg,"mm8",{"queue":queue},[self.logits_g.data, self.res_g.data],math.ceil(50257 / ls)*ls,ls,"OpenCL")
+        transformer.run(prg,"mm10",{"queue":queue},[self.logits_g.data],1,1,"OpenCL")
+        transformer.run(prg2,"mm11",{"queue":queue},[self.logits_g.data],math.ceil(50257 / ls)*ls,ls,"OpenCL")
+        transformer.run(prg,"mm9",{"queue":queue},[self.logits_g.data,self.res_g.data],ls,ls,"OpenCL")
         cl.enqueue_copy(queue, self.res, self.res_g.data)
         return self.res
 
@@ -430,23 +429,21 @@ class Opencl_Kernels:
         if prg_str not in self.prg_cache:
             self.prg_cache[prg_str] = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
         prg = self.prg_cache[prg_str]
-        prg.mm(queue, (ls*n_tokens,1), (ls,1),x_g.data, x0_g.data, weight_g.data, bias_g.data)
-        prg.mm2(queue, (math.ceil((b_cols*n_tokens / ls)*ls),1), (ls,1), x0_g.data, attn_weight_g.data,attn_bias_g.data,c_g.data)
-        ls = 256
-        prg.mm4(queue, (math.ceil((n_tokens*self.n_heads*64) / ls) * ls,1), (ls,1), c_g.data, new_cache_g.data) 
-        prg.mm5(queue, (ls,1), (ls,1), x_g.data, ln_f_weight_g.data, ln_f_bias_g.data)
-
-        group_size = math.ceil(b_cols2 / ls) * ls
-        prg.matmul(queue, (group_size,1), (ls,1), x_g.data, lm_head_weight_g.data,logits_g.data)
-        prg.mm6(queue, (1,1), (1,1), logits_g.data, res_g.data) 
-        prg.mm7(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data, res_g.data)
-        prg.mm6(queue, (1,1), (1,1), logits_g.data, res_g.data)
-        prg.mm9(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data, res_g.data)
-        prg.mm10(queue, (ls,1), (ls,1), logits_g.data, res_g.data)
-        prg.mm9(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data, res_g.data)
-        prg.mm11(queue, (1,1), (1,1), logits_g.data)
-        prg.mm12(queue, (math.ceil(50257 / ls)*ls,1), (ls,1), logits_g.data)
-        prg.mm10(queue, (ls,1), (ls,1), logits_g.data, res_g.data)
+        transformer.run(prg,"mm",{"queue":queue},[x_g.data, x0_g.data, weight_g.data, bias_g.data],ls*n_tokens,ls,"OpenCL")
+        transformer.run(prg,"mm2",{"queue":queue},[x0_g.data, attn_weight_g.data,attn_bias_g.data,c_g.data],math.ceil(b_cols*n_tokens / ls)*ls,ls,"OpenCL")
+        transformer.run(prg,"mm4",{"queue":queue},[c_g.data, new_cache_g.data],math.ceil((n_tokens*self.n_heads*64) / ls)*ls,ls,"OpenCL")
+        transformer.run(prg,"mm5",{"queue":queue},[x_g.data, ln_f_weight_g.data, ln_f_bias_g.data],ls,ls,"OpenCL")
+        gs = math.ceil(b_cols2 / ls) * ls
+        transformer.run(prg,"matmul",{"queue":queue},[x_g.data, lm_head_weight_g.data,logits_g.data],gs,ls,"OpenCL")
+        transformer.run(prg,"mm6",{"queue":queue},[logits_g.data, res_g.data],1,1,"OpenCL")
+        transformer.run(prg,"mm7",{"queue":queue},[logits_g.data, res_g.data],math.ceil(50257 / ls)*ls,ls,"OpenCL")
+        transformer.run(prg,"mm6",{"queue":queue},[logits_g.data, res_g.data],1,1,"OpenCL")
+        transformer.run(prg,"mm9",{"queue":queue},[logits_g.data, res_g.data],math.ceil(50257 / ls)*ls,ls,"OpenCL")
+        transformer.run(prg,"mm10",{"queue":queue},[logits_g.data, res_g.data],ls,ls,"OpenCL")
+        transformer.run(prg,"mm9",{"queue":queue},[logits_g.data, res_g.data],math.ceil(50257 / ls)*ls,ls,"OpenCL")
+        transformer.run(prg,"mm11",{"queue":queue},[logits_g.data],1,1,"OpenCL")
+        transformer.run(prg,"mm12",{"queue":queue},[logits_g.data],math.ceil(50257 / ls)*ls,ls,"OpenCL")
+        transformer.run(prg,"mm10",{"queue":queue},[logits_g.data, res_g.data],ls,ls,"OpenCL")
         cl.enqueue_copy(queue, self.res, res_g.data)
         return self.res
 
@@ -645,13 +642,13 @@ class Opencl_Kernels:
         if hasattr(self, 'mean') == False:
             self.mean = create_cl_buffer_empty(1*4)
 
-        prg.mm(queue, (ls,1), (ls,1),a_g.data,self.mean.data)
-        prg2.mm4(queue, (self.dim*3,1), (ls,1),a_g.data,c_g.data,d_g.data,e_g.data,xqkv_g.data\
-        ,keys_values_g.data,self.xq_temp_g.data,self.mean.data)
-        prg2.mm2(queue, (ls*seg3,1), (ls,1),keys_values_g.data,self.temp_g.data, self.xq_temp_g.data)
-        prg2.mm3(queue, (ls,1), (ls,1),a_g.data\
+        transformer.run(prg,"mm",{"queue":queue},[a_g.data,self.mean.data],ls,ls,"OpenCL")
+        transformer.run(prg2,"mm4",{"queue":queue},[a_g.data,c_g.data,d_g.data,e_g.data,xqkv_g.data\
+        ,keys_values_g.data,self.xq_temp_g.data,self.mean.data],self.dim*3,ls,"OpenCL")
+        transformer.run(prg2,"mm2",{"queue":queue},[keys_values_g.data,self.temp_g.data, self.xq_temp_g.data],ls*seg3,ls,"OpenCL")
+        transformer.run(prg2,"mm3",{"queue":queue},[a_g.data\
         ,keys_values_g.data,weight_g.data,bias_g.data,\
-        weight2_g.data,bias2_g.data,weight3_g.data,bias3_g.data,weight4_g.data,bias4_g.data,self.temp_g.data, self.xq_temp_g.data)
+        weight2_g.data,bias2_g.data,weight3_g.data,bias3_g.data,weight4_g.data,bias4_g.data,self.temp_g.data, self.xq_temp_g.data],ls,ls,"OpenCL")
         return a_g
         
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
@@ -922,43 +919,33 @@ class Opencl_Kernels:
         }}
         """
         prg = transformer.compile(prg_str,"OpenCL",{"ctx":ctx})
-        prg.mm(queue, (ls*num_tokens,1), (ls,1), x_g.data, ln_1_weight_g.data, ln_1_bias_g.data,self.h_g.data) 
-        g = math.ceil((b_cols*num_tokens / ls)*ls)
-        prg.mm2(queue, (g,1), (ls,1), x_g.data, attn_weight_g.data,attn_bias_g.data,self.xqkv_g.data)
+        transformer.run(prg,"mm",{"queue":queue},[x_g.data, ln_1_weight_g.data, ln_1_bias_g.data,self.h_g.data],ls*num_tokens,ls,"OpenCL")
+        transformer.run(prg,"mm2",{"queue":queue},[x_g.data, attn_weight_g.data,\
+        attn_bias_g.data,self.xqkv_g.data],math.ceil((b_cols*num_tokens / ls)*ls),ls,"OpenCL")
         g = math.ceil((num_tokens*self.n_heads*64) / ls) * ls
-        prg.mm3(queue, (g,1), (ls,1), self.xqkv_g.data, cache_kv_g.data)
-
-        ls = 256
-        prg.tr(queue, (g,1), (ls,1), self.xqkv_g.data, self.xq_g.data, self.xv_g.data)
-
+        transformer.run(prg,"mm3",{"queue":queue},[self.xqkv_g.data, cache_kv_g.data],g,ls,"OpenCL")
+        transformer.run(prg,"tr",{"queue":queue},[self.xqkv_g.data, self.xq_g.data, self.xv_g.data],g,ls,"OpenCL")
         g = math.ceil(self.n_heads*num_tokens*num_tokens / ls) * ls
-        prg.ms0(queue, (g,1), (ls,1), self.xq_g.data, self.xqkv_g.data)
-        prg.ms(queue, (g,1), (ls,1), self.xq_g.data)
+        transformer.run(prg,"ms0",{"queue":queue},[self.xq_g.data, self.xqkv_g.data],g,ls,"OpenCL")
+        transformer.run(prg,"ms",{"queue":queue},[self.xq_g.data],g,ls,"OpenCL")
+
         if self.n_heads*num_tokens > ls:
             g2 =  math.ceil(self.n_heads*num_tokens / ls) * ls
         else:
             g2 = self.n_heads*num_tokens
-        prg.ms3(queue, (g2,1), (min(self.n_heads*num_tokens,ls),1), self.xq_g.data,self.res_g.data)
-        prg.ms4(queue, (g,1), (ls,1), self.xq_g.data,self.res_g.data)
-
-        
+        transformer.run(prg,"ms3",{"queue":queue},[self.xq_g.data,self.res_g.data],g2,min(self.n_heads*num_tokens,ls),"OpenCL")
+        transformer.run(prg,"ms4",{"queue":queue},[self.xq_g.data,self.res_g.data],g,ls,"OpenCL")
         g3 = (math.ceil(self.n_heads*a_cols*num_tokens / ls) * ls)
-        prg.ms5(queue, (g3,1), (ls,1), self.xq_g.data,self.xv_g.data,self.c_g.data)
-        g4 = num_tokens*self.n_heads*64
-        g4 = math.ceil(g4 / ls)*ls
-        
-        prg.ms6(queue, (g4,1), (ls,1), self.c_g.data,self.xqt_g.data)
-
+        transformer.run(prg,"ms5",{"queue":queue},[self.xq_g.data,self.xv_g.data,self.c_g.data],g3,ls,"OpenCL") 
+        g4 = math.ceil(num_tokens*self.n_heads*64 / ls)*ls
+        transformer.run(prg,"ms6",{"queue":queue},[self.c_g.data,self.xqt_g.data],g4,ls,"OpenCL")
         g = math.ceil((b_rows*num_tokens / ls)*ls)
-        prg.ms7(queue, (g,1), (ls,1), self.xqt_g.data,attn_c_proj_weight_g.data,attn_c_proj_bias_g.data,self.h_g.data)
-        prg.ms8(queue, (ls*num_tokens,1), (ls,1), self.h_g.data, ln_2_weight_g.data, ln_2_bias_g.data,self.h2_g.data)
-
+        transformer.run(prg,"ms7",{"queue":queue},[self.xqt_g.data,attn_c_proj_weight_g.data,attn_c_proj_bias_g.data,self.h_g.data],g,ls,"OpenCL")
+        transformer.run(prg,"ms8",{"queue":queue},[self.h_g.data, ln_2_weight_g.data, ln_2_bias_g.data,self.h2_g.data],ls*num_tokens,ls,"OpenCL")
         g = math.ceil((b_cols_2*num_tokens / ls)*ls)
-        prg.ms9(queue, (g,1), (ls,1), self.h_g.data, c_fc_weight_g.data,c_fc_bias_g.data,self.d_g.data)
-
-
+        transformer.run(prg,"ms9",{"queue":queue},[self.h_g.data, c_fc_weight_g.data,c_fc_bias_g.data,self.d_g.data],g,ls,"OpenCL")
         g = math.ceil((b_rows*num_tokens / ls)*ls)
-        prg.ms10(queue, (g,1), (ls,1), self.d_g.data, c_proj_weight_g.data,c_proj_bias_g.data,self.h2_g.data)
+        transformer.run(prg,"ms10",{"queue":queue},[self.d_g.data, c_proj_weight_g.data,c_proj_bias_g.data,self.h2_g.data],g,ls,"OpenCL")
         return self.h2_g      
 
     def time_it(func,a,b,i=100):
