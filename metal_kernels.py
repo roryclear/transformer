@@ -215,7 +215,7 @@ class Metal_Kernels:
         {var_dec[d]} float *a{uint3_arg[d]})
         {{
             int gidx0 = {global_idx[d]};
-            if((a[gidx0] / a[50256]) < {random_num}) {{ //TODO, used to be (a[gidx0] / a[50256])/{random_num}
+            if(a[gidx0] < {random_num}) {{ //TODO, used to be (a[gidx0] / a[50256])/{random_num}
                 a[gidx0] = 1;
             }} else {{
                 a[gidx0] = 0;
@@ -1001,7 +1001,7 @@ class Metal_Kernels:
         transformer.run(prg,"tr",self.params,[self.xqkv_g, self.xq_g, self.xv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,d)
         transformer.run(prg,"ms0",self.params,[self.xq_g, self.xqkv_g],1,1,d)
         transformer.run(prg,"ms",self.params,[self.xq_g],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,d)
-        transformer.run(prg,"ms3",self.params,[self.xq_g,self.res_g],1,self.n_heads*num_tokens,d)
+        transformer.run(prg,"ms3",self.params,[self.xq_g,self.res_g],math.ceil(self.n_heads*num_tokens/ls),min(self.n_heads*num_tokens,ls),d)
         transformer.run(prg,"ms4",self.params,[self.xq_g,self.res_g],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,d)
         transformer.run(prg,"ms5",self.params,[self.xq_g,self.xv_g,self.c_g],math.ceil(self.n_heads*a_cols*num_tokens / ls),ls,d)
         transformer.run(prg,"ms6",self.params,[self.c_g,self.xqt_g],math.ceil(num_tokens*self.n_heads*64 / ls),ls,d)
