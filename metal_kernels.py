@@ -10,7 +10,7 @@ import pyopencl as cl
 
 test = False
 ls = 256
-d = "OpenCL"
+d = "Metal"
 
 kernel_prefix = {"OpenCL":"",
                 "Metal":"#include <metal_stdlib>\n#include <metal_simdgroup_matrix>\nusing namespace metal;\n"}
@@ -781,7 +781,6 @@ class Metal_Kernels:
             {barrier[d]}
             for(int i = 0; i < {seg}; i++) {{
                 x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
-                if(isnan(x[{self.dim}*r + i + lidx0*{seg}])) {{ x[{self.dim}*r + i + lidx0*{seg}] = 0; }} //TODO shouldn't need this
             }}
         }}
         {func_dec[d]} void mm2(
@@ -820,7 +819,8 @@ class Metal_Kernels:
         {func_dec[d]} void ms0(
             {var_dec[d]} float *xq, {var_dec[d]} const float *xqkv{uint3_arg[d]})
         {{
-            for(int gidx0 = 0; gidx0 < {self.n_heads*a_rows*a_rows}; gidx0++) {{
+                int gidx0 = {global_idx[d]};
+                if(gidx0 < {self.n_heads*a_rows*a_rows}) {{
                 int x = (gidx0 / {a_rows}) % {a_rows};
                 int z = gidx0 / ({a_rows}*{a_rows}); 
                 int y = gidx0 % {a_rows};
@@ -829,7 +829,7 @@ class Metal_Kernels:
                     total += xq[y*{a_cols} + k + z*{a_rows}*{a_cols}] * xqkv[x*{64*self.n_heads*3} + k + z*64 + {self.dim}]; 
                 }}
                 xq[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total / 8; //sqrt 64 input shape xq
-            }}
+                }}
         }}
         {func_dec[d]} void ms(
             {var_dec[d]} float *xq{uint3_arg[d]})
@@ -999,7 +999,7 @@ class Metal_Kernels:
         transformer.run(prg,"mm2",self.params,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g],math.ceil(b_cols*num_tokens / ls),ls,d)
         transformer.run(prg,"mm3",self.params,[self.xqkv_g, cache_kv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,d)
         transformer.run(prg,"tr",self.params,[self.xqkv_g, self.xq_g, self.xv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,d)
-        transformer.run(prg,"ms0",self.params,[self.xq_g, self.xqkv_g],1,1,d)
+        transformer.run(prg,"ms0",self.params,[self.xq_g, self.xqkv_g],math.ceil(self.n_heads*num_tokens*num_tokens/ls),ls,d)
         transformer.run(prg,"ms",self.params,[self.xq_g],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,d)
         transformer.run(prg,"ms3",self.params,[self.xq_g,self.res_g],math.ceil(self.n_heads*num_tokens/ls),min(self.n_heads*num_tokens,ls),d)
         transformer.run(prg,"ms4",self.params,[self.xq_g,self.res_g],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,d)
