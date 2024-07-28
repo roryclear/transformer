@@ -13,12 +13,14 @@ from tinygrad.helpers import fetch
 import pyopencl as cl
 from transformers import AutoModelForCausalLM, AutoTokenizer
 opencl = True
+import transformer
 
 
 platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
 ctx = cl.Context(devices=my_gpu_devices)
 mf = cl.mem_flags
+cl_params = params = {"ctx":ctx,"mf":mf}
 
 
 tokens = open('tokens.txt','r',encoding="utf-8").readlines()
@@ -142,7 +144,7 @@ class Transformer:
       print("creating attn_cache_kv")
       self.attn_cache_kv = []
       for i in range(len(self.ln_1_weight)):
-        self.attn_cache_kv.append(opencl_kernels.create_cl_buffer_empty(2*MAX_CONTEXT*n_heads*64*4))
+        self.attn_cache_kv.append(transformer.create_buffer_empty(2*MAX_CONTEXT*n_heads*64*4,"OpenCL",cl_params))
 
   def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if start_pos > 0:

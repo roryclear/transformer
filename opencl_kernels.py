@@ -16,8 +16,6 @@ params = {"ctx":ctx,"mf":mf}
 def create_cl_buffer(a):
   return transformer.create_buffer(a,"OpenCL",params)
 
-def create_cl_buffer_empty(size):
-  return transformer.create_buffer_empty(size,"OpenCL",params)
 
 class Opencl_Kernels:
     def __init__(self,dim,n_heads,max_context):
@@ -28,7 +26,7 @@ class Opencl_Kernels:
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
         if hasattr(self, 'add_res_g') == False:
-            self.add_res_g = create_cl_buffer_empty(self.dim*4)
+            self.add_res_g =  transformer.create_buffer_empty(self.dim*4,"OpenCL",params)
         prg_str = f"""
         __kernel void add(
             __global const float *a, __global const float *b, __global float *res)
@@ -47,7 +45,7 @@ class Opencl_Kernels:
         tokens_g = create_cl_buffer(tokens)
         ls = 256
         size = no_tokens*self.dim
-        tok_emb_g = create_cl_buffer_empty(no_tokens*self.dim*4)
+        tok_emb_g =  transformer.create_buffer_empty(no_tokens*self.dim*4,"OpenCL",params)
         prg_str = f"""
         __kernel void mm(
             __global int *tokens, __global const float *weight, __global const float *weight2,  __global float *tok_emb)
@@ -70,11 +68,11 @@ class Opencl_Kernels:
         rows = self.dim
         cols = 50257
         if hasattr(self, 'logits_g') == False:
-            self.logits_g = create_cl_buffer_empty(50257*4)
+            self.logits_g =  transformer.create_buffer_empty(50257*4,"OpenCL",params)
         if hasattr(self, 'res') == False:
             self.res = np.zeros(1).astype(np.float32)
         if hasattr(self, 'res_g') == False:
-            self.res_g = create_cl_buffer_empty(1*4)
+            self.res_g =  transformer.create_buffer_empty(1*4,"OpenCL",params)
         seg2 = math.ceil(50257 / ls)
         prg_str = f"""
         __kernel void mm4(
@@ -228,12 +226,12 @@ class Opencl_Kernels:
         b_cols = self.dim*3 #todo
         b_rows = self.dim
         seg = int(size / ls) #todo
-        x0_g = create_cl_buffer_empty(n_tokens*self.dim*4)
-        logits_g = create_cl_buffer_empty(50257*4)
-        c_g = create_cl_buffer_empty(n_tokens*b_cols*4)
+        x0_g =  transformer.create_buffer_empty(n_tokens*self.dim*4,"OpenCL",params)
+        logits_g =  transformer.create_buffer_empty(50257*4,"OpenCL",params)
+        c_g =  transformer.create_buffer_empty(n_tokens*b_cols*4,"OpenCL",params)
         if hasattr(self, 'res') == False:
             self.res = np.zeros(1).astype(np.float32)
-        res_g = create_cl_buffer_empty(1*4)
+        res_g =  transformer.create_buffer_empty(1*4,"OpenCL",params)
         prg_str = f"""
         __kernel void mm(__global const float *x_in,
             __global float *x, __global const float *weight, __global const float *bias)
@@ -453,9 +451,9 @@ class Opencl_Kernels:
         seg = int(self.dim / ls) #todo
         seg3 = math.ceil(self.n_heads*(start_pos+1)*(start_pos+1) / ls)
         if hasattr(self, 'temp_g') == False:
-            self.temp_g = create_cl_buffer_empty(self.n_heads*self.max_context*4)
+            self.temp_g =  transformer.create_buffer_empty(self.n_heads*self.max_context*4,"OpenCL",params)
         if hasattr(self, 'xq_temp_g') == False:
-            self.xq_temp_g = create_cl_buffer_empty(self.dim*4)
+            self.xq_temp_g =  transformer.create_buffer_empty(self.dim*4,"OpenCL",params)
         prg_str = f"""
         __kernel void mm(
             __global float *a, __global float *mean)
@@ -640,7 +638,7 @@ class Opencl_Kernels:
         prg2 = self.prg_cache[prg_str]
 
         if hasattr(self, 'mean') == False:
-            self.mean = create_cl_buffer_empty(1*4)
+            self.mean =  transformer.create_buffer_empty(1*4,"OpenCL",params)
 
         transformer.run(prg,"mm",{"queue":queue},[a_g.data,self.mean.data],ls,ls,"OpenCL")
         transformer.run(prg2,"mm4",{"queue":queue},[a_g.data,c_g.data,d_g.data,e_g.data,xqkv_g.data\
@@ -654,23 +652,23 @@ class Opencl_Kernels:
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
         ,c_proj_weight_g,c_proj_bias_g,num_tokens,max_content):
         if hasattr(self, 'h_g') == False:
-            self.h_g = create_cl_buffer_empty(max_content*self.dim*4)
+            self.h_g =  transformer.create_buffer_empty(max_content*self.dim*4,"OpenCL",params)
         if hasattr(self, 'h2_g') == False:
-            self.h2_g = create_cl_buffer_empty(max_content*self.dim*4)
+            self.h2_g =  transformer.create_buffer_empty(max_content*self.dim*4,"OpenCL",params)
         if hasattr(self, 'xq_g') == False:
-            self.xq_g = create_cl_buffer_empty(self.n_heads*64*max_content*4)
+            self.xq_g =  transformer.create_buffer_empty(self.n_heads*64*max_content*4,"OpenCL",params)
         if hasattr(self, 'xv_g') == False:
-            self.xv_g = create_cl_buffer_empty(self.n_heads*64*max_content*4)
+            self.xv_g =  transformer.create_buffer_empty(self.n_heads*64*max_content*4,"OpenCL",params)
         if hasattr(self, 'c_g') == False:
-            self.c_g = create_cl_buffer_empty(self.n_heads*64*max_content*4)
+            self.c_g =  transformer.create_buffer_empty(self.n_heads*64*max_content*4,"OpenCL",params)
         if hasattr(self, 'xqt_g') == False:
-            self.xqt_g = create_cl_buffer_empty(self.n_heads*64*max_content*4)
+            self.xqt_g =  transformer.create_buffer_empty(self.n_heads*64*max_content*4,"OpenCL",params)
         if hasattr(self, 'res_g') == False:
-            self.res_g = create_cl_buffer_empty(max_content*self.n_heads*4)
+            self.res_g =  transformer.create_buffer_empty(max_content*self.n_heads*4,"OpenCL",params)
         if hasattr(self, 'xqkv_g') == False:
-            self.xqkv_g = create_cl_buffer_empty(max_content*self.dim*3*4)
+            self.xqkv_g =  transformer.create_buffer_empty(max_content*self.dim*3*4,"OpenCL",params)
         if hasattr(self, 'd_g') == False:
-            self.d_g = create_cl_buffer_empty(max_content*self.dim*4*4)
+            self.d_g =  transformer.create_buffer_empty(max_content*self.dim*4*4,"OpenCL",params)
         a_rows = num_tokens
         a_cols = 64
         b_rows = self.dim
