@@ -73,73 +73,73 @@ class Transformer:
   def to_buffer(self):
       print("copying ln_1_weight")
       for i in range(len(self.ln_1_weight)):
-        self.ln_1_weight[i] = opencl_kernels.create_cl_buffer(self.ln_1_weight[i])
+        self.ln_1_weight[i] = transformer.create_buffer(self.ln_1_weight[i],"OpenCL",cl_params)
 
       print("copying ln_1_bias")
       for i in range(len(self.ln_1_weight)):
-        self.ln_1_bias[i] = opencl_kernels.create_cl_buffer(self.ln_1_bias[i])
+        self.ln_1_bias[i] = transformer.create_buffer(self.ln_1_bias[i],"OpenCL",cl_params)
 
       print("copying attn_c_attn_weight")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_attn_weight[i] = opencl_kernels.create_cl_buffer(self.attn_c_attn_weight[i].transpose(1,0).flatten())
+        self.attn_c_attn_weight[i] = transformer.create_buffer(self.attn_c_attn_weight[i].transpose(1,0).flatten(),"OpenCL",cl_params)
 
       print("copying attn_c_attn_bias")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_attn_bias[i] = opencl_kernels.create_cl_buffer(self.attn_c_attn_bias[i])
+        self.attn_c_attn_bias[i] = transformer.create_buffer(self.attn_c_attn_bias[i],"OpenCL",cl_params)
     
       print("copying attn_c_proj_weight")
       self.attn_c_proj_weight2 = []
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_weight2.append(opencl_kernels.create_cl_buffer(np.asfortranarray(self.attn_c_proj_weight[i])))
-        self.attn_c_proj_weight[i] = opencl_kernels.create_cl_buffer(self.attn_c_proj_weight[i].flatten())
+        self.attn_c_proj_weight2.append(transformer.create_buffer(np.asfortranarray(self.attn_c_proj_weight[i]),"OpenCL",cl_params))
+        self.attn_c_proj_weight[i] = transformer.create_buffer(self.attn_c_proj_weight[i].flatten(),"OpenCL",cl_params)
 
       print("copying attn_c_proj_bias")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_bias[i] = opencl_kernels.create_cl_buffer(self.attn_c_proj_bias[i])
+        self.attn_c_proj_bias[i] = transformer.create_buffer(self.attn_c_proj_bias[i],"OpenCL",cl_params)
 
       print("copying ln_2_weight")
       for i in range(len(self.ln_1_weight)):
-        self.ln_2_weight[i] = opencl_kernels.create_cl_buffer(self.ln_2_weight[i])
+        self.ln_2_weight[i] = transformer.create_buffer(self.ln_2_weight[i],"OpenCL",cl_params)
 
       print("copying ln_2_bias")
       for i in range(len(self.ln_1_weight)):
-        self.ln_2_bias[i] = opencl_kernels.create_cl_buffer(self.ln_2_bias[i])
+        self.ln_2_bias[i] = transformer.create_buffer(self.ln_2_bias[i],"OpenCL",cl_params)
 
       print("copying mlp_c_fc_bias")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_fc_bias[i] = opencl_kernels.create_cl_buffer(self.mlp_c_fc_bias[i])
+        self.mlp_c_fc_bias[i] = transformer.create_buffer(self.mlp_c_fc_bias[i],"OpenCL",cl_params)
 
       print("copying mlp_c_proj_weight_unf")
       self.mlp_c_proj_weight_unf = []
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_proj_weight_unf.append(opencl_kernels.create_cl_buffer(np.asfortranarray(self.mlp_c_proj_weight[i])))
-        self.mlp_c_proj_weight[i] = opencl_kernels.create_cl_buffer(self.mlp_c_proj_weight[i].flatten())
+        self.mlp_c_proj_weight_unf.append(transformer.create_buffer(np.asfortranarray(self.mlp_c_proj_weight[i]),"OpenCL",cl_params))
+        self.mlp_c_proj_weight[i] = transformer.create_buffer(self.mlp_c_proj_weight[i].flatten(),"OpenCL",cl_params)
 
       print("copying mlp_c_proj_bias")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_proj_bias[i] = opencl_kernels.create_cl_buffer(self.mlp_c_proj_bias[i])
+        self.mlp_c_proj_bias[i] = transformer.create_buffer(self.mlp_c_proj_bias[i],"OpenCL",cl_params)
 
       print("copying ln_f_weight")
-      self.ln_f_weight = opencl_kernels.create_cl_buffer(self.ln_f_weight)
+      self.ln_f_weight = transformer.create_buffer(self.ln_f_weight,"OpenCL",cl_params)
     
       print("copying ln_f_bias")
-      self.ln_f_bias = opencl_kernels.create_cl_buffer(self.ln_f_bias)
+      self.ln_f_bias = transformer.create_buffer(self.ln_f_bias,"OpenCL",cl_params)
 
       print("copying mlp_c_fc_weight")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_fc_weight[i] = opencl_kernels.create_cl_buffer(self.mlp_c_fc_weight[i].transpose(1,0).flatten())
+        self.mlp_c_fc_weight[i] = transformer.create_buffer(self.mlp_c_fc_weight[i].transpose(1,0).flatten(),"OpenCL",cl_params)
 
       print("copying lm_head_weight_unf")
-      self.lm_head_weight_unf = opencl_kernels.create_cl_buffer(self.lm_head_weight)
+      self.lm_head_weight_unf = transformer.create_buffer(self.lm_head_weight,"OpenCL",cl_params)
 
       print("copying lm_head_weight")
-      self.lm_head_weight = opencl_kernels.create_cl_buffer(self.lm_head_weight.flatten())
+      self.lm_head_weight = transformer.create_buffer(self.lm_head_weight.flatten(),"OpenCL",cl_params)
 
       print("copying self_wte_weight")
-      self.wte_weight = opencl_kernels.create_cl_buffer(self.wte_weight)
+      self.wte_weight = transformer.create_buffer(self.wte_weight,"OpenCL",cl_params)
 
       print("copying self_wpe_weight")
-      self.wpe_weight = opencl_kernels.create_cl_buffer(self.wpe_weight)
+      self.wpe_weight = transformer.create_buffer(self.wpe_weight,"OpenCL",cl_params)
 
       print("creating attn_cache_kv")
       self.attn_cache_kv = []

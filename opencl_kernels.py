@@ -13,10 +13,6 @@ prg = None
 
 params = {"ctx":ctx,"mf":mf}
 
-def create_cl_buffer(a):
-  return transformer.create_buffer(a,"OpenCL",params)
-
-
 class Opencl_Kernels:
     def __init__(self,dim,n_heads,max_context):
         self.prg_cache = {}
@@ -42,7 +38,7 @@ class Opencl_Kernels:
         return self.add_res_g
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
-        tokens_g = create_cl_buffer(tokens)
+        tokens_g = transformer.create_buffer(tokens,"OpenCL",params)
         ls = 256
         size = no_tokens*self.dim
         tok_emb_g =  transformer.create_buffer_empty(no_tokens*self.dim*4,"OpenCL",params)
