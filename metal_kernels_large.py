@@ -24,7 +24,7 @@ class Metal_Kernels:
         self.device = Metal.MTLCreateSystemDefaultDevice()
         self.mtl_queue = self.device.newCommandQueue()
 
-    def run_metal(self,fxn,gs,ls,args,device=None):
+    def run_metal(self,fxn,g,ls,args,device=None):
         command_buffer = self.mtl_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoder()
         pipeline_state, err = self.device.newComputePipelineStateWithFunction_error_(fxn, None)
@@ -33,7 +33,7 @@ class Metal_Kernels:
         for arg in args:
             encoder.setBuffer_offset_atIndex_(arg.data, 0, i)
             i+=1
-        threadsPerGrid = Metal.MTLSizeMake(gs,1,1)
+        threadsPerGrid = Metal.MTLSizeMake(g,1,1)
         threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
         encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
         encoder.endEncoding()
@@ -41,26 +41,7 @@ class Metal_Kernels:
         command_buffer.waitUntilCompleted()
         return
     
-
-    def run_metal2(self,fxn,g,ls,args,device=None):
-        command_buffer = self.mtl_queue.commandBuffer()
-        encoder = command_buffer.computeCommandEncoder()
-        pipeline_state, err = self.device.newComputePipelineStateWithFunction_error_(fxn, None)
-        encoder.setComputePipelineState_(pipeline_state)
-        i = 0
-        for arg in args:
-            encoder.setBuffer_offset_atIndex_(arg.data, 0, i)
-            i+=1
-        threadsPerGrid = Metal.MTLSizeMake(g(ls),1,1)
-        threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
-        encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
-        encoder.endEncoding()
-        command_buffer.commit()
-        command_buffer.waitUntilCompleted()
-        return
-    
-
-    def run_metal_test(self,fxn,gs,ls,args,device=None):
+    def run_metal_test(self,fxn,g,ls,args,device=None):
         args_copy = []
         n = 5
         f = 0
@@ -100,7 +81,7 @@ class Metal_Kernels:
         args_copy = None
         excepted_output = None
         args_buffers = None
-        self.run_metal(fxn,gs,ls,args,device)
+        self.run_metal(fxn,g,ls,args,device)
         return
     
     def run_metal_test2(self,fxn,g,ls,args,device=None):
@@ -129,8 +110,8 @@ class Metal_Kernels:
         """
         prg = transformer.compile(prg_str,"Metal",{"device":self.device})
         fxn = prg.newFunctionWithName_("add")
-        def g(ls): return math.ceil(self.dim / ls)
-        self.run_metal2(fxn,g,ls,[a_g, b_g,self.add_res_g],self.device)
+        g = math.ceil(self.dim / ls)
+        self.run_metal(fxn,g,ls,[a_g, b_g,self.add_res_g],self.device)
         return self.add_res_g
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
@@ -154,8 +135,8 @@ class Metal_Kernels:
         options = Metal.MTLCompileOptions.alloc().init()
         library = transformer.compile(prg_str,"Metal",{"device":self.device})
         fxn = library.newFunctionWithName_("mm")
-        def gs(ls): return math.ceil(size / ls)
-        self.run_metal2(fxn,gs,ls3,[tokens_g,weight_g,weight_2_g,tok_emb_g])
+        g = math.ceil(size / ls)
+        self.run_metal(fxn,g,ls3,[tokens_g,weight_g,weight_2_g,tok_emb_g])
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
@@ -299,33 +280,33 @@ class Metal_Kernels:
         self.run_metal(fxn,1,ls3,[h_g, weight_g, bias_g])
 
         fxn = prg.newFunctionWithName_("matvec")
-        def gs(ls): return math.ceil(50257 / ls)
-        self.run_metal2(fxn,gs,ls3,[h_g, weight2_g,self.logits_g])
+        g = math.ceil(50257 / ls)
+        self.run_metal(fxn,g,ls3,[h_g, weight2_g,self.logits_g])
 
         fxn = prg.newFunctionWithName_("mm5")
         self.run_metal(fxn,1,1,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm6")
-        def gs(ls): return math.ceil(50257 / ls)
-        self.run_metal2(fxn,gs,ls3,[self.logits_g,self.res_g])
+        g = math.ceil(50257 / ls)
+        self.run_metal(fxn,g,ls3,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm5")
         self.run_metal(fxn,1,1,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm8")
-        self.run_metal2(fxn,gs,ls3,[self.logits_g,self.res_g])
+        self.run_metal(fxn,g,ls3,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm9")
         self.run_metal(fxn,1,ls3,[self.logits_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("mm8")
-        self.run_metal2(fxn,gs,ls3,[self.logits_g,self.res_g]) 
+        self.run_metal(fxn,g,ls3,[self.logits_g,self.res_g]) 
 
         fxn = prg.newFunctionWithName_("mm10")
         self.run_metal(fxn,1,1,[self.logits_g])
         
         fxn = prg2.newFunctionWithName_("mm11")
-        self.run_metal2(fxn,gs,ls3,[self.logits_g])
+        self.run_metal(fxn,g,ls3,[self.logits_g])
 
         fxn = prg.newFunctionWithName_("mm9")        
         self.run_metal(fxn,1,ls3,[self.logits_g,self.res_g])
@@ -558,58 +539,53 @@ class Metal_Kernels:
 
 
         fxn = prg.newFunctionWithName_("mm")
-        def gs(ls=None): return n_tokens
-        self.run_metal2(fxn,gs,ls,[x_g, x0_g, weight_g, bias_g]) #TODO
+        self.run_metal(fxn,n_tokens,ls,[x_g, x0_g, weight_g, bias_g]) #TODO
 
         fxn = prg.newFunctionWithName_("mm2")
-        def gs(ls): return math.ceil(b_cols*n_tokens / ls)
-        self.run_metal2(fxn,gs,ls3,[x0_g, attn_weight_g,attn_bias_g,c_g])
+        g = math.ceil(b_cols*n_tokens / ls)
+        self.run_metal(fxn,g,ls3,[x0_g, attn_weight_g,attn_bias_g,c_g])
 
         fxn = prg.newFunctionWithName_("mm4")
-        def gs(ls): return math.ceil((n_tokens*self.n_heads*64) / ls)
-        self.run_metal2(fxn,gs,ls3,[c_g, new_cache_g])
+        g = math.ceil((n_tokens*self.n_heads*64) / ls)
+        self.run_metal(fxn,g,ls3,[c_g, new_cache_g])
         
         fxn = prg.newFunctionWithName_("mm5")
         self.run_metal(fxn,1,ls,[x_g, ln_f_weight_g, ln_f_bias_g]) #TODO, reduce
         
         fxn = prg.newFunctionWithName_("matmul")
-        def gs(ls): return math.ceil(b_cols2 / ls)
-        self.run_metal2(fxn,gs,ls3,[x_g, lm_head_weight_g,logits_g])
+        g = math.ceil(b_cols2 / ls)
+        self.run_metal(fxn,g,ls3,[x_g, lm_head_weight_g,logits_g])
 
         fxn = prg.newFunctionWithName_("mm6")
-        def gs(ls=None): return 1
-        self.run_metal2(fxn,gs,1,[logits_g,res_g])
+        self.run_metal(fxn,1,1,[logits_g,res_g])
 
         fxn = prg.newFunctionWithName_("mm7")
-        def gs(ls): return math.ceil(50257 / ls)
-        self.run_metal2(fxn,gs,ls3,[logits_g,res_g])
+        g = math.ceil(50257 / ls)
+        self.run_metal(fxn,g,ls3,[logits_g,res_g])
 
         fxn = prg.newFunctionWithName_("mm6")
-        def gs(ls=None): return 1
-        self.run_metal2(fxn,gs,1,[logits_g,res_g])
+        self.run_metal(fxn,1,1,[logits_g,res_g])
 
         fxn = prg.newFunctionWithName_("mm9")
-        def gs(ls): return math.ceil(50257 / ls)
-        self.run_metal2(fxn,gs,ls3,[logits_g,res_g])
+        g = math.ceil(50257 / ls)
+        self.run_metal(fxn,g,ls3,[logits_g,res_g])
 
         fxn = library.newFunctionWithName_("mm10")
-        def gs(ls=None): return 1
-        self.run_metal2(fxn,gs,ls,[logits_g,res_g]) #TODO, need to calculate seg based on ls
+        self.run_metal(fxn,1,ls,[logits_g,res_g]) #TODO, need to calculate seg based on ls
 
         fxn = library.newFunctionWithName_("mm9")
-        def gs(ls): return math.ceil(50257 / ls)
-        self.run_metal2(fxn,gs,ls3,[logits_g,res_g]) #TODO
+        g = math.ceil(50257 / ls)
+        self.run_metal(fxn,g,ls3,[logits_g,res_g]) #TODO
         
         fxn = library.newFunctionWithName_("mm11")
         self.run_metal(fxn,1,1,[logits_g])
 
         fxn = library.newFunctionWithName_("mm12")
-        def gs(ls): return math.ceil(50257 / ls)
-        self.run_metal2(fxn,gs,ls3,[logits_g]) #TODO
+        g = math.ceil(50257 / ls)
+        self.run_metal(fxn,g,ls3,[logits_g]) #TODO
     
         fxn = library.newFunctionWithName_("mm10")
-        def gs(ls=None): return 1
-        self.run_metal2(fxn,gs,ls,[logits_g,res_g]) #TODO, need to calculate seg based on ls
+        self.run_metal(fxn,1,ls,[logits_g,res_g]) #TODO, need to calculate seg based on ls
 
         res = np.asarray(res_g.data.contents().as_buffer(res_g.size))
         res = np.frombuffer(res, dtype=np.float32)
@@ -877,8 +853,8 @@ class Metal_Kernels:
 
         ls = 256
         fxn = prg2.newFunctionWithName_("mm2")
-        def gs(ls): return math.ceil((self.n_heads*(start_pos+1)*(start_pos+1)) / ls)
-        self.run_metal2(fxn,gs,ls,[keys_values_g ,self.temp_g, self.xq_temp_g])
+        g = math.ceil((self.n_heads*(start_pos+1)*(start_pos+1)) / ls)
+        self.run_metal(fxn,g,ls,[keys_values_g ,self.temp_g, self.xq_temp_g])
         
         fxn = prg2.newFunctionWithName_("mm3")
         self.run_metal(fxn,1,ls3,[a_g\
@@ -1201,29 +1177,27 @@ class Metal_Kernels:
             self.prg_cache[prg_str] = library
         prg = self.prg_cache[prg_str]
 
-        fxn = prg.newFunctionWithName_("mm")
-        def gs(ls=None): return num_tokens     
-        self.run_metal2(fxn,gs,ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g]) #TODO
+        fxn = prg.newFunctionWithName_("mm")    
+        self.run_metal(fxn,num_tokens,ls,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g]) #TODO
         
         fxn = prg.newFunctionWithName_("mm2")
-        def gs(ls): return math.ceil(b_cols*num_tokens / ls)
-        self.run_metal2(fxn,gs,ls3,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g])
+        g = math.ceil(b_cols*num_tokens / ls)
+        self.run_metal(fxn,g,ls3,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g])
        
         fxn = prg.newFunctionWithName_("mm3")
-        def gs(ls): return math.ceil((num_tokens*self.n_heads*64) / ls)
-        self.run_metal2(fxn,gs,ls3,[self.xqkv_g, cache_kv_g])
+        g = math.ceil((num_tokens*self.n_heads*64) / ls)
+        self.run_metal(fxn,g,ls3,[self.xqkv_g, cache_kv_g])
         
         fxn = prg.newFunctionWithName_("tr")
-        def gs(ls): return math.ceil((num_tokens*self.n_heads*64) / ls)
-        self.run_metal2(fxn,gs,ls3,[self.xqkv_g, self.xq_g, self.xv_g])
+        g = math.ceil((num_tokens*self.n_heads*64) / ls)
+        self.run_metal(fxn,g,ls3,[self.xqkv_g, self.xq_g, self.xv_g])
 
-        fxn = prg.newFunctionWithName_("ms0")
-        def gs(ls=None): return 1        
-        self.run_metal2(fxn,gs,1,[self.xq_g, self.xqkv_g]) #TODO this is stable now, but slow
+        fxn = prg.newFunctionWithName_("ms0")  
+        self.run_metal(fxn,1,1,[self.xq_g, self.xqkv_g]) #TODO this is stable now, but slow
 
         fxn = prg.newFunctionWithName_("ms") 
-        def gs(ls): return math.ceil(self.n_heads*num_tokens*num_tokens / ls)       
-        self.run_metal2(fxn,gs,ls3,[self.xq_g])
+        g = math.ceil(self.n_heads*num_tokens*num_tokens / ls)       
+        self.run_metal(fxn,g,ls3,[self.xq_g])
 
         if self.n_heads*num_tokens > ls:
             g2 = math.ceil(self.n_heads*num_tokens / ls)*ls
@@ -1232,35 +1206,35 @@ class Metal_Kernels:
         g2 = math.ceil(self.n_heads*num_tokens)
 
         fxn = prg.newFunctionWithName_("ms3")
-        def gs(ls): return 1        
-        self.run_metal2(fxn,gs,self.n_heads*num_tokens,[self.xq_g,self.res_g])
+        g = 1        
+        self.run_metal(fxn,g,self.n_heads*num_tokens,[self.xq_g,self.res_g])
 
         fxn = prg.newFunctionWithName_("ms4")
-        def gs(ls): return math.ceil(self.n_heads*num_tokens*num_tokens / ls)  
-        self.run_metal2(fxn,gs,ls3,[self.xq_g,self.res_g])
+        g = math.ceil(self.n_heads*num_tokens*num_tokens / ls)  
+        self.run_metal(fxn,g,ls3,[self.xq_g,self.res_g])
         
         fxn = prg.newFunctionWithName_("ms5")
-        def gs(ls): return math.ceil(self.n_heads*a_cols*num_tokens / ls)
-        self.run_metal2(fxn,gs,ls3,[self.xq_g,self.xv_g,self.c_g])
+        g = math.ceil(self.n_heads*a_cols*num_tokens / ls)
+        self.run_metal(fxn,g,ls3,[self.xq_g,self.xv_g,self.c_g])
     
         fxn = prg.newFunctionWithName_("ms6")
-        def gs(ls): return math.ceil(num_tokens*self.n_heads*64 / ls)
-        self.run_metal2(fxn,gs,ls,[self.c_g,self.xqt_g])
+        g = math.ceil(num_tokens*self.n_heads*64 / ls)
+        self.run_metal(fxn,g,ls,[self.c_g,self.xqt_g])
             
         fxn = prg.newFunctionWithName_("ms7")
-        def gs(ls): return math.ceil(b_rows*num_tokens / ls)
-        self.run_metal2(fxn,gs,ls3,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g])
+        g = math.ceil(b_rows*num_tokens / ls)
+        self.run_metal(fxn,g,ls3,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g])
         
         fxn = prg.newFunctionWithName_("ms8")
         self.run_metal(fxn,num_tokens,ls,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g]) #TODO fix
         
         fxn = prg.newFunctionWithName_("ms9")
-        def gs(ls): return math.ceil(b_cols_2*num_tokens / ls)
-        self.run_metal2(fxn,gs,ls3,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g])
+        g = math.ceil(b_cols_2*num_tokens / ls)
+        self.run_metal(fxn,g,ls3,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g])
                 
         fxn = prg.newFunctionWithName_("ms10")
-        def gs(ls): return math.ceil(b_rows*num_tokens / ls)        
-        self.run_metal2(fxn,gs,ls3,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])
+        g = math.ceil(b_rows*num_tokens / ls)        
+        self.run_metal(fxn,g,ls3,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g])
         return self.h2_g   
 
     def time_it(func,a,b,i=100):
