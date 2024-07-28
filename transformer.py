@@ -51,6 +51,7 @@ def run(prg,func,params,args,gs,ls,d):
     command_buffer.commit()
     command_buffer.waitUntilCompleted()
   if d == "OpenCL":
+     gs*=ls
      queue = params["queue"]
      kernel = getattr(prg,func)
      kernel(queue, (gs,1), (ls,1),*args)
