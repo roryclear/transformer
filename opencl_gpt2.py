@@ -161,7 +161,7 @@ class Transformer:
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i])
       unif_samples = rand.rand()
-      ret = openclk.kernel_1(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0]  
+      ret = metalk.kernel_1(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0]  
       return ret
     else:
       x = metalk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
@@ -335,7 +335,7 @@ if __name__ == "__main__":
     198, 198, 2025, 37560, 198, 198, 4864, 11, 611, 356, 804,\
     9211, 356, 1064, 326, 4213, 836, 470, 423, 284, 307, 7042, 287]
 
-
+  
   MAX_CONTEXT = len(encode(default_prompt))+100
   openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
   metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
@@ -355,7 +355,7 @@ if __name__ == "__main__":
   metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
   text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_b)
   print((f"Response:", "green"), text)
-
+  
   MAX_CONTEXT = len(encode(default_prompt))+100
   openclk = opencl_kernels.Opencl_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)
   metalk = metal_kernels.Metal_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)

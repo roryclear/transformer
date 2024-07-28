@@ -10,7 +10,7 @@ import pyopencl as cl
 
 test = False
 ls = 256
-d = "Metal"
+d = "OpenCL"
 
 kernel_prefix = {"OpenCL":"",
                 "Metal":"#include <metal_stdlib>\n#include <metal_simdgroup_matrix>\nusing namespace metal;\n"}
@@ -215,7 +215,7 @@ class Metal_Kernels:
         {var_dec[d]} float *a{uint3_arg[d]})
         {{
             int gidx0 = {global_idx[d]};
-            if(a[gidx0] < {random_num}) {{ //TODO, used to be (a[gidx0] / a[50256])/{random_num}
+            if((a[gidx0] / a[50256]) < {random_num}) {{ //TODO, used to be (a[gidx0] / a[50256])/{random_num}
                 a[gidx0] = 1;
             }} else {{
                 a[gidx0] = 0;
