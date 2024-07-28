@@ -152,7 +152,7 @@ class Transformer:
       h = metalk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
       attn_dim = dim
       for i in range(0,len(self.ln_1_weight)):
-        h = openclk.kernel_0(h,self.ln_1_weight[i],\
+        h = metalk.kernel_0(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
         self.attn_c_attn_bias[i],attn_dim,\
         self.attn_cache_kv[i],start_pos,\
@@ -352,6 +352,7 @@ if __name__ == "__main__":
   rand = Rand()
   MAX_CONTEXT = len(encode("What happened in 1939?"))+100
   openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
+  metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
   text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_b)
   print((f"Response:", "green"), text)
 

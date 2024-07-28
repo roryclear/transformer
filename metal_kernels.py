@@ -10,7 +10,7 @@ import pyopencl as cl
 
 test = False
 ls = 256
-d = "Metal"
+d = "OpenCL"
 
 kernel_prefix = {"OpenCL":"",
                 "Metal":"#include <metal_stdlib>\n#include <metal_simdgroup_matrix>\nusing namespace metal;\n"}
@@ -705,7 +705,7 @@ class Metal_Kernels:
         
         transformer.run(prg,"mm",self.params,[a_g,self.mean],1,ls,d)
         transformer.run(prg2,"mm1",self.params,[a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,self.xq_temp_g,self.mean],math.ceil(self.dim*3 / ls),ls,d)
-        transformer.run(prg2,"mm2",self.params,[keys_values_g ,self.temp_g, self.xq_temp_g],(self.n_heads*(start_pos+1)*(start_pos+1)) / ls,ls,d)
+        transformer.run(prg2,"mm2",self.params,[keys_values_g ,self.temp_g, self.xq_temp_g],math.ceil((self.n_heads*(start_pos+1)*(start_pos+1)) / ls),ls,d)
         transformer.run(prg2,"mm3",self.params,[a_g,keys_values_g,weight_g\
         ,bias_g,weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g,self.mean,self.h_temp,self.h],1,ls,d)
         transformer.run(prg,"mm4",self.params,[a_g,weight2_g,bias2_g,\
