@@ -17,13 +17,8 @@ import transformer
 metal = True
 
 device = Metal.MTLCreateSystemDefaultDevice()
-
-
-def create_metal_buffer(a):
-  return transformer.create_buffer(a,"Metal",{"device":device})
-
-def create_metal_buffer_empty(size):
-  return transformer.create_buffer_empty(size,"Metal",{"device":device})
+queue = device.newCommandQueue()
+params = {"queue":queue,"device":device}
 
 tokens = open('tokens.txt','r',encoding="utf-8").readlines()
 token_dict = dict()
@@ -77,78 +72,78 @@ class Transformer:
       self.dim = dim
       print("copying ln_1_weight")
       for i in range(len(self.ln_1_weight)):
-        self.ln_1_weight[i] = create_metal_buffer(self.ln_1_weight[i])
+        self.ln_1_weight[i] = transformer.create_buffer(self.ln_1_weight[i],"Metal",params)
 
       print("copying ln_1_bias")
       for i in range(len(self.ln_1_weight)):
-        self.ln_1_bias[i] = create_metal_buffer(self.ln_1_bias[i])
+        self.ln_1_bias[i] = transformer.create_buffer(self.ln_1_bias[i],"Metal",params)
 
       print("copying attn_c_attn_weight")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_attn_weight[i] = create_metal_buffer(self.attn_c_attn_weight[i].transpose(1,0).flatten())
+        self.attn_c_attn_weight[i] = transformer.create_buffer(self.attn_c_attn_weight[i].transpose(1,0).flatten(),"Metal",params)
 
       print("copying attn_c_attn_bias")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_attn_bias[i] = create_metal_buffer(self.attn_c_attn_bias[i])
+        self.attn_c_attn_bias[i] = transformer.create_buffer(self.attn_c_attn_bias[i],"Metal",params)
     
       print("copying attn_c_proj_weight")
       self.attn_c_proj_weight2 = []
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_weight2.append(create_metal_buffer(np.asfortranarray(self.attn_c_proj_weight[i].transpose())))
-        self.attn_c_proj_weight[i] = create_metal_buffer(self.attn_c_proj_weight[i])
+        self.attn_c_proj_weight2.append(transformer.create_buffer(np.asfortranarray(self.attn_c_proj_weight[i].transpose()),"Metal",params))
+        self.attn_c_proj_weight[i] = transformer.create_buffer(self.attn_c_proj_weight[i],"Metal",params)
 
       print("copying attn_c_proj_bias")
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_bias[i] = create_metal_buffer(self.attn_c_proj_bias[i])
+        self.attn_c_proj_bias[i] = transformer.create_buffer(self.attn_c_proj_bias[i],"Metal",params)
 
       print("copying ln_2_weight")
       for i in range(len(self.ln_1_weight)):
-        self.ln_2_weight[i] = create_metal_buffer(self.ln_2_weight[i])
+        self.ln_2_weight[i] = transformer.create_buffer(self.ln_2_weight[i],"Metal",params)
 
       print("copying ln_2_bias")
       for i in range(len(self.ln_1_weight)):
-        self.ln_2_bias[i] = create_metal_buffer(self.ln_2_bias[i])
+        self.ln_2_bias[i] = transformer.create_buffer(self.ln_2_bias[i],"Metal",params)
 
       print("copying mlp_c_fc_bias")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_fc_bias[i] = create_metal_buffer(self.mlp_c_fc_bias[i])
+        self.mlp_c_fc_bias[i] = transformer.create_buffer(self.mlp_c_fc_bias[i],"Metal",params)
 
       print("copying mlp_c_proj_weight_unf")
       self.mlp_c_proj_weight_unf = []
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_proj_weight_unf.append(create_metal_buffer(self.mlp_c_proj_weight[i].transpose()))
-        self.mlp_c_proj_weight[i] = create_metal_buffer(self.mlp_c_proj_weight[i].flatten())
+        self.mlp_c_proj_weight_unf.append(transformer.create_buffer(self.mlp_c_proj_weight[i].transpose(),"Metal",params))
+        self.mlp_c_proj_weight[i] = transformer.create_buffer(self.mlp_c_proj_weight[i].flatten(),"Metal",params)
 
       print("copying mlp_c_proj_bias")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_proj_bias[i] = create_metal_buffer(self.mlp_c_proj_bias[i])
+        self.mlp_c_proj_bias[i] = transformer.create_buffer(self.mlp_c_proj_bias[i],"Metal",params)
 
       print("copying ln_f_weight")
-      self.ln_f_weight = create_metal_buffer(self.ln_f_weight)
+      self.ln_f_weight = transformer.create_buffer(self.ln_f_weight,"Metal",params)
     
       print("copying ln_f_bias")
-      self.ln_f_bias = create_metal_buffer(self.ln_f_bias)
+      self.ln_f_bias = transformer.create_buffer(self.ln_f_bias,"Metal",params)
 
       print("copying mlp_c_fc_weight")
       for i in range(len(self.ln_1_weight)):
-        self.mlp_c_fc_weight[i] = create_metal_buffer(self.mlp_c_fc_weight[i].transpose(1,0).flatten())
+        self.mlp_c_fc_weight[i] = transformer.create_buffer(self.mlp_c_fc_weight[i].transpose(1,0).flatten(),"Metal",params)
 
       print("copying lm_head_weight_unf")
-      self.lm_head_weight_unf = create_metal_buffer(self.lm_head_weight.transpose())
+      self.lm_head_weight_unf = transformer.create_buffer(self.lm_head_weight.transpose(),"Metal",params)
 
       print("copying lm_head_weight")
-      self.lm_head_weight = create_metal_buffer(self.lm_head_weight.flatten())
+      self.lm_head_weight = transformer.create_buffer(self.lm_head_weight.flatten(),"Metal",params)
 
       print("copying self_wte_weight")
-      self.wte_weight = create_metal_buffer(self.wte_weight.astype(np.float32))
+      self.wte_weight = transformer.create_buffer(self.wte_weight.astype(np.float32),"Metal",params)
 
       print("copying self_wpe_weight")
-      self.wpe_weight = create_metal_buffer(self.wpe_weight)
+      self.wpe_weight = transformer.create_buffer(self.wpe_weight,"Metal",params)
 
       print("creating attn_cache_kv")
       self.attn_cache_kv = []
       for i in range(len(self.ln_1_weight)):
-        self.attn_cache_kv.append(create_metal_buffer_empty(2*MAX_CONTEXT*n_heads*64*4))
+        self.attn_cache_kv.append(transformer.create_buffer_empty(2*MAX_CONTEXT*n_heads*64*4,"Metal",params))
 
   def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if start_pos > 0:
@@ -336,7 +331,7 @@ if __name__ == "__main__":
   674, 10251, 481, 1282, 611, 356, 12553, 262, 4950, 2000, 1176, 356,\
   423, 13, 198, 198, 2215, 345]
 
-  a = create_metal_buffer_empty(1*4) #TODO can't run medium in isolation without doing this first?
+  a = transformer.create_buffer_empty(1*4,"Metal",params) #TODO can't run medium in isolation without doing this first?
   
   rand = Rand()
   MAX_CONTEXT = len(encode(default_prompt))+100
