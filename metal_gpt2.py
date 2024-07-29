@@ -7,7 +7,7 @@ import numpy as np
 import math
 import os
 import pickle
-import metal_kernels
+import kernels
 import metal_kernels_large
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
@@ -340,7 +340,7 @@ if __name__ == "__main__":
   
   rand = Rand()
   MAX_CONTEXT = len(encode(default_prompt))+100
-  metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device="Metal")
+  metalk = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device="Metal")
   if os.path.exists("metal/gpt2.pickle") == False:
     get_model("gpt2")
   filehandler = open("metal/gpt2.pickle", 'rb')  
@@ -352,7 +352,7 @@ if __name__ == "__main__":
 
   rand = Rand()
   MAX_CONTEXT = len(encode("What happened in 1939?"))+100
-  metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device="Metal")
+  metalk = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device="Metal")
   filehandler = open("metal/gpt2.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   gpt2.model.to_buffer(12,768)
@@ -360,7 +360,7 @@ if __name__ == "__main__":
   print((f"Response:", "green"), text)
   
   MAX_CONTEXT = len(encode(default_prompt))+100
-  metalk = metal_kernels.Metal_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT,device="Metal")  
+  metalk = kernels.Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT,device="Metal")  
   if os.path.exists("metal/gpt2-medium.pickle") == False:
     get_model("metal/gpt2-medium")
   filehandler = open("metal/gpt2-medium.pickle", 'rb')  

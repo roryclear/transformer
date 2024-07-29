@@ -20,7 +20,7 @@ global_idx = {"OpenCL":"get_global_id(0)","Metal":"gid.x"}
 local_var = {"OpenCL":"__attribute__ ((aligned (16))) __local","Metal":"threadgroup"}
 
 
-class Metal_Kernels:
+class Kernels:
     def __init__(self,dim,n_heads,max_context,device):
         self.d = device
         self.prg_cache = {}
