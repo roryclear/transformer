@@ -4,6 +4,8 @@ pip install -r requirements.txt
 
 pip install pyobjc-framework-Metal (Apple Silicon only)
 
+python demo.py --p=<your prompt> 
+
 ## OpenCL and Metal GPT-2 inference
 - [ ] Fastest Inference
 
