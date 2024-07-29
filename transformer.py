@@ -25,6 +25,11 @@ class buffer:
               self.np_data = np.zeros(math.ceil(self.size/4)).astype(np.float32)
             cl.enqueue_copy(queue, self.np_data, self.data)
             return self.np_data
+        
+    def rand_like(x,params): #todo Metal
+       if x.d == "OpenCL":
+          return create_buffer(np.random.rand(np.shape(x.np(params).flatten())[0]),x.d,params)
+          
 
 def compile(prg_str,d,params):
   if d == "Metal":

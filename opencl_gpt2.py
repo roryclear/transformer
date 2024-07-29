@@ -21,7 +21,7 @@ platform = cl.get_platforms()
 my_gpu_devices = platform[0].get_devices(device_type=cl.device_type.GPU)
 ctx = cl.Context(devices=my_gpu_devices)
 mf = cl.mem_flags
-cl_params = params = {"ctx":ctx,"mf":mf}
+cl_params = params = {"ctx":ctx,"mf":mf,"queue":cl.CommandQueue(ctx)}
 
 
 tokens = open('tokens.txt','r',encoding="utf-8").readlines()
@@ -166,7 +166,7 @@ class Transformer:
     else:
       x = metalk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
       for i in range(len(self.ln_1_weight)-1):
-        x = openclk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
+        x = metalk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT)
     unif_samples = rand.rand()
     ret = metalk.kernel_3(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\
@@ -334,11 +334,22 @@ if __name__ == "__main__":
     3252, 2125, 470, 262, 6808, 2728, 286, 262, 1917, 13,\
     198, 198, 2025, 37560, 198, 198, 4864, 11, 611, 356, 804,\
     9211, 356, 1064, 326, 4213, 836, 470, 423, 284, 307, 7042, 287]
+  
+  excepted_tokens_large = [198, 198, 1532, 345, 550, 257, 40663, 11, 345, 561,
+2192, 1382, 340, 656, 262, 6766, 13, 2293, 477, 11,
+345, 714, 655, 4829, 262, 1468, 2272, 18556, 656, 262,
+8137, 290, 1956, 340, 7382, 13, 198, 198, 1537, 326,
+40663, 561, 779, 262, 976, 3716, 1080, 284, 366, 33327,
+1, 262, 3404, 319, 262, 4417, 286, 262, 5440, 13,
+921, 460, 470, 2824, 3404, 416, 17997, 3404, 656, 262,
+1633, 960, 14108, 40663, 318, 517, 588, 257, 16285, 508,
+46561, 262, 3404, 510, 422, 262, 2323, 13, 5455, 11,
+345, 561, 7925, 1657, 12, 6551, 5696, 422, 262, 3668]
 
   
   MAX_CONTEXT = len(encode(default_prompt))+100
   openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
-  metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
+  metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device="OpenCL")
   dim = 768
   n_heads = 12
   if os.path.exists("gpt2.pickle") == False:
@@ -352,13 +363,13 @@ if __name__ == "__main__":
   rand = Rand()
   MAX_CONTEXT = len(encode("What happened in 1939?"))+100
   openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
-  metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
+  metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device="OpenCL")
   text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
   print((f"Response:", "green"), text)
   
   MAX_CONTEXT = len(encode(default_prompt))+100
   openclk = opencl_kernels.Opencl_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)
-  metalk = metal_kernels.Metal_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)
+  metalk = metal_kernels.Metal_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT,device="OpenCL")
   dim = 1024
   n_heads = 16
 
@@ -370,17 +381,16 @@ if __name__ == "__main__":
   rand = Rand()
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
   print((f"Response:", "green"), text)
-  
-  
+
   dim = 1280
   n_heads = 20
   openclk = opencl_kernels.Opencl_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
-  metalk = metal_kernels.Metal_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
+  metalk = metal_kernels.Metal_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT,device="OpenCL")
   if os.path.exists("gpt2-large.pickle") == False:
     get_model("gpt2-large")
   filehandler = open("gpt2-large.pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
   gpt2.model.to_buffer()
   rand = Rand()
-  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=excepted_tokens_large)
   print((f"Response:", "green"), text)

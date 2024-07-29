@@ -980,11 +980,12 @@ class Metal_Kernels:
             }}
         }}
         """
-        if prg_str not in self.prg_cache:
-            library = transformer.compile(prg_str,self.d,self.params)
-            self.prg_cache[prg_str] = library
-        prg = self.prg_cache[prg_str]
+        #if prg_str not in self.prg_cache: TODO, why does caching this change the output?
+        #    library = transformer.compile(prg_str,self.d,self.params)
+        #    self.prg_cache[prg_str] = library
+        #prg = self.prg_cache[prg_str]
         
+        prg = transformer.compile(prg_str,self.d,self.params)
         transformer.run(prg,"mm",self.params,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g],num_tokens,ls,self.d)
         transformer.run(prg,"mm2",self.params,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g],math.ceil(b_cols*num_tokens / ls),ls,self.d)
         transformer.run(prg,"mm3",self.params,[self.xqkv_g, cache_kv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
@@ -999,7 +1000,7 @@ class Metal_Kernels:
         transformer.run(prg,"ms8",self.params,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g],num_tokens,ls,self.d)
         transformer.run(prg,"ms9",self.params,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g],math.ceil(b_cols_2*num_tokens / ls),ls,self.d)
         transformer.run(prg,"ms10",self.params,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g],math.ceil(b_rows*num_tokens / ls) ,ls,self.d)
-        return self.h2_g   
+        return self.h2_g
 
     def time_it(func,a,b,i=100):
         f = None
