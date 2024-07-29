@@ -1,7 +1,3 @@
-#!/usr/bin/env python3 #for tinygrad repo, get rid of libs etc
-# can I beat https://github.com/jaymody/xpicoGPT.git?
-# beating https://github.com/WAUthethird/stupidGPT should be easy
-from typing import Union, Tuple
 from tqdm import trange
 import numpy as np
 import os
@@ -22,6 +18,7 @@ except ImportError:
     print("Using OpenCL")
     pass
 import transformer
+import argparse, sys
 
 if d == "Metal":
     device = Metal.MTLCreateSystemDefaultDevice()
@@ -47,6 +44,7 @@ def decode(index):
   for i in index:
     ret+=tokens[i].replace("\n","").replace("/n","\n") #hack with linebreak
   return ret
+
 
 def encode(x):
   ret = []
@@ -203,6 +201,26 @@ class Transformer:
 
   def __call__(self, tokens, start_pos, temperature:np.float32=0.0,n_tokens=1):
     return self.forward(tokens, start_pos, temperature,n_tokens)
+  
+dims = {"gpt2":768,"gpt2-medium":1024,"gpt2-large":1280}
+n_heads = {"gpt2":12,"gpt2-medium":16,"gpt2-large":20}
+model_size = "gpt2"
+
+default_prompt = "What is the answer to life, the universe, and everything?"
+output_length = 100
+temperature = 0.8
+parser=argparse.ArgumentParser()
+parser.add_argument("--p", help="prompt")
+parser.add_argument("--l", help="number of tokens to generate")
+parser.add_argument("--t", help="temperature")
+parser.add_argument("--m", help="model. gpt2, gpt2-medium or gpt2-large default is gpt2")
+args=parser.parse_args()
+if args.p is not None: default_prompt = args.p
+if args.t is not None: temperature = args.t
+if args.l is not None: output_length = int(args.l)
+if args.m is not None: model_size = args.m
+
+MAX_CONTEXT = len(encode(default_prompt))+output_length
 
 VOCAB_SIZE = 50257
 class GPT2:
@@ -227,7 +245,9 @@ class GPT2:
       start_pos = len(toks)
       if expected_tokens != None: #TODO REMOVE 13
         np.testing.assert_equal(tok,expected_tokens[start_pos-n_tokens])
-      toks.append(tok)
+      toks.append(min(50256,tok))
+      if tok >= 50256:
+         return decode(toks)
     return decode(toks)
 
 
@@ -319,67 +339,13 @@ def get_model(model_size):
 
 if __name__ == "__main__":
   rand = Rand()
-
-  default_prompt = "What is the answer to life, the universe, and everything?"
   a = transformer.create_buffer_empty(1*4,d,params) #TODO can't run medium in isolation without doing this first?
-  
   rand = Rand()
-  MAX_CONTEXT = len(encode(default_prompt))+100
-  metalk = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device=d)
-  if os.path.exists(folder+"gpt2.pickle") == False:
-    get_model("gpt2")
-  filehandler = open(folder+"gpt2.pickle", 'rb')  
+  metalk = kernels.Kernels(dim=dims[model_size],n_heads=n_heads[model_size],max_context=MAX_CONTEXT,device=d)
+  if os.path.exists(folder+model_size+".pickle") == False:
+    get_model(model_size)
+  filehandler = open(folder+model_size+".pickle", 'rb')  
   gpt2 = pickle.load(filehandler)
-  gpt2.model.to_buffer(12,768)
-  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
+  gpt2.model.to_buffer(n_heads[model_size],dims[model_size])
+  text = gpt2.generate(prompt=default_prompt, max_length=output_length, temperature=temperature, timing=None, batch_size=1,expected_tokens=None)
   print((f"Response:", "green"), text)
-
-'''
-  rand = Rand()
-  MAX_CONTEXT = len(encode("What happened in 1939?"))+100
-  metalk = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device=d)
-  filehandler = open("metal/gpt2.pickle", 'rb')  
-  gpt2 = pickle.load(filehandler)
-  gpt2.model.to_buffer(12,768)
-  text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
-  print((f"Response:", "green"), text)
-  
-  MAX_CONTEXT = len(encode(default_prompt))+100
-  metalk = kernels.Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT,device=d)  
-  if os.path.exists("metal/gpt2-medium.pickle") == False:
-    get_model("metal/gpt2-medium")
-  filehandler = open("metal/gpt2-medium.pickle", 'rb')  
-  gpt2 = pickle.load(filehandler)
-  #gpt2.model.to_buffer2()
-  gpt2.model.to_buffer(16,1024)
-  rand = Rand()
-  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
-  print((f"Response:", "green"), text)
-  
-  MAX_CONTEXT = len(encode(default_prompt))+100
-  dim = 1280
-  n_heads = 20
-  metalk = metal_kernels_large.Metal_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
-  if os.path.exists("metal/gpt2-large.pickle") == False:
-    get_model("gpt2-large")
-  filehandler = open("metal/gpt2-large.pickle", 'rb')  
-  gpt2 = pickle.load(filehandler)
-  gpt2.model.to_buffer(20,1280)
-  rand = Rand()
-  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
-  print((f"Response:", "green"), text)
-    '''
-''' TODO
-  MAX_CONTEXT = len(encode(default_prompt))+100
-  dim = 1600
-  n_heads = 25
-  metalk = metal_kernels.Metal_Kernels(dim=1600,n_heads=25,max_context=MAX_CONTEXT)
-  if os.path.exists("gpt2-xl.pickle") == False:
-    get_model("gpt2-xl")
-  filehandler = open("gpt2-xl.pickle", 'rb')  
-  gpt2 = pickle.load(filehandler)
-  gpt2.model.to_buffer(25,1600)
-  rand = Rand()
-  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
-  print((f"Response:", "green"), text)
-  '''
