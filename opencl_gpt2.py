@@ -7,7 +7,6 @@ import numpy as np
 import math
 import os
 import pickle
-import opencl_kernels
 import metal_kernels
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
@@ -348,7 +347,6 @@ if __name__ == "__main__":
 
   
   MAX_CONTEXT = len(encode(default_prompt))+100
-  openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
   metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device="OpenCL")
   dim = 768
   n_heads = 12
@@ -362,13 +360,11 @@ if __name__ == "__main__":
   print((f"Response:", "green"), text)
   rand = Rand()
   MAX_CONTEXT = len(encode("What happened in 1939?"))+100
-  openclk = opencl_kernels.Opencl_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT)
   metalk = metal_kernels.Metal_Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device="OpenCL")
   text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
   print((f"Response:", "green"), text)
   
   MAX_CONTEXT = len(encode(default_prompt))+100
-  openclk = opencl_kernels.Opencl_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT)
   metalk = metal_kernels.Metal_Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT,device="OpenCL")
   dim = 1024
   n_heads = 16
@@ -384,7 +380,6 @@ if __name__ == "__main__":
 
   dim = 1280
   n_heads = 20
-  openclk = opencl_kernels.Opencl_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
   metalk = metal_kernels.Metal_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT,device="OpenCL")
   if os.path.exists("gpt2-large.pickle") == False:
     get_model("gpt2-large")
