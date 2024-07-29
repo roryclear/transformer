@@ -3,9 +3,7 @@ import numpy as np
 import os
 import pickle
 import kernels
-from tinygrad.nn.state import torch_load
-from tinygrad.helpers import fetch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 d = "OpenCL"
 folder = ""
 try:
