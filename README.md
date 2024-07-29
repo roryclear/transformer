@@ -1,4 +1,8 @@
 # Transformer
+## Running:
+pip install -r requirements.txt
+pip install pyobjc-framework-Metal (Apple Silicon only)
+
 ## OpenCL and Metal GPT-2 inference
 - [ ] Fastest Inference
 
