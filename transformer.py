@@ -26,9 +26,16 @@ class buffer:
             cl.enqueue_copy(queue, self.np_data, self.data)
             return self.np_data
         
-    def rand_like(x,params): #todo Metal
-       if x.d == "OpenCL":
-          return create_buffer(np.random.rand(np.shape(x.np(params).flatten())[0]),x.d,params)
+    def copy(self,params):
+      return create_buffer(self.np(params),self.d,params)
+        
+    def rand_like(x,params):
+          return create_buffer(np.random.random(np.shape(x.np(params).flatten())).astype(np.float32),x.d,params)
+    
+    def delete(self): #todo OpenCL
+       if self.d == "Metal":
+          self.data.setPurgeableState_(Metal.MTLPurgeableStateEmpty)
+          self.data.release()
           
 
 def compile(prg_str,d,params):
@@ -39,6 +46,34 @@ def compile(prg_str,d,params):
     return cl.Program(params["ctx"],prg_str).build()
   
 def run(prg,func,params,args,gs,ls,d):
+  if d == "Metal":
+    mtl_queue = params["queue"]
+    device = params["device"]
+    fxn = prg.newFunctionWithName_(func)
+    command_buffer = mtl_queue.commandBuffer()
+    encoder = command_buffer.computeCommandEncoder()
+    pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+    encoder.setComputePipelineState_(pipeline_state)
+    i = 0
+    for arg in args:
+        encoder.setBuffer_offset_atIndex_(arg.data, 0, i)
+        i+=1
+    threadsPerGrid = Metal.MTLSizeMake(gs,1,1)
+    threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
+    encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
+    encoder.endEncoding()
+    command_buffer.commit()
+    command_buffer.waitUntilCompleted()
+  if d == "OpenCL":
+     gs*=ls
+     queue = params["queue"]
+     kernel = getattr(prg,func)
+     data = []
+     for a in args: data.append(a.data) #todo, better way?
+     kernel(queue, (gs,1), (ls,1),*data)
+  return
+
+def run_test(prg,func,params,args,gs,ls,d):
   if d == "Metal":
     mtl_queue = params["queue"]
     device = params["device"]
