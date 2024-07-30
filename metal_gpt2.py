@@ -4,7 +4,6 @@
 from typing import Union, Tuple
 from tqdm import trange
 import numpy as np
-import math
 import os
 import pickle
 import kernels
@@ -331,8 +330,18 @@ if __name__ == "__main__":
   674, 10251, 481, 1282, 611, 356, 12553, 262, 4950, 2000, 1176, 356,\
   423, 13, 198, 198, 2215, 345]
 
+  expected_tokens_large = [198, 198, 1532, 345, 550, 257, 40663, 11, 345, 561, 
+2192, 1382, 340, 656, 262, 6766, 13, 2293, 477, 11, 
+345, 714, 655, 4829, 262, 1468, 2272, 18556, 656, 262, 
+8137, 290, 1956, 340, 7382, 13, 198, 198, 1537, 326, 
+40663, 561, 779, 262, 976, 3716, 1080, 284, 366, 33327, 
+1, 262, 3404, 319, 262, 4417, 286, 262, 5440, 13, 
+921, 460, 470, 2824, 3404, 416, 17997, 3404, 656, 262, 
+1633, 960, 14108, 40663, 318, 517, 588, 257, 16285, 508, 
+46561, 262, 3404, 510, 422, 262, 2323, 13, 5455, 11, 
+345, 561, 7925, 1657, 12, 6551, 5696, 422, 262, 3668]
+
   a = transformer.create_buffer_empty(1*4,"Metal",params) #TODO can't run medium in isolation without doing this first?
-  
   rand = Rand()
   MAX_CONTEXT = len(encode(default_prompt))+100
   metalk = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device="Metal")
@@ -343,7 +352,6 @@ if __name__ == "__main__":
   gpt2.model.to_buffer(12,768)
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
   print((f"Response:", "green"), text)
-
 
   rand = Rand()
   MAX_CONTEXT = len(encode("What happened in 1939?"))+100
@@ -364,6 +372,19 @@ if __name__ == "__main__":
   gpt2.model.to_buffer(16,1024)
   rand = Rand()
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
+  print((f"Response:", "green"), text)
+  
+  MAX_CONTEXT = len(encode(default_prompt))+100
+  dim = 1280
+  n_heads = 20
+  rand = Rand()
+  metalk = kernels.Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT,device="Metal")
+  if os.path.exists("metal/gpt2-large.pickle") == False:
+    get_model("gpt2-large")
+  filehandler = open("metal/gpt2-large.pickle", 'rb')  
+  gpt2 = pickle.load(filehandler)
+  gpt2.model.to_buffer(20,1280)
+  text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_large)
   print((f"Response:", "green"), text)
   
   MAX_CONTEXT = len(encode(default_prompt))+100
