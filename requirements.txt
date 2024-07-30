@@ -1,5 +1,4 @@
 numpy==1.26.0
-pyobjc-framework-Metal==10.1
 pyopencl==2024.2.7
 tqdm==4.66.1
 transformers==4.36.2
