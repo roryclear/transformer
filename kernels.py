@@ -477,7 +477,7 @@ class Kernels:
         if hasattr(self, 'temp_g') == False:
             self.temp_g = transformer.create_buffer_empty(self.n_heads*self.max_context*4,self.d,self.params)
         if hasattr(self, 'xq_temp_g') == False:
-            self.xq_temp_g = transformer.create_buffer_empty(self.dim*4,self.d,self.params)
+            self.xq_temp_g = transformer.create_buffer_empty((self.n_heads*(self.max_context+1)*64 + 64)*4,self.d,self.params) #TODO can this be smaller?
         #{barrier[self.d]}
         prg_str = f"""
         {kernel_prefix[self.d]}
@@ -586,6 +586,7 @@ class Kernels:
         {func_dec[self.d]} void mm2(
             {var_dec[self.d]} const float *keys_values, {var_dec[self.d]} float *temp3, {var_dec[self.d]} const float *xq_temp{uint3_arg[self.d]})
         {{
+            if({global_idx[self.d]} < {self.n_heads*(start_pos+1)*(start_pos+1)}) {{
             int lidx0 = {global_idx[self.d]};
             int x = (lidx0) % {start_pos+1};
             int k = (lidx0) / {start_pos+1};
@@ -595,6 +596,7 @@ class Kernels:
             }}          
             if(x + k*{start_pos+1} < {self.n_heads*self.max_context}) {{      
             temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(64)
+            }}
             }}
         }}
         {func_dec[self.d]} void mm3(
