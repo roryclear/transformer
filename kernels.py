@@ -466,8 +466,8 @@ class Kernels:
         transformer.run(prg,"mm10",self.params,[logits_g,res_g],1,ls,self.d)
         return res_g.np(self.params)
 
-    def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
-        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,j=0):
+    def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,weight_g,bias_g,\
+        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,start_pos,g,j=0):
         ls = 256
         ls = 256 #TODO why is 256 fastet than 32?
         seg3 = math.ceil(self.dim / ls) #todo
