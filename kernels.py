@@ -240,7 +240,7 @@ class Kernels:
         seg = int(size / ls) #todo
         x0_g = transformer.create_buffer_empty(n_tokens*self.dim*4,self.d,self.params)
         logits_g = transformer.create_buffer_empty(50257*4,self.d,self.params)
-        c_g = transformer.create_buffer_empty(n_tokens*b_cols*4,self.d,self.params)
+        c_g = transformer.create_buffer_empty(max_content*b_cols*4,self.d,self.params) #todo, can this be smaller?
         res = np.zeros(1).astype(np.float32)
         res_g = transformer.create_buffer_empty(1*4,self.d,self.params)
         
@@ -317,11 +317,13 @@ class Kernels:
          {func_dec[self.d]} void mm4(
             {var_dec[self.d]} const float *xqkv, {var_dec[self.d]} float *new_cache{uint3_arg[self.d]})
         {{
+            if({global_idx[self.d]} < {b_cols*n_tokens}) {{
             int gidx0 = {global_idx[self.d]};
             int i = gidx0 / {self.n_heads*64};
             int j = gidx0 % {self.n_heads*64};
             new_cache[i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + j + {self.dim}];
-            new_cache[{max_content*self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + j + {self.dim}*2]; 
+            new_cache[{max_content*self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + j + {self.dim}*2];
+            }}
         }}
         {func_dec[self.d]} void mm5(
             {var_dec[self.d]} float *x, {var_dec[self.d]} const float *ln_f_weight, {var_dec[self.d]} const float *ln_f_bias{uint3_arg[self.d]})
@@ -449,7 +451,7 @@ class Kernels:
         prg = self.prg_cache[prg_str]
 
         transformer.run(prg,"mm",self.params,[x_g, x0_g, weight_g, bias_g],n_tokens,ls,self.d)
-        gs =  math.ceil(b_cols*n_tokens / ls)
+        gs = math.ceil(b_cols*n_tokens / ls)
         transformer.run(prg,"mm2",self.params,[x0_g, attn_weight_g,attn_bias_g,c_g],gs,ls,self.d)
         transformer.run(prg,"mm4",self.params,[c_g, new_cache_g],gs,ls,self.d)
         transformer.run(prg,"mm5",self.params,[x_g, ln_f_weight_g, ln_f_bias_g],1,ls,self.d)
