@@ -707,6 +707,8 @@ class Kernels:
             self.h2_g = transformer.create_buffer_empty(max_content*self.dim*4,self.d,self.params)
         if hasattr(self, 'xq_g') == False:
             self.xq_g = transformer.create_buffer_empty(self.n_heads*64*max_content*4,self.d,self.params)
+        if hasattr(self, 'xq_g_temp') == False:
+            self.xq_g_temp = transformer.create_buffer_empty(self.n_heads*64*max_content*4,self.d,self.params)
         if hasattr(self, 'xv_g') == False:
             self.xv_g = transformer.create_buffer_empty(self.n_heads*64*max_content*4,self.d,self.params)
         if hasattr(self, 'c_g') == False:
@@ -809,7 +811,7 @@ class Kernels:
             xv[i*{num_tokens}*64 + j*64 + k] = xqkv[i*64 + j*{64*self.n_heads*3} + k + {64*self.n_heads*2}];
         }}
         {func_dec[self.d]} void ms0(
-            {var_dec[self.d]} float *xq, {var_dec[self.d]} const float *xqkv{uint3_arg[self.d]})
+            {var_dec[self.d]} float *xq_temp, {var_dec[self.d]} const float *xq, {var_dec[self.d]} const float *xqkv{uint3_arg[self.d]})
         {{
                 int gidx0 = {global_idx[self.d]};
                 if(gidx0 < {self.n_heads*a_rows*a_rows}) {{
@@ -820,7 +822,7 @@ class Kernels:
                 for(int k = 0; k < {a_cols}; k++) {{
                     total += xq[y*{a_cols} + k + z*{a_rows}*{a_cols}] * xqkv[x*{64*self.n_heads*3} + k + z*64 + {self.dim}]; 
                 }}
-                xq[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total / 8; //sqrt 64 input shape xq
+                xq_temp[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total / 8; //sqrt 64 input shape xq
                 }}
         }}
         {func_dec[self.d]} void ms(
@@ -992,11 +994,11 @@ class Kernels:
         transformer.run(prg,"mm2",self.params,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g],math.ceil(b_cols*num_tokens / ls),ls,self.d)
         transformer.run(prg,"mm3",self.params,[self.xqkv_g, cache_kv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
         transformer.run(prg,"tr",self.params,[self.xqkv_g, self.xq_g, self.xv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
-        transformer.run(prg,"ms0",self.params,[self.xq_g, self.xqkv_g],math.ceil(self.n_heads*num_tokens*num_tokens/ls),ls,self.d)
-        transformer.run(prg,"ms",self.params,[self.xq_g],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"ms3",self.params,[self.xq_g,self.res_g],math.ceil(self.n_heads*num_tokens/ls),min(self.n_heads*num_tokens,ls),self.d)
-        transformer.run(prg,"ms4",self.params,[self.xq_g,self.res_g],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"ms5",self.params,[self.xq_g,self.xv_g,self.c_g],math.ceil(self.n_heads*a_cols*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"ms0",self.params,[self.xq_g_temp,self.xq_g, self.xqkv_g],math.ceil(self.n_heads*num_tokens*num_tokens/ls),ls,self.d)
+        transformer.run(prg,"ms",self.params,[self.xq_g_temp],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"ms3",self.params,[self.xq_g_temp,self.res_g],math.ceil(self.n_heads*num_tokens/ls),min(self.n_heads*num_tokens,ls),self.d)
+        transformer.run(prg,"ms4",self.params,[self.xq_g_temp,self.res_g],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"ms5",self.params,[self.xq_g_temp,self.xv_g,self.c_g],math.ceil(self.n_heads*a_cols*num_tokens / ls),ls,self.d)
         transformer.run(prg,"ms6",self.params,[self.c_g,self.xqt_g],math.ceil(num_tokens*self.n_heads*64 / ls),ls,self.d)
         transformer.run(prg,"ms7",self.params,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g],math.ceil(b_rows*num_tokens / ls),ls,self.d)
         transformer.run(prg,"ms8",self.params,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g],num_tokens,ls,self.d)
