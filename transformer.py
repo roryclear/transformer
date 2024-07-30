@@ -73,25 +73,40 @@ def run(prg,func,params,args,gs,ls,d):
      kernel(queue, (gs,1), (ls,1),*data)
   return
 
-def run_test(prg,func,params,args,gs,ls,d):
+def run_test(prg,func,params,args,gs,ls,d): #TODO, only for metal because no delete in OpenCL yet
   if d == "Metal":
-    mtl_queue = params["queue"]
-    device = params["device"]
-    fxn = prg.newFunctionWithName_(func)
-    command_buffer = mtl_queue.commandBuffer()
-    encoder = command_buffer.computeCommandEncoder()
-    pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
-    encoder.setComputePipelineState_(pipeline_state)
-    i = 0
-    for arg in args:
-        encoder.setBuffer_offset_atIndex_(arg.data, 0, i)
-        i+=1
-    threadsPerGrid = Metal.MTLSizeMake(gs,1,1)
-    threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
-    encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
-    encoder.endEncoding()
-    command_buffer.commit()
-    command_buffer.waitUntilCompleted()
+    for x in range(5):
+      print("test =",x)
+      args_copy_a, args_copy_b = [],[]
+      for a in args:
+        args_copy_a.append(a.copy(params))
+        args_copy_b.append(a.copy(params))
+      for a in [args_copy_a, args_copy_b]:
+        mtl_queue = params["queue"]
+        device = params["device"]
+        fxn = prg.newFunctionWithName_(func)
+        command_buffer = mtl_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoder()
+        pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
+        encoder.setComputePipelineState_(pipeline_state)
+        i = 0
+        for arg in a:
+            encoder.setBuffer_offset_atIndex_(arg.data, 0, i)
+            i+=1
+        threadsPerGrid = Metal.MTLSizeMake(gs,1,1)
+        threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
+        encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
+        encoder.endEncoding()
+        command_buffer.commit()
+        command_buffer.waitUntilCompleted()
+      for j in range(len(args_copy_a)):
+        np.testing.assert_allclose(args_copy_a[j].np(device),args_copy_b[j].np(device),1e-6)
+      for j in range(len(args_copy_a)):
+        args_copy_a[j].delete()
+        args_copy_b[j].delete()
+      args_copy_a, args_copy_b = [],[] #todo, needed?
+    run(prg,func,params,args,gs,ls,d)
+
   if d == "OpenCL":
      gs*=ls
      queue = params["queue"]
