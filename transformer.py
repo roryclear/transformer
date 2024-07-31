@@ -74,34 +74,25 @@ def run(prg,func,params,args,gs,ls,d):
   return
 
 def run_test(prg,func,params,args,gs,ls,d): #TODO, only for metal because no delete in OpenCL yet
-  if d == "Metal":
-    args_copy_a = []
-    for a in args:
-      args_copy_a.append(a.copy(params))
-    run(prg,func,params,args_copy_a,gs,ls,d) 
-    for x in range(2):
-      print("test =",x)
-      args_copy_b = []
-      for a in args: 
-         args_copy_b.append(a.copy(params))
-      run(prg,func,params,args_copy_b,gs,ls,d)
-      for j in range(len(args_copy_b)):
-        np.testing.assert_allclose(args_copy_a[j].np("Metal"),args_copy_b[j].np("Metal"),1e-6)
-      for j in range(len(args_copy_b)):
-        args_copy_b[j].delete()
-      args_copy_b = [] #todo, needed?
-    for j in range(len(args_copy_a)):
-      args_copy_a[j].delete()
-    args_copy_a = []#todo, needed?
-    run(prg,func,params,args,gs,ls,d)
-
-  if d == "OpenCL":
-    gs*=ls
-    queue = params["queue"]
-    kernel = getattr(prg,func)
-    data = []
-    for a in args: data.append(a.data) #todo, better way?
-    kernel(queue, (gs,1), (ls,1),*data)
+  args_copy_a = []
+  for a in args:
+    args_copy_a.append(a.copy(params))
+  run(prg,func,params,args_copy_a,gs,ls,d) 
+  for x in range(3):
+    print("test =",x)
+    args_copy_b = []
+    for a in args: 
+        args_copy_b.append(a.copy(params))
+    run(prg,func,params,args_copy_b,gs,ls,d)
+    for j in range(len(args_copy_b)):
+      np.testing.assert_allclose(args_copy_a[j].np(params),args_copy_b[j].np(params),1e-6)
+    for j in range(len(args_copy_b)):
+      args_copy_b[j].delete()
+    args_copy_b = [] #todo, needed?
+  for j in range(len(args_copy_a)):
+    args_copy_a[j].delete()
+  args_copy_a = []#todo, needed?
+  run(prg,func,params,args,gs,ls,d)
   return
 
 def run_old(prg,func,params,args,gs,ls,d):
