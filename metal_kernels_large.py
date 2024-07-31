@@ -591,8 +591,8 @@ class Metal_Kernels:
         res = np.frombuffer(res, dtype=np.float32)
         return res
 
-    def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,g,keys_values_g,start_pos,weight_g,bias_g,\
-        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,j=0):
+    def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,weight_g,bias_g,\
+        weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,start_pos,g,j=0):
         ls = 256
         ls3 = 256 #TODO why is 256 fastet than 32?
         seg3 = math.ceil(self.dim / ls3) #todo
