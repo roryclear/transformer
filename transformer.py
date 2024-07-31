@@ -85,6 +85,7 @@ def run(prg,func,params,args,gs,ls,d):
      for a in args: data.append(a.data) #todo, better way?
      kernel(queue, (gs,1), (ls,1),*data)
   if d == "CUDA":
+    gs*=ls
     fxn = prg.get_function(func)
     data = []
     for a in args: data.append(a.data) #todo, better way?
