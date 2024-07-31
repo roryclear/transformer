@@ -2,40 +2,46 @@ import pyopencl as cl
 import math
 import numpy as np
 try:
-   import Metal
+   import pycuda
 except ImportError:
    pass
+try:
+  import Metal
+except ImportError:
+  pass
 
 
 class buffer:
-    def __init__(self,data,size,d):
-        self.data = data
-        self.size = size
-        self.d = d
-        self.np_data = None #cache?
-        #TODO cache np if faster?
+  def __init__(self,data,size,d):
+      self.data = data
+      self.size = size
+      self.d = d
+      self.np_data = None #cache?
+      #TODO cache np if faster?
 
-    def np(self,params=None):
-        if self.d == "Metal":
-            output = np.asarray(self.data.contents().as_buffer(self.size))
-            return np.frombuffer(output, dtype=np.float32)
-        if self.d == "OpenCL":
-            queue = params["queue"]
-            if self.np_data is None:
-              self.np_data = np.zeros(math.ceil(self.size/4)).astype(np.float32)
-            cl.enqueue_copy(queue, self.np_data, self.data)
-            return self.np_data
+  def np(self,params=None):
+      if self.d == "Metal":
+          output = np.asarray(self.data.contents().as_buffer(self.size))
+          return np.frombuffer(output, dtype=np.float32)
+      if self.d == "OpenCL":
+          queue = params["queue"]
+          if self.np_data is None:
+            self.np_data = np.zeros(math.ceil(self.size/4)).astype(np.float32)
+          cl.enqueue_copy(queue, self.np_data, self.data)
+          return self.np_data
+      if self.d == "CUDA":
+         return self.data.get()
         
-    def copy(self,params):
-      return create_buffer(self.np(params),self.d,params)
-        
-    def rand_like(x,params):
-          return create_buffer(np.random.random(np.shape(x.np(params).flatten())).astype(np.float32),x.d,params)
-    
-    def delete(self): #todo OpenCL
-       if self.d == "Metal":
-          self.data.setPurgeableState_(Metal.MTLPurgeableStateEmpty)
-          self.data.release()
+  def copy(self,params):
+    return create_buffer(self.np(params),self.d,params)
+      
+  def rand_like(x,params):
+        return create_buffer(np.random.random(np.shape(x.np(params).flatten())).astype(np.float32),x.d,params)
+  
+  def delete(self): #todo OpenCL
+      if self.d == "Metal":
+        self.data.setPurgeableState_(Metal.MTLPurgeableStateEmpty)
+        self.data.release()
           
 
 def compile(prg_str,d,params):
@@ -44,6 +50,8 @@ def compile(prg_str,d,params):
     return library
   if d == "OpenCL":
     return cl.Program(params["ctx"],prg_str).build()
+  if d == "CUDA":
+    return SourceModule(prg_str)
   
 def run(prg,func,params,args,gs,ls,d):
   if d == "Metal":
@@ -71,6 +79,11 @@ def run(prg,func,params,args,gs,ls,d):
      data = []
      for a in args: data.append(a.data) #todo, better way?
      kernel(queue, (gs,1), (ls,1),*data)
+  if d == "CUDA":
+    fxn = prg.get_function(func)
+    data = []
+    for a in args: data.append(a.data) #todo, better way?
+    fxn(*data,grid=(gs,1,1),block=(ls,1,1))
   return
 
 def run_test(prg,func,params,args,gs,ls,d): #TODO, only for metal because no delete in OpenCL yet
@@ -132,6 +145,10 @@ def create_buffer(a,d,params):
     mf = params["mf"]
     data = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     return buffer(data,len(a.flatten()),d)
+  if d == "CUDA":
+    a_gpu = cuda.mem_alloc(cuda.mem_alloc(len(a.flatten())*4))
+    cuda.memcpy_htod(a, a_gpu)
+    return a_gpu
   return None
   
 def create_buffer_empty(size,d,params):
@@ -144,4 +161,7 @@ def create_buffer_empty(size,d,params):
     mf = params["mf"]
     data = cl.Buffer(ctx, mf.READ_ONLY, size)
     return buffer(data,size,d)
+  if d == "CUDA":
+    a_gpu = a_gpu = cuda.mem_alloc(size)
+    return a_gpu
   return None

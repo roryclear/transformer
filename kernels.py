@@ -10,14 +10,14 @@ import pyopencl as cl
 
 ls = 256
 
-kernel_prefix = {"OpenCL":"",
-                "Metal":"#include <metal_stdlib>\n#include <metal_simdgroup_matrix>\nusing namespace metal;\n"}
-uint3_arg = {"OpenCL":"","Metal":", uint3 gid [[thread_position_in_grid]]"}
-func_dec = {"OpenCL":"__kernel","Metal":"kernel"}
+kernel_prefix = {"OpenCL":"","Metal":"#include <metal_stdlib>\n#include <metal_simdgroup_matrix>\nusing namespace metal;\n","CUDA":""}
+uint3_arg = {"OpenCL":"","Metal":", uint3 gid [[thread_position_in_grid]]","CUDA":""}
+func_dec = {"OpenCL":"__kernel","Metal":"kernel","CUDA":"__global__"} #TODO vs local cuda?
 var_dec = {"OpenCL":"__global","Metal":"device"}
-barrier = {"OpenCL":"barrier(CLK_LOCAL_MEM_FENCE);","Metal":"threadgroup_barrier(mem_flags::mem_threadgroup);"}
-global_idx = {"OpenCL":"get_global_id(0)","Metal":"gid.x"}
-local_var = {"OpenCL":"__attribute__ ((aligned (16))) __local","Metal":"threadgroup"}
+barrier = {"OpenCL":"barrier(CLK_LOCAL_MEM_FENCE);","Metal":"threadgroup_barrier(mem_flags::mem_threadgroup);","CUDA":" __syncthreads();"}
+global_idx = {"OpenCL":"get_global_id(0)","Metal":"gid.x","CUDA":"threadIdx.x+blockIdx.x*blockDim.x;"}
+local_var = {"OpenCL":"__attribute__ ((aligned (16))) __local","Metal":"threadgroup","CUDA":"thread_group"}
+
 
 
 class Kernels:
