@@ -1,8 +1,13 @@
-import pyopencl as cl
+try:
+  import pyopencl as cl
+except ImportError:
+  pass
 import math
 import numpy as np
 try:
-   import pycuda
+  import pycuda.driver as cuda
+  import pycuda.autoinit
+  from pycuda.compiler import SourceModule
 except ImportError:
    pass
 try:

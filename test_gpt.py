@@ -10,18 +10,30 @@ import kernels
 from tinygrad.nn.state import torch_load
 from tinygrad.helpers import fetch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-d = "OpenCL"
+d = "CUDA"
 folder = ""
+
 try:
-   import Metal
-   import metal_kernels_large
-   d = "Metal"
-   folder = "metal/"
-   print("Using Metal")
+  import pyopencl as cl
+  d = "OpenCL"
 except ImportError:
-    import pyopencl as cl
-    print("Using OpenCL")
-    pass
+   pass
+
+try:
+  import Metal
+  import metal_kernels_large
+  d = "Metal"
+  folder = "metal/"
+  print("Using Metal")
+except ImportError:
+  pass
+
+try:
+  import pycuda
+  d = "CUDA"
+except ImportError:
+   pass
+
 import transformer
 
 if d == "Metal":
