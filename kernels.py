@@ -10,14 +10,14 @@ import pyopencl as cl
 
 ls = 256
 
-kernel_prefix = {"OpenCL":"",
-                "Metal":"#include <metal_stdlib>\n#include <metal_simdgroup_matrix>\nusing namespace metal;\n"}
-uint3_arg = {"OpenCL":"","Metal":", uint3 gid [[thread_position_in_grid]]"}
-func_dec = {"OpenCL":"__kernel","Metal":"kernel"}
+kernel_prefix = {"OpenCL":"","Metal":"#include <metal_stdlib>\n#include <metal_simdgroup_matrix>\nusing namespace metal;\n","CUDA":""}
+uint3_arg = {"OpenCL":"","Metal":", uint3 gid [[thread_position_in_grid]]","CUDA":""}
+func_dec = {"OpenCL":"__kernel","Metal":"kernel","CUDA":"__global__"} #TODO vs local cuda?
 var_dec = {"OpenCL":"__global","Metal":"device"}
-barrier = {"OpenCL":"barrier(CLK_LOCAL_MEM_FENCE);","Metal":"threadgroup_barrier(mem_flags::mem_threadgroup);"}
-global_idx = {"OpenCL":"get_global_id(0)","Metal":"gid.x"}
-local_var = {"OpenCL":"__attribute__ ((aligned (16))) __local","Metal":"threadgroup"}
+barrier = {"OpenCL":"barrier(CLK_LOCAL_MEM_FENCE);","Metal":"threadgroup_barrier(mem_flags::mem_threadgroup);","CUDA":" __syncthreads();"}
+global_idx = {"OpenCL":"get_global_id(0)","Metal":"gid.x","CUDA":"threadIdx.x+blockIdx.x*blockDim.x;"}
+local_var = {"OpenCL":"__attribute__ ((aligned (16))) __local","Metal":"threadgroup","CUDA":"thread_group"}
+
 
 
 class Kernels:
@@ -524,19 +524,15 @@ class Kernels:
             {var_dec[self.d]} float *mean,
             {var_dec[self.d]} float *h_temp, {var_dec[self.d]} float *h, {var_dec[self.d]} float *bias3_temp{uint3_arg[self.d]})
         {{
+            //tanh(val0) = ((2.0f*(1/(exp2((val0*(-2.885390043258667f)))+1.0f)))+(-1.0f));
             int lidx0 = {global_idx[self.d]} % {ls};
             int i = {global_idx[self.d]} / {ls};
-            bias3_temp[i + lidx0*{math.ceil(self.dim*4 / ls)}] = bias3[i + lidx0*{math.ceil(self.dim*4 / ls)}];
+            float total = bias3[i + lidx0*{math.ceil(self.dim*4 / ls)}];
             for(int j = 0; j < {self.dim}; j++) {{
-                bias3_temp[i + lidx0*{math.ceil(self.dim*4 / ls)}] += ((h[j] * weight2[j]) / mean[0] + bias2[j]) * weight3[(i + lidx0*{math.ceil(self.dim*4 / ls)})*{self.dim} + j];
+                total += ((h[j] * weight2[j]) / mean[0] + bias2[j]) * weight3[(i + lidx0*{math.ceil(self.dim*4 / ls)})*{self.dim} + j];
             }}
-            float tth = bias3_temp[i + lidx0*{math.ceil(self.dim*4 / ls)}] * 0.7978845608\
-            * (1 + 0.044715 * pow(bias3_temp[i + lidx0*{math.ceil(self.dim*4 / ls)}],2));
-            float th = tanh(tth);
-            if(isnan(th) && tth < 0) {{ th = -1;}}
-            if(isnan(th) && tth >= 0) {{ th = 1;}}
-            bias3_temp[i + lidx0*{math.ceil(self.dim*4 / ls)}] = 0.5 * bias3_temp[i + lidx0*{math.ceil(self.dim*4 / ls)}]\
-            * (1 + th);
+            bias3_temp[i + lidx0*{math.ceil(self.dim*4 / ls)}] = 0.5 * total\
+            * (1 + ((2.0f*(1/(exp2((total * 0.7978845608 * (1 + 0.044715 * pow(total,2))*(-2.885390043258667f)))+1.0f)))+(-1.0f)));
         }}
         {func_dec[self.d]} void mm5(
             {var_dec[self.d]} float *a,
@@ -957,19 +953,11 @@ class Kernels:
             int y = gidx0 % {num_tokens};
             float total = 0;
             for(int k = 0; k < {b_rows}; k++) {{
-                total += a[y*{b_rows} + k] * c_fc_weight[x*{b_rows} + k];  //TODO A LEADS TO NANs
+                total += a[y*{b_rows} + k] * c_fc_weight[x*{b_rows} + k];
             }}
-            float tth = (total + c_fc_bias[x]) * 0.7978845608\
-                * (1 + 0.044715 * pow((total + c_fc_bias[x]),2));
-            float th = tanh(tth);
-            if(isnan(th) && tth < 0) {{
-                th = -1;
-            }}
-            if(isnan(th) && tth >= 0) {{
-                th = 1;
-            }}
+            //tanh = ((2.0f*(1/(exp2((val0*(-2.885390043258667f)))+1.0f)))+(-1.0f));
             res[y*{b_cols_2} + x] = 0.5 * (total + c_fc_bias[x])\
-                * (1 + th);
+                * (1 + ((2.0f*(1/(exp2(((total + c_fc_bias[x]) * 0.7978845608 * (1 + 0.044715 * pow((total + c_fc_bias[x]),2))*(-2.885390043258667f)))+1.0f)))+(-1.0f)));
         }}
         {func_dec[self.d]} void ms10(
             {var_dec[self.d]} const float *a, {var_dec[self.d]} const float *c_proj_weight,{var_dec[self.d]} const float *c_proj_bias, {var_dec[self.d]} float *res{uint3_arg[self.d]})
@@ -1019,3 +1007,4 @@ class Kernels:
             if f is None or t < f:
                 f = t
         return ret,f
+
