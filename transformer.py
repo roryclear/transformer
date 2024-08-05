@@ -132,7 +132,6 @@ def create_buffer(a,d,params):
     mf = params["mf"]
     data = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     return buffer(data,len(a.flatten()),d)
-  return None
   
 def create_buffer_empty(size,d,params):
   if d == "Metal":
@@ -144,4 +143,3 @@ def create_buffer_empty(size,d,params):
     mf = params["mf"]
     data = cl.Buffer(ctx, mf.READ_ONLY, size)
     return buffer(data,size,d)
-  return None

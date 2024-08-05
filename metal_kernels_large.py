@@ -90,7 +90,6 @@ class Metal_Kernels:
             print("ls =",ls)
             self.run_metal_test(fxn,g(ls),ls,args,device)
             ls*=2
-        return None
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
         if hasattr(self, 'add_res_g') == False:

@@ -65,9 +65,6 @@ def encode(x):
     x = x[min(max_token_length,len(x))-i:]
   return ret
 
-  def __call__():
-    return None
-  
 class Rand:
   def __init__(self):
     self.seed = 420
@@ -79,9 +76,6 @@ class Rand:
     return rng_np_buffer[0]
     
 class Transformer:
-  def __init__(self):
-    return None
-
   def to_buffer(self,n_heads,dim):
     self.n_heads = n_heads
     self.dim = dim
