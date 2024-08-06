@@ -65,7 +65,7 @@ class Kernels:
         tok_emb_g = transformer.create_buffer_empty(no_tokens*self.dim*4,self.d,self.params)
         prg_str = f"""
         {kernel_prefix[self.d]}
-        {func_dec[self.d]} void mm(
+        {func_dec[self.d]} void tok_emb(
             {var_dec[self.d]} int *tokens, {var_dec[self.d]} const float *weight, {var_dec[self.d]} const float *weight2,  {var_dec[self.d]} float *tok_emb{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
@@ -76,7 +76,7 @@ class Kernels:
         """
         library = transformer.compile(prg_str,self.d,self.params)
         gs = math.ceil(size / ls)
-        transformer.run(library,"mm",self.params,[tokens_g,weight_g,weight_2_g,tok_emb_g],gs,ls,self.d)
+        transformer.run(library,"tok_emb",self.params,[tokens_g,weight_g,weight_2_g,tok_emb_g],gs,ls,self.d)
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
@@ -93,7 +93,7 @@ class Kernels:
         seg2 = math.ceil(50257 / ls)
         prg_str = f"""
         {kernel_prefix[self.d]}
-        {func_dec[self.d]} void mm4(
+        {func_dec[self.d]} void k1_mm4(
             {var_dec[self.d]} float *h, {var_dec[self.d]} const float *weight, {var_dec[self.d]} const float *bias{uint3_arg[self.d]})
         {{
             {local_var[self.d]} float temp[{ls}];
@@ -135,7 +135,7 @@ class Kernels:
                 h[i + lidx0*{seg}] = (h[i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / mean + bias[i + lidx0*{seg}];
             }}
         }}
-        {func_dec[self.d]} void matvec(
+        {func_dec[self.d]} void k1_matvec(
             {var_dec[self.d]} const float *h, {var_dec[self.d]} const float *weight2 , {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
@@ -145,27 +145,27 @@ class Kernels:
             }}
             res[gidx0] /= {temperature};
         }}
-        {func_dec[self.d]} void mm5(
+        {func_dec[self.d]} void k1_mm5(
             {var_dec[self.d]} const float *a, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             res[0] = a[0]; //todo why is this needed?, used to be a MAX
         }}
 
-        {func_dec[self.d]} void mm6(
+        {func_dec[self.d]} void k1_mm6(
         {var_dec[self.d]} float *a, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{  
             int gidx0 = {global_idx[self.d]};
             a[gidx0] = exp(a[gidx0] - res[0]);
         }}
 
-        {func_dec[self.d]} void mm8(
+        {func_dec[self.d]} void k1_mm8(
         {var_dec[self.d]} float *a, {var_dec[self.d]} const float *res{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
             a[gidx0] = a[gidx0] / res[0];
         }}
 
-        {func_dec[self.d]} void mm9(
+        {func_dec[self.d]} void k1_mm9(
         {var_dec[self.d]} const float *a, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             {local_var[self.d]} float temp[{ls}];
@@ -186,7 +186,7 @@ class Kernels:
             }}
         }}
 
-        {func_dec[self.d]} void mm10(
+        {func_dec[self.d]} void k1_mm10(
         {var_dec[self.d]} float *a{uint3_arg[self.d]})
         {{
             for(int i = 1; i < 50257; i++) {{
@@ -201,7 +201,7 @@ class Kernels:
         prg = self.prg_cache[prg_str]
 
         prg_str = f"""
-        {func_dec[self.d]} void mm11(
+        {func_dec[self.d]} void k1_mm11(
         {var_dec[self.d]} float *a{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
@@ -215,17 +215,17 @@ class Kernels:
         prg2 = transformer.compile(prg_str,self.d,self.params)
 
         gs =  math.ceil(50257 / ls)
-        transformer.run(prg,"mm4",self.params,[h_g, weight_g, bias_g],1,ls,self.d)
-        transformer.run(prg,"matvec",self.params,[h_g, weight2_g,self.logits_g],gs,ls,self.d)
-        transformer.run(prg,"mm5",self.params,[self.logits_g,self.res_g],1,1,self.d)
-        transformer.run(prg,"mm6",self.params,[self.logits_g,self.res_g],gs,ls,self.d)
-        transformer.run(prg,"mm5",self.params,[self.logits_g,self.res_g],1,1,self.d)
-        transformer.run(prg,"mm8",self.params,[self.logits_g,self.res_g],gs,ls,self.d)
-        transformer.run(prg,"mm9",self.params,[self.logits_g,self.res_g],1,ls,self.d)
-        transformer.run(prg,"mm8",self.params,[self.logits_g,self.res_g],gs,ls,self.d)
-        transformer.run(prg,"mm10",self.params,[self.logits_g],1,1,self.d)
-        transformer.run(prg2,"mm11",self.params,[self.logits_g],gs,ls,self.d)
-        transformer.run(prg,"mm9",self.params,[self.logits_g,self.res_g],1,ls,self.d)
+        transformer.run(prg,"k1_mm4",self.params,[h_g, weight_g, bias_g],1,ls,self.d)
+        transformer.run(prg,"k1_matvec",self.params,[h_g, weight2_g,self.logits_g],gs,ls,self.d)
+        transformer.run(prg,"k1_mm5",self.params,[self.logits_g,self.res_g],1,1,self.d)
+        transformer.run(prg,"k1_mm6",self.params,[self.logits_g,self.res_g],gs,ls,self.d)
+        transformer.run(prg,"k1_mm5",self.params,[self.logits_g,self.res_g],1,1,self.d)
+        transformer.run(prg,"k1_mm8",self.params,[self.logits_g,self.res_g],gs,ls,self.d)
+        transformer.run(prg,"k1_mm9",self.params,[self.logits_g,self.res_g],1,ls,self.d)
+        transformer.run(prg,"k1_mm8",self.params,[self.logits_g,self.res_g],gs,ls,self.d)
+        transformer.run(prg,"k1_mm10",self.params,[self.logits_g],1,1,self.d)
+        transformer.run(prg2,"k1_mm11",self.params,[self.logits_g],gs,ls,self.d)
+        transformer.run(prg,"k1_mm9",self.params,[self.logits_g,self.res_g],1,ls,self.d)
         return self.res_g.np(self.params)
 
     def kernel_3(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
@@ -246,7 +246,7 @@ class Kernels:
         
         prg_str = f"""
         {kernel_prefix[self.d]}
-        {func_dec[self.d]} void mm({var_dec[self.d]} const float *x_in,
+        {func_dec[self.d]} void k3_mm({var_dec[self.d]} const float *x_in,
             {var_dec[self.d]} float *x, {var_dec[self.d]} const float *weight, {var_dec[self.d]} const float *bias{uint3_arg[self.d]})
         {{
             {local_var[self.d]} float temp[{ls}];
@@ -291,7 +291,7 @@ class Kernels:
                 x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
             }}
         }}
-        {func_dec[self.d]} void mm2(
+        {func_dec[self.d]} void k3_mm2(
             {var_dec[self.d]} const float *x, {var_dec[self.d]} const float *attn_weight, {var_dec[self.d]} const float *attn_bias,{var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             if({global_idx[self.d]} < {b_cols*n_tokens}) {{ //TODO
@@ -305,7 +305,7 @@ class Kernels:
             res[y*{b_cols} + i] = total + attn_bias[i];
             }}
         }}
-        {func_dec[self.d]} void mm3(
+        {func_dec[self.d]} void k3_mm3(
             {var_dec[self.d]} const float *xqkv, {var_dec[self.d]} float *new_cache{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
@@ -314,7 +314,7 @@ class Kernels:
             new_cache[i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim*1} + j];
             new_cache[{max_content*self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*2 + j]; 
         }}
-         {func_dec[self.d]} void mm4(
+         {func_dec[self.d]} void k3_mm4(
             {var_dec[self.d]} const float *xqkv, {var_dec[self.d]} float *new_cache{uint3_arg[self.d]})
         {{
             if({global_idx[self.d]} < {b_cols*n_tokens}) {{
@@ -325,7 +325,7 @@ class Kernels:
             new_cache[{max_content*self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + j + {self.dim}*2];
             }}
         }}
-        {func_dec[self.d]} void mm5(
+        {func_dec[self.d]} void k3_mm5(
             {var_dec[self.d]} float *x, {var_dec[self.d]} const float *ln_f_weight, {var_dec[self.d]} const float *ln_f_bias{uint3_arg[self.d]})
         {{
             {local_var[self.d]} float temp[{ls}];
@@ -367,7 +367,7 @@ class Kernels:
                 x[i + lidx0*{seg}] = (x[i + lidx0*{seg} + {(n_tokens - 1)*self.dim}] * ln_f_weight[i + lidx0*{seg}]) / mean + ln_f_bias[i + lidx0*{seg}];
             }}
         }}
-        {func_dec[self.d]} void matmul(
+        {func_dec[self.d]} void k3_matmul(
             {var_dec[self.d]} const float *a, {var_dec[self.d]} const float *b, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             if({global_idx[self.d]} < {b_cols2}) {{
@@ -379,13 +379,13 @@ class Kernels:
                 res[x] = total / {temperature}; 
             }}
         }}
-        {func_dec[self.d]} void mm6(
+        {func_dec[self.d]} void k3_mm6(
             {var_dec[self.d]} const float *a, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             res[0] = a[0]; //todo why is this needed?, used to be a MAX
         }}
 
-        {func_dec[self.d]} void mm7(
+        {func_dec[self.d]} void k3_mm7(
         {var_dec[self.d]} float *a, {var_dec[self.d]} const float *res{uint3_arg[self.d]})
         {{
             if({global_idx[self.d]} < 50257) {{ //TODO
@@ -394,7 +394,7 @@ class Kernels:
             }}
         }}
 
-        {func_dec[self.d]} void mm9(
+        {func_dec[self.d]} void k3_mm9(
         {var_dec[self.d]} float *a, {var_dec[self.d]} const float *res{uint3_arg[self.d]})
         {{
             if({global_idx[self.d]} < 50257) {{
@@ -403,7 +403,7 @@ class Kernels:
             }}
         }}
 
-        {func_dec[self.d]} void mm10(
+        {func_dec[self.d]} void k3_mm10(
         {var_dec[self.d]} const float *a, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             {local_var[self.d]} float temp[{ls}];
@@ -425,7 +425,7 @@ class Kernels:
             }}
         }}
 
-        {func_dec[self.d]} void mm11(
+        {func_dec[self.d]} void k3_mm11(
         {var_dec[self.d]} float *a{uint3_arg[self.d]})
         {{
             for(int i = 1; i < 50257; i++) {{
@@ -433,7 +433,7 @@ class Kernels:
             }}
         }}
 
-        {func_dec[self.d]} void mm12(
+        {func_dec[self.d]} void k3_mm12(
         {var_dec[self.d]} float *a{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
@@ -450,22 +450,22 @@ class Kernels:
             self.prg_cache[prg_str] = library
         prg = self.prg_cache[prg_str]
 
-        transformer.run(prg,"mm",self.params,[x_g, x0_g, weight_g, bias_g],n_tokens,ls,self.d)
+        transformer.run(prg,"k3_mm",self.params,[x_g, x0_g, weight_g, bias_g],n_tokens,ls,self.d)
         gs = math.ceil(b_cols*n_tokens / ls)
-        transformer.run(prg,"mm2",self.params,[x0_g, attn_weight_g,attn_bias_g,c_g],gs,ls,self.d)
-        transformer.run(prg,"mm4",self.params,[c_g, new_cache_g],gs,ls,self.d)
-        transformer.run(prg,"mm5",self.params,[x_g, ln_f_weight_g, ln_f_bias_g],1,ls,self.d)
-        transformer.run(prg,"matmul",self.params,[x_g, lm_head_weight_g,logits_g],math.ceil(b_cols2 / ls),ls,self.d)
-        transformer.run(prg,"mm6",self.params,[logits_g,res_g],1,1,self.d)
+        transformer.run(prg,"k3_mm2",self.params,[x0_g, attn_weight_g,attn_bias_g,c_g],gs,ls,self.d)
+        transformer.run(prg,"k3_mm4",self.params,[c_g, new_cache_g],gs,ls,self.d)
+        transformer.run(prg,"k3_mm5",self.params,[x_g, ln_f_weight_g, ln_f_bias_g],1,ls,self.d)
+        transformer.run(prg,"k3_matmul",self.params,[x_g, lm_head_weight_g,logits_g],math.ceil(b_cols2 / ls),ls,self.d)
+        transformer.run(prg,"k3_mm6",self.params,[logits_g,res_g],1,1,self.d)
         gs = math.ceil(50257 / ls)
-        transformer.run(prg,"mm7",self.params,[logits_g,res_g],gs,ls,self.d)
-        transformer.run(prg,"mm6",self.params,[logits_g,res_g],1,1,self.d)
-        transformer.run(prg,"mm9",self.params,[logits_g,res_g],gs,ls,self.d)
-        transformer.run(prg,"mm10",self.params,[logits_g,res_g],1,ls,self.d)
-        transformer.run(prg,"mm9",self.params,[logits_g,res_g],gs,ls,self.d)
-        transformer.run(prg,"mm11",self.params,[logits_g],1,1,self.d)
-        transformer.run(prg,"mm12",self.params,[logits_g],gs,ls,self.d)
-        transformer.run(prg,"mm10",self.params,[logits_g,res_g],1,ls,self.d)
+        transformer.run(prg,"k3_mm7",self.params,[logits_g,res_g],gs,ls,self.d)
+        transformer.run(prg,"k3_mm6",self.params,[logits_g,res_g],1,1,self.d)
+        transformer.run(prg,"k3_mm9",self.params,[logits_g,res_g],gs,ls,self.d)
+        transformer.run(prg,"k3_mm10",self.params,[logits_g,res_g],1,ls,self.d)
+        transformer.run(prg,"k3_mm9",self.params,[logits_g,res_g],gs,ls,self.d)
+        transformer.run(prg,"k3_mm11",self.params,[logits_g],1,1,self.d)
+        transformer.run(prg,"k3_mm12",self.params,[logits_g],gs,ls,self.d)
+        transformer.run(prg,"k3_mm10",self.params,[logits_g,res_g],1,ls,self.d)
         return res_g.np(self.params)
 
     def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,weight_g,bias_g,\
@@ -481,7 +481,7 @@ class Kernels:
         #{barrier[self.d]}
         prg_str = f"""
         {kernel_prefix[self.d]}
-        {func_dec[self.d]} void mm(
+        {func_dec[self.d]} void k0_mm(
             {var_dec[self.d]} float *a,
             {var_dec[self.d]} float *mean{uint3_arg[self.d]})
         {{
@@ -517,7 +517,7 @@ class Kernels:
             }}
         }}
 
-        {func_dec[self.d]} void mm4(
+        {func_dec[self.d]} void k0_mm4(
             {var_dec[self.d]} float *a,
             {var_dec[self.d]} const float *weight2, {var_dec[self.d]} const float *bias2,
             {var_dec[self.d]} const float *weight3, {var_dec[self.d]} const float *bias3,
@@ -534,7 +534,7 @@ class Kernels:
             bias3_temp[i + lidx0*{math.ceil(self.dim*4 / ls)}] = 0.5 * total\
             * (1 + ((2.0f*(1/(exp2((total * 0.7978845608 * (1 + 0.044715 * pow(total,2))*(-2.885390043258667f)))+1.0f)))+(-1.0f)));
         }}
-        {func_dec[self.d]} void mm5(
+        {func_dec[self.d]} void k0_mm5(
             {var_dec[self.d]} float *a,
             {var_dec[self.d]} const float *weight4,{var_dec[self.d]} const float *bias4,
             {var_dec[self.d]} float *h_temp, {var_dec[self.d]} float *bias3_temp{uint3_arg[self.d]})
@@ -557,7 +557,7 @@ class Kernels:
 
         prg_str = f"""
         {kernel_prefix[self.d]}
-        {func_dec[self.d]} void mm1(
+        {func_dec[self.d]} void k0_mm1(
             {var_dec[self.d]} const float *a, {var_dec[self.d]} const float *c, {var_dec[self.d]} const float *d, {var_dec[self.d]} const float *e,
             {var_dec[self.d]} const float *xqkv, {var_dec[self.d]} float *keys_values,
             {var_dec[self.d]} float *xq_temp, {var_dec[self.d]} float *mean{uint3_arg[self.d]})
@@ -579,7 +579,7 @@ class Kernels:
                 keys_values[{self.dim*self.max_context} + {start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] = xqkv[{self.dim*2} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] + t;
             }}
         }}
-        {func_dec[self.d]} void mm2(
+        {func_dec[self.d]} void k0_mm2(
             {var_dec[self.d]} const float *keys_values, {var_dec[self.d]} float *temp3, {var_dec[self.d]} const float *xq_temp{uint3_arg[self.d]})
         {{
             if({global_idx[self.d]} < {self.n_heads*(start_pos+1)*(start_pos+1)}) {{
@@ -595,7 +595,7 @@ class Kernels:
             }}
             }}
         }}
-        {func_dec[self.d]} void mm3(
+        {func_dec[self.d]} void k0_mm3(
             {var_dec[self.d]} float *a,
             {var_dec[self.d]} float *keys_values,
             {var_dec[self.d]} const float *weight,{var_dec[self.d]} const float *bias,
@@ -687,14 +687,14 @@ class Kernels:
         if hasattr(self, 'h') == False:
             self.h = transformer.create_buffer_empty(self.dim*4,self.d,self.params)
         
-        transformer.run(prg,"mm",self.params,[a_g,self.mean],1,ls,self.d)
-        transformer.run(prg2,"mm1",self.params,[a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,self.xq_temp_g,self.mean],math.ceil(self.dim*3 / ls),ls,self.d)
-        transformer.run(prg2,"mm2",self.params,[keys_values_g ,self.temp_g, self.xq_temp_g],math.ceil((self.n_heads*(start_pos+1)*(start_pos+1)) / ls),ls,self.d)
-        transformer.run(prg2,"mm3",self.params,[a_g,keys_values_g,weight_g\
+        transformer.run(prg,"k0_mm",self.params,[a_g,self.mean],1,ls,self.d)
+        transformer.run(prg2,"k0_mm1",self.params,[a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,self.xq_temp_g,self.mean],math.ceil(self.dim*3 / ls),ls,self.d)
+        transformer.run(prg2,"k0_mm2",self.params,[keys_values_g ,self.temp_g, self.xq_temp_g],math.ceil((self.n_heads*(start_pos+1)*(start_pos+1)) / ls),ls,self.d)
+        transformer.run(prg2,"k0_mm3",self.params,[a_g,keys_values_g,weight_g\
         ,bias_g,weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g,self.mean,self.h_temp,self.h],1,ls,self.d)
-        transformer.run(prg,"mm4",self.params,[a_g,weight2_g,bias2_g,\
+        transformer.run(prg,"k0_mm4",self.params,[a_g,weight2_g,bias2_g,\
         weight3_g,bias3_g,self.mean,self.h_temp,self.h,self.bias3_temp],int(self.dim*4 / ls),ls,self.d)
-        transformer.run(prg,"mm5",self.params,[a_g,weight4_g,bias4_g,self.h_temp,self.bias3_temp],int(self.dim / ls),ls,self.d)
+        transformer.run(prg,"k0_mm5",self.params,[a_g,weight4_g,bias4_g,self.h_temp,self.bias3_temp],int(self.dim / ls),ls,self.d)
         return a_g
  
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
@@ -729,7 +729,7 @@ class Kernels:
         b_cols_2 = self.dim*4
         prg_str = f"""
         {kernel_prefix[self.d]}
-        {func_dec[self.d]} void mm(
+        {func_dec[self.d]} void k2_mm(
             {var_dec[self.d]} float *x, {var_dec[self.d]} const float *weight, {var_dec[self.d]} const float *bias,
             {var_dec[self.d]} float *copy{uint3_arg[self.d]})
         {{
@@ -775,7 +775,7 @@ class Kernels:
                 x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
             }}
         }}
-        {func_dec[self.d]} void mm2(
+        {func_dec[self.d]} void k2_mm2(
             {var_dec[self.d]} const float *x, {var_dec[self.d]} const float *attn_weight, {var_dec[self.d]} const float *attn_bias,{var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
@@ -789,7 +789,7 @@ class Kernels:
             res[y*{b_cols} + i] = total + attn_bias[i];
             }}
         }}
-        {func_dec[self.d]} void mm3(
+        {func_dec[self.d]} void k2_mm3(
             {var_dec[self.d]} const float *xqkv, {var_dec[self.d]} float *new_cache{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
@@ -798,7 +798,7 @@ class Kernels:
             new_cache[i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*1 + j];
             new_cache[{max_content}*{self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*2 + j]; 
         }}                 
-        {func_dec[self.d]} void tr(
+        {func_dec[self.d]} void k2_tr(
             {var_dec[self.d]} const float *xqkv, {var_dec[self.d]} float *xq, {var_dec[self.d]} float *xv{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
@@ -808,7 +808,7 @@ class Kernels:
             xq[i*{num_tokens}*64 + j*64 + k] = xqkv[i*64 + j*{64*self.n_heads*3} + k];
             xv[i*{num_tokens}*64 + j*64 + k] = xqkv[i*64 + j*{64*self.n_heads*3} + k + {64*self.n_heads*2}];
         }}
-        {func_dec[self.d]} void ms0(
+        {func_dec[self.d]} void k2_ms0(
             {var_dec[self.d]} float *xq_temp, {var_dec[self.d]} const float *xq, {var_dec[self.d]} const float *xqkv{uint3_arg[self.d]})
         {{
                 int gidx0 = {global_idx[self.d]};
@@ -823,7 +823,7 @@ class Kernels:
                 xq_temp[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total / 8; //sqrt 64 input shape xq
                 }}
         }}
-        {func_dec[self.d]} void ms(
+        {func_dec[self.d]} void k2_ms(
             {var_dec[self.d]} float *xq{uint3_arg[self.d]})
         {{
         int gidx0 = {global_idx[self.d]};
@@ -837,7 +837,7 @@ class Kernels:
             xq[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = exp(xq[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z]);
         }}
         }}
-        {func_dec[self.d]} void ms3(
+        {func_dec[self.d]} void k2_ms3(
             {var_dec[self.d]} const float *xq, {var_dec[self.d]} float *mx{uint3_arg[self.d]})
         {{
         int gidx0 = {global_idx[self.d]};
@@ -851,7 +851,7 @@ class Kernels:
             mx[x*{num_tokens} + y] = m;  
             }}
         }}
-        {func_dec[self.d]} void ms4(
+        {func_dec[self.d]} void k2_ms4(
             {var_dec[self.d]} float *xq, {var_dec[self.d]} const float *mx{uint3_arg[self.d]})
         {{
         int gidx0 = {global_idx[self.d]};
@@ -862,7 +862,7 @@ class Kernels:
             xq[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] /= mx[x*{num_tokens} + y];
         }}
         }}
-        {func_dec[self.d]} void ms5(
+        {func_dec[self.d]} void k2_ms5(
             {var_dec[self.d]} const float *xq, {var_dec[self.d]} const float *xv, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
@@ -875,7 +875,7 @@ class Kernels:
             }}
             res[y*{a_cols} + x + z*{a_cols}*{num_tokens}] = total;
         }}
-        {func_dec[self.d]} void ms6( //transpose
+        {func_dec[self.d]} void k2_ms6( //transpose
             {var_dec[self.d]} const float *xq, {var_dec[self.d]} float *xqt{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
@@ -884,7 +884,7 @@ class Kernels:
             int k = gidx0 % 64;
             xqt[i*64 + j*{self.n_heads*64} + k] = xq[i*{num_tokens}*64 + j*64 + k];
         }}
-        {func_dec[self.d]} void ms7(
+        {func_dec[self.d]} void k2_ms7(
             {var_dec[self.d]} const float *xq, {var_dec[self.d]} const float *attn_weight,{var_dec[self.d]} const float *attn_bias, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             if({global_idx[self.d]} < {b_rows*num_tokens}) {{ //TODO don't allow larger local size? wasteful
@@ -899,7 +899,7 @@ class Kernels:
             }}
         }}
         
-        {func_dec[self.d]} void ms8( //TODO, there are other kernels like this to fix
+        {func_dec[self.d]} void k2_ms8( //TODO, there are other kernels like this to fix
             {var_dec[self.d]} float *x, {var_dec[self.d]} const float *ln_2_weight, {var_dec[self.d]} const float *ln_2_bias
             ,{var_dec[self.d]} float *copy{uint3_arg[self.d]})
         {{
@@ -945,7 +945,7 @@ class Kernels:
             }}
         }}
 
-        {func_dec[self.d]} void ms9(
+        {func_dec[self.d]} void k2_ms9(
             {var_dec[self.d]} const float *a, {var_dec[self.d]} const float *c_fc_weight,{var_dec[self.d]} const float *c_fc_bias, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
@@ -959,7 +959,7 @@ class Kernels:
             res[y*{b_cols_2} + x] = 0.5 * (total + c_fc_bias[x])\
                 * (1 + ((2.0f*(1/(exp2(((total + c_fc_bias[x]) * 0.7978845608 * (1 + 0.044715 * pow((total + c_fc_bias[x]),2))*(-2.885390043258667f)))+1.0f)))+(-1.0f)));
         }}
-        {func_dec[self.d]} void ms10(
+        {func_dec[self.d]} void k2_ms10(
             {var_dec[self.d]} const float *a, {var_dec[self.d]} const float *c_proj_weight,{var_dec[self.d]} const float *c_proj_bias, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             if({global_idx[self.d]} < {b_rows*num_tokens}) {{ //TODO, wasteful?
@@ -980,20 +980,20 @@ class Kernels:
         #prg = self.prg_cache[prg_str]
         
         prg = transformer.compile(prg_str,self.d,self.params)
-        transformer.run(prg,"mm",self.params,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g],num_tokens,ls,self.d)
-        transformer.run(prg,"mm2",self.params,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g],math.ceil(b_cols*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"mm3",self.params,[self.xqkv_g, cache_kv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
-        transformer.run(prg,"tr",self.params,[self.xqkv_g, self.xq_g, self.xv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
-        transformer.run(prg,"ms0",self.params,[self.xq_g_temp,self.xq_g, self.xqkv_g],math.ceil(self.n_heads*num_tokens*num_tokens/ls),ls,self.d)
-        transformer.run(prg,"ms",self.params,[self.xq_g_temp],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"ms3",self.params,[self.xq_g_temp,self.res_g],math.ceil(self.n_heads*num_tokens/ls),min(self.n_heads*num_tokens,ls),self.d)
-        transformer.run(prg,"ms4",self.params,[self.xq_g_temp,self.res_g],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"ms5",self.params,[self.xq_g_temp,self.xv_g,self.c_g],math.ceil(self.n_heads*a_cols*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"ms6",self.params,[self.c_g,self.xqt_g],math.ceil(num_tokens*self.n_heads*64 / ls),ls,self.d)
-        transformer.run(prg,"ms7",self.params,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g],math.ceil(b_rows*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"ms8",self.params,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g],num_tokens,ls,self.d)
-        transformer.run(prg,"ms9",self.params,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g],math.ceil(b_cols_2*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"ms10",self.params,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g],math.ceil(b_rows*num_tokens / ls) ,ls,self.d)
+        transformer.run(prg,"k2_mm",self.params,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g],num_tokens,ls,self.d)
+        transformer.run(prg,"k2_mm2",self.params,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g],math.ceil(b_cols*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"k2_mm3",self.params,[self.xqkv_g, cache_kv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
+        transformer.run(prg,"k2_tr",self.params,[self.xqkv_g, self.xq_g, self.xv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
+        transformer.run(prg,"k2_ms0",self.params,[self.xq_g_temp,self.xq_g, self.xqkv_g],math.ceil(self.n_heads*num_tokens*num_tokens/ls),ls,self.d)
+        transformer.run(prg,"k2_ms",self.params,[self.xq_g_temp],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"k2_ms3",self.params,[self.xq_g_temp,self.res_g],math.ceil(self.n_heads*num_tokens/ls),min(self.n_heads*num_tokens,ls),self.d)
+        transformer.run(prg,"k2_ms4",self.params,[self.xq_g_temp,self.res_g],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"k2_ms5",self.params,[self.xq_g_temp,self.xv_g,self.c_g],math.ceil(self.n_heads*a_cols*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"k2_ms6",self.params,[self.c_g,self.xqt_g],math.ceil(num_tokens*self.n_heads*64 / ls),ls,self.d)
+        transformer.run(prg,"k2_ms7",self.params,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g],math.ceil(b_rows*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"k2_ms8",self.params,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g],num_tokens,ls,self.d)
+        transformer.run(prg,"k2_ms9",self.params,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g],math.ceil(b_cols_2*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"k2_ms10",self.params,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g],math.ceil(b_rows*num_tokens / ls) ,ls,self.d)
         return self.h2_g
 
     def time_it(func,a,b,i=100):
