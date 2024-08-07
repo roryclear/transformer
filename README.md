@@ -1,5 +1,7 @@
 # Transformer
 ## Running:
+git clone --depth 1 https://github.com/roryclear/transformer.git
+
 pip install -r requirements.txt
 
 pip install pyobjc-framework-Metal (Apple Silicon only)
