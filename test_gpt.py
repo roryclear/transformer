@@ -18,6 +18,8 @@ try:
    d = "Metal"
    folder = "metal/"
    print("Using Metal")
+   if os.path.isdir('metal') == False:
+    os.mkdir('metal')
 except ImportError:
     import pyopencl as cl
     print("Using OpenCL")
