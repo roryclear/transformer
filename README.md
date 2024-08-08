@@ -8,7 +8,7 @@ pip install pyobjc-framework-Metal (Apple Silicon only)
 
 python demo.py --p="your prompt" 
 
-## OpenCL and Metal GPT-2 inference
+## CUDA, OpenCL and Metal GPT-2 inference
 - [ ] Fastest Inference
 
 - [X] Support for all GPT-2 Models
