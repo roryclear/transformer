@@ -486,7 +486,6 @@ class Kernels:
             self.temp_g = transformer.create_buffer_empty(self.n_heads*self.max_context*4,self.d,self.params)
         if hasattr(self, 'xq_temp_g') == False:
             self.xq_temp_g = transformer.create_buffer_empty((self.n_heads*(self.max_context+1)*64 + 64)*4,self.d,self.params) #TODO can this be smaller?
-        #{barrier[self.d]}
         prg_str = f"""
         {kernel_prefix[self.d]}
         {func_dec[self.d]} void k0_mm(
@@ -533,8 +532,9 @@ class Kernels:
             {var_dec[self.d]} float *h_temp, {var_dec[self.d]} float *h, {var_dec[self.d]} float *bias3_temp{uint3_arg[self.d]})
         {{
             //tanh(val0) = ((2.0f*(1/(exp2((val0*(-2.885390043258667f)))+1.0f)))+(-1.0f));
-            int lidx0 = {global_idx[self.d]} % {ls};
-            int i = {global_idx[self.d]} / {ls};
+            int gidx0 = {global_idx[self.d]};
+            int lidx0 = gidx0 % {ls};
+            int i = gidx0 / {ls};
             float total = bias3[i + lidx0*{math.ceil(self.dim*4 / ls)}];
             for(int j = 0; j < {self.dim}; j++) {{
                 total += ((h[j] * weight2[j]) / mean[0] + bias2[j]) * weight3[(i + lidx0*{math.ceil(self.dim*4 / ls)})*{self.dim} + j];
@@ -547,9 +547,10 @@ class Kernels:
             {var_dec[self.d]} const float *weight4,{var_dec[self.d]} const float *bias4,
             {var_dec[self.d]} float *h_temp, {var_dec[self.d]} float *bias3_temp{uint3_arg[self.d]})
         {{
+            int gidx0 = {global_idx[self.d]};
             {local_var[self.d]} float bias4_temp[{self.dim*3}];
-            int lidx0 = {global_idx[self.d]} % {ls};
-            int i = {global_idx[self.d]} / {ls};
+            int lidx0 = gidx0 % {ls};
+            int i = gidx0 / {ls};
             bias4_temp[lidx0 + i*{ls}] = bias4[lidx0 + i*{ls}];
             for(int j = 0; j < {self.dim*4}; j++) {{
                 bias4_temp[lidx0 + i*{ls}] += bias3_temp[j] * weight4[lidx0 + i*{ls} + j*{self.dim}];
@@ -570,21 +571,22 @@ class Kernels:
             {var_dec[self.d]} const float *xqkv, {var_dec[self.d]} float *keys_values,
             {var_dec[self.d]} float *xq_temp, {var_dec[self.d]} float *mean{uint3_arg[self.d]})
         {{
-            int lidx0 = {global_idx[self.d]} % {ls};
-            int i = {global_idx[self.d]} / {ls};
+            int gidx0 = {global_idx[self.d]};
+            int lidx0 = gidx0 % {ls};
+            int i = gidx0 / {ls};
             float t = 0;
             xq_temp[lidx0*{math.ceil(self.dim*3 / ls)} + i] = xqkv[lidx0*{int(self.dim*3 / ls)} + i];
             for(int k = 0; k < {self.dim}; k++) {{
                 t += ((a[k] * c[k]) / mean[0] + d[k]) * e[(lidx0*{int(self.dim*3 / ls)} + i)*{self.dim} + k];
             }}
-            if((lidx0*{int(self.dim*3 / ls)} + i) < {g}) {{
+            if((lidx0*{int(self.dim*3 / ls)} + i) < {self.dim}) {{
                 xq_temp[lidx0*{int(self.dim*3 / ls)} + i] += t;
                 }}
-            if((lidx0*{int(self.dim*3 / ls)} + i) >= {g} && (lidx0*{int(self.dim*3 / ls)} + i) < {2*g}) {{
-                keys_values[{start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {g}] = xqkv[{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {g}] + t;
+            if((lidx0*{int(self.dim*3 / ls)} + i) >= {self.dim} && (lidx0*{int(self.dim*3 / ls)} + i) < {2*self.dim}) {{
+                keys_values[{start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {self.dim}] = xqkv[{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {self.dim}] + t;
             }}
-            if((lidx0*{int(self.dim*3 / ls)} + i) >= {2*g}) {{
-                keys_values[{self.dim*self.max_context} + {start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] = xqkv[{self.dim*2} + lidx0*{int(self.dim*3 / ls)} + i - {2*g}] + t;
+            if((lidx0*{int(self.dim*3 / ls)} + i) >= {2*self.dim}) {{
+                keys_values[{self.dim*self.max_context} + {start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {2*self.dim}] = xqkv[{self.dim*2} + lidx0*{int(self.dim*3 / ls)} + i - {2*self.dim}] + t;
             }}
         }}
         {func_dec[self.d]} void k0_mm2(
