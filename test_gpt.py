@@ -24,6 +24,14 @@ except ImportError:
     import pyopencl as cl
     print("Using OpenCL")
     pass
+try:
+    import pycuda.driver as cuda
+    import pycuda.autoinit
+    from pycuda.compiler import SourceModule
+    d = "CUDA"
+except ImportError:
+    pass
+
 import transformer
 
 if d == "Metal":
@@ -145,7 +153,7 @@ class Transformer:
     for i in range(len(self.ln_1_weight)):
       self.attn_cache_kv.append(transformer.create_buffer_empty(2*MAX_CONTEXT*n_heads*64*4,d,params))
 
-    if d == "OpenCL":      
+    if d == "OpenCL" or d == "CUDA":      
       print("copying attn_c_proj_weight") #TODO
       self.attn_c_proj_weight2 = []
       for i in range(len(self.ln_1_weight)):

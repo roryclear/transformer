@@ -6,6 +6,13 @@ try:
 except ImportError:
    pass
 
+try:
+    import pycuda.driver as cuda
+    import pycuda.autoinit
+    from pycuda.compiler import SourceModule
+except ImportError:
+    pass
+
 
 class buffer:
     def __init__(self,data,size,d):
@@ -25,6 +32,11 @@ class buffer:
               self.np_data = np.zeros(math.ceil(self.size/4)).astype(np.float32)
             cl.enqueue_copy(queue, self.np_data, self.data)
             return self.np_data
+        if self.d == "CUDA":
+          if self.np_data is None:
+              self.np_data = np.zeros(math.ceil(self.size/4)).astype(np.float32)
+          cuda.memcpy_dtoh(self.np_data, self.data)
+          return self.np_data
         
     def copy(self,params):
       return create_buffer(self.np(params),self.d,params)
@@ -44,6 +56,8 @@ def compile(prg_str,d,params):
     return library
   if d == "OpenCL":
     return cl.Program(params["ctx"],prg_str).build()
+  if d == "CUDA":
+    return SourceModule(prg_str)
   
 def run(prg,func,params,args,gs,ls,d):
   if d == "Metal":
@@ -71,6 +85,11 @@ def run(prg,func,params,args,gs,ls,d):
      data = []
      for a in args: data.append(a.data) #todo, better way?
      kernel(queue, (gs,1), (ls,1),*data)
+  if d == "CUDA":
+    fxn = prg.get_function(func)
+    data = []
+    for a in args: data.append(a.data) #todo, better way?
+    fxn(*data,block=(ls,1,1),grid=(gs,1))
   return
 
 def run_test(prg,func,params,args,gs,ls,d): #TODO, only for metal because no delete in OpenCL yet
@@ -132,6 +151,10 @@ def create_buffer(a,d,params):
     mf = params["mf"]
     data = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
     return buffer(data,len(a.flatten()),d)
+  if d == "CUDA":
+    a_gpu = cuda.mem_alloc(a.nbytes)
+    cuda.memcpy_htod(a_gpu, a)
+    return buffer(a_gpu,a.nbytes,d)
   
 def create_buffer_empty(size,d,params):
   if d == "Metal":
@@ -143,3 +166,8 @@ def create_buffer_empty(size,d,params):
     mf = params["mf"]
     data = cl.Buffer(ctx, mf.READ_ONLY, size)
     return buffer(data,size,d)
+  if d == "CUDA":
+    a = np.zeros(math.ceil(size/4)).astype(np.float32)
+    a_gpu = cuda.mem_alloc(size) #TODO, this won't be all zeros, so need to copy zeros in for now
+    cuda.memcpy_htod(a_gpu, a)
+    return buffer(a_gpu,size,d)

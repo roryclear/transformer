@@ -2,6 +2,12 @@ import numpy as np
 import time
 import math
 try:
+    import pycuda.driver as cuda
+    import pycuda.autoinit
+    from pycuda.compiler import SourceModule
+except ImportError:
+    pass
+try:
    import Metal
 except ImportError:
     pass
@@ -16,7 +22,7 @@ func_dec = {"OpenCL":"__kernel","Metal":"kernel","CUDA":"__global__"} #TODO vs l
 var_dec = {"OpenCL":"__global","Metal":"device"}
 barrier = {"OpenCL":"barrier(CLK_LOCAL_MEM_FENCE);","Metal":"threadgroup_barrier(mem_flags::mem_threadgroup);","CUDA":" __syncthreads();"}
 global_idx = {"OpenCL":"get_global_id(0)","Metal":"gid.x","CUDA":"threadIdx.x+blockIdx.x*blockDim.x;"}
-local_var = {"OpenCL":"__attribute__ ((aligned (16))) __local","Metal":"threadgroup","CUDA":"thread_group"}
+local_var = {"OpenCL":"__attribute__ ((aligned (16))) __local","Metal":"threadgroup","CUDA":"__shared__"}
 
 
 
@@ -39,6 +45,8 @@ class Kernels:
             mf = cl.mem_flags
             prg = None
             self.params = {"ctx":ctx,"mf":mf,"queue":self.queue}
+        if device == "CUDA":
+            self.params = None
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
         if hasattr(self, 'add_res_g') == False:
