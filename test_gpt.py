@@ -182,10 +182,10 @@ class Transformer:
 
   def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if start_pos > 0:
-      h = metalk.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
+      h = k.add(self.wte_weight,self.wpe_weight,start_pos,tokens[0])
       attn_dim = self.dim
       for i in range(0,len(self.ln_1_weight)):
-        h = metalk.kernel_0(h,self.ln_1_weight[i],\
+        h = k.kernel_0(h,self.ln_1_weight[i],\
         self.ln_1_bias[i],self.attn_c_attn_weight[i],\
         self.attn_c_attn_bias[i],\
         self.attn_cache_kv[i],\
@@ -194,15 +194,15 @@ class Transformer:
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],\
         self.mlp_c_proj_weight[i],self.mlp_c_proj_bias[i],start_pos,attn_dim,i)
       unif_samples = rand.rand()
-      ret = metalk.kernel_1(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0]  
+      ret = k.kernel_1(h,self.ln_f_weight, self.ln_f_bias,self.lm_head_weight,temperature,unif_samples).astype(np.int32)[0]  
       return ret
     else:
-      x = metalk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
+      x = k.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
       for i in range(len(self.ln_1_weight)-1):
-        x = metalk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
+        x = k.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT,i)
     unif_samples = rand.rand()
-    ret = metalk.kernel_3(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\
+    ret = k.kernel_3(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\
     ,self.ln_f_weight, self.ln_f_bias,n_tokens,MAX_CONTEXT,self.lm_head_weight_unf,temperature,unif_samples).astype(np.int32)[0]
     return ret
 
@@ -406,7 +406,7 @@ expected_tokens_large = [198, 198, 1532, 345, 550, 257, 40663, 11, 345, 561,
 a = transformer.create_buffer_empty(1*4,d,params) #TODO can't run medium in isolation without doing this first?
 rand = Rand()
 MAX_CONTEXT = len(encode(default_prompt))+100
-metalk = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device=d)
+k = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device=d)
 if os.path.exists(folder+"gpt2.pickle") == False:
   get_model("gpt2")
 filehandler = open(folder+"gpt2.pickle", 'rb')  
@@ -418,7 +418,7 @@ delete_buffers(gpt2.model)
 
 rand = Rand()
 MAX_CONTEXT = len(encode("What happened in 1939?"))+100
-metalk = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device=d)
+k = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device=d)
 filehandler = open(folder+"gpt2.pickle", 'rb')  
 gpt2 = pickle.load(filehandler)
 gpt2.model.to_buffer(12,768)
@@ -427,7 +427,7 @@ print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
 
 MAX_CONTEXT = len(encode(default_prompt))+100
-metalk = kernels.Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT,device=d)  
+k = kernels.Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT,device=d)  
 if os.path.exists(folder+"gpt2-medium.pickle") == False:
   get_model(folder+"gpt2-medium")
 filehandler = open(folder+"gpt2-medium.pickle", 'rb')  
@@ -443,7 +443,7 @@ MAX_CONTEXT = len(encode(default_prompt))+100
 dim = 1280
 n_heads = 20
 rand = Rand()
-metalk = kernels.Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT,device=d)
+k = kernels.Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT,device=d)
 if os.path.exists(folder+"gpt2-large.pickle") == False:
   get_model("gpt2-large")
 filehandler = open(folder+"gpt2-large.pickle", 'rb')  
@@ -457,7 +457,7 @@ if d == "Metal":
   MAX_CONTEXT = len(encode(default_prompt))+100
   dim = 1280
   n_heads = 20
-  metalk = metal_kernels_large.Metal_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
+  k = metal_kernels_large.Metal_Kernels(dim=1280,n_heads=20,max_context=MAX_CONTEXT)
   if os.path.exists(folder+"gpt2-large.pickle") == False:
     get_model("gpt2-large")
   filehandler = open(folder+"gpt2-large.pickle", 'rb')  
@@ -472,7 +472,7 @@ if d == "Metal":
 MAX_CONTEXT = len(encode(default_prompt))+100
 dim = 1600
 n_heads = 25
-metalk = metal_kernels.Metal_Kernels(dim=1600,n_heads=25,max_context=MAX_CONTEXT)
+k = metal_kernels.Metal_Kernels(dim=1600,n_heads=25,max_context=MAX_CONTEXT)
 if os.path.exists("gpt2-xl.pickle") == False:
   get_model("gpt2-xl")
 filehandler = open("gpt2-xl.pickle", 'rb')  
