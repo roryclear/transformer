@@ -48,8 +48,8 @@ class buffer:
        if self.d == "Metal":
           self.data.setPurgeableState_(Metal.MTLPurgeableStateEmpty)
           self.data.release()
-          
 
+          
 def compile(prg_str,d,params):
   if d == "Metal":
     library, err = params["device"].newLibraryWithSource_options_error_(prg_str, Metal.MTLCompileOptions.alloc().init(), None)
@@ -97,8 +97,10 @@ def run_test(prg,func,params,args,gs,ls,d): #TODO, only for metal because no del
   for a in args:
     args_copy_a.append(a.copy(params))
   run(prg,func,params,args_copy_a,gs,ls,d) 
+  for j in range(len(args_copy_a)):
+    assert(np.isnan(np.max(args_copy_a[j].np(params))) == False)
   for x in range(3):
-    print("test =",x)
+    print("test =",x,func)
     args_copy_b = []
     for a in args: 
         args_copy_b.append(a.copy(params))

@@ -887,10 +887,12 @@ class Kernels:
             {var_dec[self.d]} const float *xq, {var_dec[self.d]} float *xqt{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
+            if(gidx0 < {num_tokens*self.n_heads*64}) {{
             int i = (gidx0 / 64) / {num_tokens};
             int j = (gidx0 / 64) % {num_tokens};
-            int k = gidx0 % 64;
+            int k = (gidx0 % 64);
             xqt[i*64 + j*{self.n_heads*64} + k] = xq[i*{num_tokens}*64 + j*64 + k];
+            }}
         }}
         {func_dec[self.d]} void k2_ms7(
             {var_dec[self.d]} const float *xq, {var_dec[self.d]} const float *attn_weight,{var_dec[self.d]} const float *attn_bias, {var_dec[self.d]} float *res{uint3_arg[self.d]})
