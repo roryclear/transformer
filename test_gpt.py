@@ -7,9 +7,7 @@ import numpy as np
 import os
 import pickle
 import kernels
-from tinygrad.nn.state import torch_load
-from tinygrad.helpers import fetch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 d = "OpenCL"
 folder = ""
 try:
@@ -403,7 +401,9 @@ expected_tokens_large = [198, 198, 1532, 345, 550, 257, 40663, 11, 345, 561,
 46561, 262, 3404, 510, 422, 262, 2323, 13, 5455, 11, 
 345, 561, 7925, 1657, 12, 6551, 5696, 422, 262, 3668]
 
+
 a = transformer.create_buffer_empty(1*4,d,params) #TODO can't run medium in isolation without doing this first?
+
 rand = Rand()
 MAX_CONTEXT = len(encode(default_prompt))+100
 k = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device=d)
@@ -417,7 +417,6 @@ print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
 
 rand = Rand()
-MAX_CONTEXT = len(encode("What happened in 1939?"))+100
 k = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device=d)
 filehandler = open(folder+"gpt2.pickle", 'rb')  
 gpt2 = pickle.load(filehandler)
@@ -468,18 +467,16 @@ if d == "Metal":
   print((f"Response:", "green"), text)
   delete_buffers(gpt2.model)
 
-''' TODO
 MAX_CONTEXT = len(encode(default_prompt))+100
 dim = 1600
 n_heads = 25
-k = metal_kernels.Metal_Kernels(dim=1600,n_heads=25,max_context=MAX_CONTEXT)
-if os.path.exists("gpt2-xl.pickle") == False:
+k = kernels.Kernels(dim=1600,n_heads=25,max_context=MAX_CONTEXT,device=d)
+if os.path.exists(folder+"gpt2-xl.pickle") == False:
   get_model("gpt2-xl")
-filehandler = open("gpt2-xl.pickle", 'rb')  
+filehandler = open(folder+"gpt2-xl.pickle", 'rb')  
 gpt2 = pickle.load(filehandler)
 gpt2.model.to_buffer(25,1600)
 rand = Rand()
 text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
 print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
-'''

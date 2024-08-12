@@ -97,8 +97,10 @@ def run_test(prg,func,params,args,gs,ls,d): #TODO, only for metal because no del
   for a in args:
     args_copy_a.append(a.copy(params))
   run(prg,func,params,args_copy_a,gs,ls,d) 
+  print("test =",func)
   for j in range(len(args_copy_a)):
     assert(np.isnan(np.max(args_copy_a[j].np(params))) == False)
+    assert(np.isinf(np.max(args_copy_a[j].np(params))) == False)
   for x in range(3):
     print("test =",x,func)
     args_copy_b = []

@@ -758,7 +758,7 @@ class Kernels:
                 for(int i = 0; i < {ls}; i++) {{
                     temp2[lidx0] += temp[i];
                 }}
-                temp2[lidx0] = temp2[lidx0] / {size};  
+                temp2[lidx0] = temp2[lidx0] / {self.dim};  
             }}
             {barrier[self.d]}
             for(int i = 0; i < {seg}; i++) {{
@@ -776,7 +776,7 @@ class Kernels:
                 for(int i = 0; i < {ls}; i++) {{
                     temp2[lidx0] += temp[i];
                 }}
-                temp2[lidx0] = pow(temp2[lidx0] / {size} + 1e-5,0.5);
+                temp2[lidx0] = pow(temp2[lidx0] / {self.dim} + 1e-5,0.5);
             }}
             {barrier[self.d]}
             for(int i = 0; i < {seg}; i++) {{
@@ -801,34 +801,38 @@ class Kernels:
             {var_dec[self.d]} const float *xqkv, {var_dec[self.d]} float *new_cache{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
-            int i = gidx0 / {self.n_heads*64};
-            int j = gidx0 % {self.n_heads*64};
-            new_cache[i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*1 + j];
-            new_cache[{max_content}*{self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*2 + j]; 
+            if(gidx0 < {num_tokens*self.n_heads*64}) {{
+                int i = gidx0 / {self.n_heads*64};
+                int j = gidx0 % {self.n_heads*64};
+                new_cache[i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*1 + j];
+                new_cache[{max_content}*{self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*2 + j]; 
+            }}
         }}                 
         {func_dec[self.d]} void k2_tr(
             {var_dec[self.d]} const float *xqkv, {var_dec[self.d]} float *xq, {var_dec[self.d]} float *xv{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
-            int i = (gidx0 / {64}) / {num_tokens};
-            int j = (gidx0 / {64}) % {num_tokens};
-            int k = gidx0 % 64;
-            xq[i*{num_tokens}*64 + j*64 + k] = xqkv[i*64 + j*{64*self.n_heads*3} + k];
-            xv[i*{num_tokens}*64 + j*64 + k] = xqkv[i*64 + j*{64*self.n_heads*3} + k + {64*self.n_heads*2}];
+            if(gidx0 < {num_tokens*self.n_heads*64}) {{
+                int i = (gidx0 / {64}) / {num_tokens};
+                int j = (gidx0 / {64}) % {num_tokens};
+                int k = gidx0 % 64;
+                xq[i*{num_tokens}*64 + j*64 + k] = xqkv[i*64 + j*{64*self.n_heads*3} + k];
+                xv[i*{num_tokens}*64 + j*64 + k] = xqkv[i*64 + j*{64*self.n_heads*3} + k + {64*self.n_heads*2}];
+            }}
         }}
         {func_dec[self.d]} void k2_ms0(
             {var_dec[self.d]} float *xq_temp, {var_dec[self.d]} const float *xq, {var_dec[self.d]} const float *xqkv{uint3_arg[self.d]})
         {{
                 int gidx0 = {global_idx[self.d]};
-                if(gidx0 < {self.n_heads*a_rows*a_rows}) {{
-                int x = (gidx0 / {a_rows}) % {a_rows};
-                int z = gidx0 / ({a_rows}*{a_rows}); 
-                int y = gidx0 % {a_rows};
+                if(gidx0 < {self.n_heads*num_tokens*num_tokens}) {{
+                int x = (gidx0 / {num_tokens}) % {num_tokens};
+                int z = gidx0 / ({num_tokens}*{num_tokens}); 
+                int y = gidx0 % {num_tokens};
                 float total = 0;
                 for(int k = 0; k < {a_cols}; k++) {{
-                    total += xq[y*{a_cols} + k + z*{a_rows}*{a_cols}] * xqkv[x*{64*self.n_heads*3} + k + z*64 + {self.dim}]; 
+                    total += xq[y*{a_cols} + k + z*{num_tokens}*{a_cols}] * xqkv[x*{64*self.n_heads*3} + k + z*64 + {self.dim}]; 
                 }}
-                xq_temp[y*{a_rows} + x + z*{a_rows}*{a_rows}] = total / 8; //sqrt 64 input shape xq
+                xq_temp[y*{num_tokens} + x + z*{num_tokens}*{num_tokens}] = total / 8; //sqrt 64 input shape xq
                 }}
         }}
         {func_dec[self.d]} void k2_ms(
@@ -840,9 +844,10 @@ class Kernels:
             int y = (gidx0 / {num_tokens}) % {num_tokens};
             int z = gidx0 % {num_tokens};
             if(z > y) {{ //todo, this can probably be 2x faster
-                xq[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = -INFINITY;
-            }}
+                xq[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = 0;
+            }} else {{
             xq[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] = exp(xq[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z]);
+            }}
         }}
         }}
         {func_dec[self.d]} void k2_ms3(
@@ -856,17 +861,17 @@ class Kernels:
             for(int z = 0; z < {num_tokens}; z++) {{
                 m += xq[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z];
             }}
-            mx[x*{num_tokens} + y] = m;  
+            mx[x*{num_tokens} + y] = m;   //RORY SHOULD BE M
             }}
         }}
         {func_dec[self.d]} void k2_ms4(
             {var_dec[self.d]} float *xq, {var_dec[self.d]} const float *mx{uint3_arg[self.d]})
         {{
         int gidx0 = {global_idx[self.d]};
-        if(gidx0 < {num_tokens*num_tokens*self.n_heads}) {{
+        if(gidx0 < {self.n_heads*num_tokens*num_tokens}) {{
             int x = (gidx0 / {num_tokens}) / {num_tokens};
             int y = (gidx0 / {num_tokens}) % {num_tokens};
-            int z = gidx0 % {num_tokens};
+            int z = (gidx0 % {num_tokens});
             xq[x*{num_tokens}*{num_tokens} + y*{num_tokens} + z] /= mx[x*{num_tokens} + y];
         }}
         }}
@@ -874,14 +879,16 @@ class Kernels:
             {var_dec[self.d]} const float *xq, {var_dec[self.d]} const float *xv, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
-            int z = (gidx0 / {num_tokens}) / {a_cols};
-            int x = (gidx0 / {num_tokens}) % {a_cols};
-            int y = gidx0 % {num_tokens};
-            float total = 0;
-            for(int k = 0; k < {num_tokens}; k++) {{
-                total += xq[y*{num_tokens} + k + z*{num_tokens}*{num_tokens}] * xv[x + k*{a_cols} + z*{num_tokens}*{a_cols}]; 
+            if(gidx0 < {self.n_heads*num_tokens*64}) {{
+                int z = (gidx0 / {num_tokens}) / {a_cols};
+                int x = (gidx0 / {num_tokens}) % {a_cols};
+                int y = gidx0 % {num_tokens};
+                float total = 0;
+                for(int k = 0; k < {num_tokens}; k++) {{
+                    total += xq[y*{num_tokens} + k + z*{num_tokens}*{num_tokens}] * xv[x + k*{a_cols} + z*{num_tokens}*{a_cols}]; 
+                }}
+                res[y*{a_cols} + x + z*{a_cols}*{num_tokens}] = total;
             }}
-            res[y*{a_cols} + x + z*{a_cols}*{num_tokens}] = total;
         }}
         {func_dec[self.d]} void k2_ms6( //transpose
             {var_dec[self.d]} const float *xq, {var_dec[self.d]} float *xqt{uint3_arg[self.d]})
@@ -897,15 +904,15 @@ class Kernels:
         {func_dec[self.d]} void k2_ms7(
             {var_dec[self.d]} const float *xq, {var_dec[self.d]} const float *attn_weight,{var_dec[self.d]} const float *attn_bias, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
-            if({global_idx[self.d]} < {b_rows*num_tokens}) {{ //TODO don't allow larger local size? wasteful
             int gidx0 = {global_idx[self.d]};
-            int x = gidx0 / {num_tokens};
-            int y = gidx0 % {num_tokens};
-            float total = 0;
-            for(int k = 0; k < {b_rows}; k++) {{
-                total += xq[y*{b_rows} + k] * attn_weight[x*{b_rows} + k]; 
-            }}
-            res[y*{b_rows} + x] += total + attn_bias[x];
+            if(gidx0 < {self.dim*num_tokens}) {{
+                int x = gidx0 / {num_tokens};
+                int y = gidx0 % {num_tokens};
+                float total = 0;
+                for(int k = 0; k < {self.dim}; k++) {{
+                    total += xq[y*{self.dim} + k] * attn_weight[x*{self.dim} + k]; 
+                }}
+                res[y*{self.dim} + x] += total + attn_bias[x];
             }}
         }}
         
@@ -959,28 +966,30 @@ class Kernels:
             {var_dec[self.d]} const float *a, {var_dec[self.d]} const float *c_fc_weight,{var_dec[self.d]} const float *c_fc_bias, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
-            int x = gidx0 / {num_tokens};
-            int y = gidx0 % {num_tokens};
-            float total = 0;
-            for(int k = 0; k < {b_rows}; k++) {{
-                total += a[y*{b_rows} + k] * c_fc_weight[x*{b_rows} + k];
+            if(gidx0 < {self.dim*4*num_tokens}) {{
+                int x = gidx0 / {num_tokens};
+                int y = gidx0 % {num_tokens};
+                float total = 0;
+                for(int k = 0; k < {b_rows}; k++) {{
+                    total += a[y*{b_rows} + k] * c_fc_weight[x*{b_rows} + k];
+                }}
+                //tanh = ((2.0f*(1/(exp2((val0*(-2.885390043258667f)))+1.0f)))+(-1.0f));
+                res[y*{b_cols_2} + x] = 0.5 * (total + c_fc_bias[x])\
+                    * (1 + ((2.0f*(1/(exp2(((total + c_fc_bias[x]) * 0.7978845608 * (1 + 0.044715 * pow((total + c_fc_bias[x]),2))*(-2.885390043258667f)))+1.0f)))+(-1.0f)));
             }}
-            //tanh = ((2.0f*(1/(exp2((val0*(-2.885390043258667f)))+1.0f)))+(-1.0f));
-            res[y*{b_cols_2} + x] = 0.5 * (total + c_fc_bias[x])\
-                * (1 + ((2.0f*(1/(exp2(((total + c_fc_bias[x]) * 0.7978845608 * (1 + 0.044715 * pow((total + c_fc_bias[x]),2))*(-2.885390043258667f)))+1.0f)))+(-1.0f)));
         }}
         {func_dec[self.d]} void k2_ms10(
             {var_dec[self.d]} const float *a, {var_dec[self.d]} const float *c_proj_weight,{var_dec[self.d]} const float *c_proj_bias, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
-            if({global_idx[self.d]} < {b_rows*num_tokens}) {{ //TODO, wasteful?
             int gidx0 = {global_idx[self.d]};
-            int x = gidx0 / {num_tokens};
-            int y = gidx0 % {num_tokens};
-            float total = 0;
-            for(int k = 0; k < {b_cols_2}; k++) {{
-                total += a[y*{b_cols_2} + k] * c_proj_weight[x*{b_cols_2} + k];
-            }}
-            res[y*{b_rows} + x] += total + c_proj_bias[x];
+            if(gidx0 < {self.dim*num_tokens}) {{
+                int x = gidx0 / {num_tokens};
+                int y = gidx0 % {num_tokens};
+                float total = 0;
+                for(int k = 0; k < {b_cols_2}; k++) {{
+                    total += a[y*{b_cols_2} + k] * c_proj_weight[x*{b_cols_2} + k];
+                }}
+                res[y*{b_rows} + x] += total + c_proj_bias[x];
             }}
         }}
         """
@@ -990,20 +999,21 @@ class Kernels:
         #prg = self.prg_cache[prg_str]
         
         prg = transformer.compile(prg_str,self.d,self.params)
+        #print("rory num_tokens =",num_tokens," -> ",self.n_heads*num_tokens," -> ",self.n_heads*num_tokens*num_tokens," -> ",num_tokens*self.n_heads*64)
         transformer.run(prg,"k2_mm",self.params,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g],num_tokens,ls,self.d)
         transformer.run(prg,"k2_mm2",self.params,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g],math.ceil(b_cols*num_tokens / ls),ls,self.d)
         transformer.run(prg,"k2_mm3",self.params,[self.xqkv_g, cache_kv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
         transformer.run(prg,"k2_tr",self.params,[self.xqkv_g, self.xq_g, self.xv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
-        transformer.run(prg,"k2_ms0",self.params,[self.xq_g_temp,self.xq_g, self.xqkv_g],math.ceil(self.n_heads*num_tokens*num_tokens/ls),ls,self.d)
+        transformer.run(prg,"k2_ms0",self.params,[self.xq_g_temp,self.xq_g, self.xqkv_g],math.ceil(self.n_heads*num_tokens*num_tokens/ls),ls,self.d) #TODO check again
         transformer.run(prg,"k2_ms",self.params,[self.xq_g_temp],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"k2_ms3",self.params,[self.xq_g_temp,self.res_g],math.ceil(self.n_heads*num_tokens/ls),min(self.n_heads*num_tokens,ls),self.d)
+        transformer.run(prg,"k2_ms3",self.params,[self.xq_g_temp,self.res_g],math.ceil(self.n_heads*num_tokens/ls),ls,self.d)
         transformer.run(prg,"k2_ms4",self.params,[self.xq_g_temp,self.res_g],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"k2_ms5",self.params,[self.xq_g_temp,self.xv_g,self.c_g],math.ceil(self.n_heads*a_cols*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"k2_ms5",self.params,[self.xq_g_temp,self.xv_g,self.c_g],math.ceil(num_tokens*self.n_heads*64 / ls),ls,self.d)
         transformer.run(prg,"k2_ms6",self.params,[self.c_g,self.xqt_g],math.ceil(num_tokens*self.n_heads*64 / ls),ls,self.d)
-        transformer.run(prg,"k2_ms7",self.params,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g],math.ceil(b_rows*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"k2_ms7",self.params,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g],math.ceil(self.dim*num_tokens / ls),ls,self.d)
         transformer.run(prg,"k2_ms8",self.params,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g],num_tokens,ls,self.d)
-        transformer.run(prg,"k2_ms9",self.params,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g],math.ceil(b_cols_2*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"k2_ms10",self.params,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g],math.ceil(b_rows*num_tokens / ls) ,ls,self.d)
+        transformer.run(prg,"k2_ms9",self.params,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g],math.ceil(self.dim*4*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"k2_ms10",self.params,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g],math.ceil(self.dim*num_tokens / ls) ,ls,self.d)
         return self.h2_g
 
     def time_it(func,a,b,i=100):
