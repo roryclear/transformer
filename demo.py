@@ -9,7 +9,6 @@ folder = ""
 try:
    import Metal
    d = "Metal"
-   folder = "metal/"
    print("Using Metal")
    if os.path.isdir('metal') == False:
       os.mkdir('metal')

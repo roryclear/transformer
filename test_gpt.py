@@ -14,7 +14,6 @@ try:
    import Metal
    import metal_kernels_large
    d = "Metal"
-   folder = "metal/"
    print("Using Metal")
    if os.path.isdir('metal') == False:
     os.mkdir('metal')
