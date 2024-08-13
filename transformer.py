@@ -146,15 +146,15 @@ def run_old(prg,func,params,args,gs,ls,d):
 def create_buffer(a,d,params):
   if d == "Metal":
     device = params["device"]
-    a_buffer = device.newBufferWithLength_options_(len(a.flatten())*4 ,1)
-    m = a_buffer.contents().as_buffer(len(a.flatten())*4)
+    a_buffer = device.newBufferWithLength_options_(a.nbytes ,1)
+    m = a_buffer.contents().as_buffer(a.nbytes)
     m[:] = bytes(a)
-    return buffer(a_buffer,len(a.flatten())*4,d)
+    return buffer(a_buffer,a.nbytes,d)
   if d == "OpenCL":
     ctx = params["ctx"]
     mf = params["mf"]
     data = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-    return buffer(data,len(a.flatten()),d)
+    return buffer(data,a.nbytes,d)
   if d == "CUDA":
     a_gpu = cuda.mem_alloc(a.nbytes)
     cuda.memcpy_htod(a_gpu, a)
