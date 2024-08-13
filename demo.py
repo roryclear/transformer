@@ -149,9 +149,7 @@ class Transformer:
 
       if d == "OpenCL" or d == "CUDA":      
         print("copying attn_c_proj_weight") #TODO
-        self.attn_c_proj_weight2 = []
         for i in range(len(self.ln_1_weight)):
-          self.attn_c_proj_weight2.append(transformer.create_buffer(np.asfortranarray(self.attn_c_proj_weight[i]),d,params))
           self.attn_c_proj_weight[i] = transformer.create_buffer(self.attn_c_proj_weight[i].flatten(),d,params)
 
         print("copying mlp_c_proj_weight_unf") #TODO
@@ -163,9 +161,7 @@ class Transformer:
       
       if d == "Metal":
         print("copying attn_c_proj_weight") #TODO
-        self.attn_c_proj_weight2 = []
         for i in range(len(self.ln_1_weight)):
-          self.attn_c_proj_weight2.append(transformer.create_buffer(np.asfortranarray(self.attn_c_proj_weight[i].transpose()),d,params))
           self.attn_c_proj_weight[i] = transformer.create_buffer(self.attn_c_proj_weight[i],d,params)
 
         print("copying mlp_c_proj_weight_unf") #TODO
@@ -193,7 +189,7 @@ class Transformer:
     else:
       x = metalk.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
       for i in range(len(self.ln_1_weight)-1):
-        x = metalk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
+        x = metalk.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT,i)
     unif_samples = rand.rand()
     ret = metalk.kernel_3(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\

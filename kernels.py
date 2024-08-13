@@ -474,7 +474,7 @@ class Kernels:
         transformer.run(prg,"k3_mm10",self.params,[logits_g,res_g],1,ls,self.d)
         return res_g.np(self.params)
 
-    def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,weight_g,bias_g,\
+    def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,attn_c_proj_weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,start_pos,g,j=0):
         ls = 256
         ls = 256 #TODO why is 256 fastet than 32?
@@ -698,7 +698,7 @@ class Kernels:
         transformer.run(prg,"k0_mm",self.params,[a_g,self.mean],1,ls,self.d)
         transformer.run(prg2,"k0_mm1",self.params,[a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,self.xq_temp_g,self.mean],math.ceil(self.dim*3 / ls),ls,self.d)
         transformer.run(prg2,"k0_mm2",self.params,[keys_values_g ,self.temp_g, self.xq_temp_g],math.ceil((self.n_heads*(start_pos+1)*(start_pos+1)) / ls),ls,self.d)
-        transformer.run(prg2,"k0_mm3",self.params,[a_g,keys_values_g,weight_g\
+        transformer.run(prg2,"k0_mm3",self.params,[a_g,keys_values_g,attn_c_proj_weight_g\
         ,bias_g,weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,self.temp_g, self.xq_temp_g,self.mean,self.h_temp,self.h],1,ls,self.d)
         transformer.run(prg,"k0_mm4",self.params,[a_g,weight2_g,bias2_g,\
         weight3_g,bias3_g,self.mean,self.h_temp,self.h,self.bias3_temp],int(self.dim*4 / ls),ls,self.d)
@@ -767,7 +767,7 @@ class Kernels:
             {barrier[self.d]}
             temp2[r] = 0;
             for(int i = 0; i < {seg}; i++) {{
-                temp2[r] += pow(x[{self.dim}*r + lidx0*{seg} + i],2.0);
+                temp2[r] += pow(x[{self.dim}*r + lidx0*{seg} + i],2);
             }}
             temp[lidx0] = temp2[r];
             {barrier[self.d]}
@@ -830,9 +830,10 @@ class Kernels:
                 int y = gidx0 % {num_tokens};
                 float total = 0;
                 for(int k = 0; k < {a_cols}; k++) {{
+                    //total += xq[y*{a_cols} + k + z*{num_tokens}*{a_cols}] * xqkv[x*{64*self.n_heads*3} + k + z*64 + {self.dim}]; 
                     total += xq[y*{a_cols} + k + z*{num_tokens}*{a_cols}] * xqkv[x*{64*self.n_heads*3} + k + z*64 + {self.dim}]; 
                 }}
-                xq_temp[y*{num_tokens} + x + z*{num_tokens}*{num_tokens}] = total / 8; //sqrt 64 input shape xq
+                xq_temp[y*{num_tokens} + x + z*{num_tokens}*{num_tokens}] = total/8; //sqrt 64 input shape xq TODO min hack
                 }}
         }}
         {func_dec[self.d]} void k2_ms(
@@ -910,7 +911,7 @@ class Kernels:
                 int y = gidx0 % {num_tokens};
                 float total = 0;
                 for(int k = 0; k < {self.dim}; k++) {{
-                    total += xq[y*{self.dim} + k] * attn_weight[x*{self.dim} + k]; 
+                    total += xq[y*{self.dim} + k] * attn_weight[x + k*{self.dim}]; 
                 }}
                 res[y*{self.dim} + x] += total + attn_bias[x];
             }}

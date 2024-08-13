@@ -153,9 +153,7 @@ class Transformer:
 
     if d == "OpenCL" or d == "CUDA":      
       print("copying attn_c_proj_weight") #TODO
-      self.attn_c_proj_weight2 = []
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_weight2.append(transformer.create_buffer(np.asfortranarray(self.attn_c_proj_weight[i]),d,params))
         self.attn_c_proj_weight[i] = transformer.create_buffer(self.attn_c_proj_weight[i].flatten(),d,params)
 
       print("copying mlp_c_proj_weight_unf") #TODO
@@ -167,9 +165,7 @@ class Transformer:
     
     if d == "Metal":
       print("copying attn_c_proj_weight") #TODO
-      self.attn_c_proj_weight2 = []
       for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_weight2.append(transformer.create_buffer(np.asfortranarray(self.attn_c_proj_weight[i].transpose()),d,params))
         self.attn_c_proj_weight[i] = transformer.create_buffer(self.attn_c_proj_weight[i],d,params)
 
       print("copying mlp_c_proj_weight_unf") #TODO
@@ -197,7 +193,7 @@ class Transformer:
     else:
       x = k.tok_emb(tokens,self.wte_weight,self.wpe_weight,n_tokens)
       for i in range(len(self.ln_1_weight)-1):
-        x = k.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight2[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
+        x = k.kernel_2(x,self.ln_1_weight[i], self.ln_1_bias[i],self.attn_c_attn_weight[i],self.attn_c_attn_bias[i],self.attn_cache_kv[i],self.attn_c_proj_weight[i],self.attn_c_proj_bias[i],self.ln_2_weight[i], self.ln_2_bias[i],\
         self.mlp_c_fc_weight[i],self.mlp_c_fc_bias[i],self.mlp_c_proj_weight_unf[i],self.mlp_c_proj_bias[i],n_tokens,MAX_CONTEXT,i)
     unif_samples = rand.rand()
     ret = k.kernel_3(x,self.ln_1_weight[-1], self.ln_1_bias[-1],self.attn_c_attn_weight[-1],self.attn_c_attn_bias[-1],self.attn_cache_kv[-1]\
@@ -222,7 +218,6 @@ def delete_buffers(m): #TODO, do this with a loop
       m.mlp_c_fc_weight[x].delete()
       m.attn_c_proj_bias[x].delete()
       m.attn_c_proj_weight[x].delete()
-      m.attn_c_proj_weight2[x].delete()
       m.attn_c_attn_bias[x].delete()
       m.attn_c_attn_weight[x].delete()
       m.ln_1_bias[x].delete()
@@ -452,6 +447,7 @@ text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float
 print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
 
+'''
 if d == "Metal":
   MAX_CONTEXT = len(encode(default_prompt))+100
   dim = 1280
@@ -466,7 +462,7 @@ if d == "Metal":
   text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
   print((f"Response:", "green"), text)
   delete_buffers(gpt2.model)
-
+'''
 MAX_CONTEXT = len(encode(default_prompt))+100
 dim = 1600
 n_heads = 25
