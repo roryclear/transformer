@@ -155,7 +155,7 @@ class Transformer:
     print("copying mlp_c_proj_weight_unf") #TODO, asfortranarray and transpose work differently on either of machines atm.
     self.mlp_c_proj_weight_unf = []
     for i in range(len(self.ln_1_weight)):
-      self.mlp_c_proj_weight_unf.append(transformer.create_buffer(np.asfortranarray(self.mlp_c_proj_weight[i]).transpose(),d,params))
+      self.mlp_c_proj_weight_unf.append(transformer.create_buffer(self.mlp_c_proj_weight[i].transpose().flatten(),d,params)) #TODO untested on CUDA
       self.mlp_c_proj_weight[i] = transformer.create_buffer(self.mlp_c_proj_weight[i].flatten(),d,params)
 
   def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
