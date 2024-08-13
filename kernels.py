@@ -727,14 +727,11 @@ class Kernels:
             self.xqkv_g = transformer.create_buffer_empty(max_content*self.dim*3*4,self.d,self.params)
         if hasattr(self, 'd_g') == False:
             self.d_g = transformer.create_buffer_empty(max_content*self.dim*4*4,self.d,self.params)
-        a_rows = num_tokens
         a_cols = 64
         b_rows = self.dim
         ls = 256
         size = self.dim
         seg = int(size / ls) #todo
-        b_cols = self.dim*3 # for first part
-        b_cols_2 = self.dim*4
         prg_str = f"""
         {kernel_prefix[self.d]}
         {func_dec[self.d]} void k2_mm(
@@ -787,14 +784,14 @@ class Kernels:
             {var_dec[self.d]} const float *x, {var_dec[self.d]} const float *attn_weight, {var_dec[self.d]} const float *attn_bias,{var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
-            if(gidx0 < {b_cols*num_tokens}) {{
+            if(gidx0 < {self.dim*3*num_tokens}) {{
             int i = gidx0 / {num_tokens};
             int y = gidx0 % {num_tokens};
             float total = 0;
-            for(int k = 0; k < {b_rows}; k++) {{
-                total += x[y*{b_rows} + k] * attn_weight[i*{b_rows} + k]; 
+            for(int k = 0; k < {self.dim}; k++) {{
+                total += x[y*{self.dim} + k] * attn_weight[i*{self.dim} + k]; 
             }}
-            res[y*{b_cols} + i] = total + attn_bias[i];
+            res[y*{self.dim*3} + i] = total + attn_bias[i];
             }}
         }}
         {func_dec[self.d]} void k2_mm3(
@@ -971,11 +968,11 @@ class Kernels:
                 int x = gidx0 / {num_tokens};
                 int y = gidx0 % {num_tokens};
                 float total = 0;
-                for(int k = 0; k < {b_rows}; k++) {{
-                    total += a[y*{b_rows} + k] * c_fc_weight[x*{b_rows} + k];
+                for(int k = 0; k < {self.dim}; k++) {{
+                    total += a[y*{self.dim} + k] * c_fc_weight[x*{self.dim} + k];
                 }}
                 //tanh = ((2.0f*(1/(exp2((val0*(-2.885390043258667f)))+1.0f)))+(-1.0f));
-                res[y*{b_cols_2} + x] = 0.5 * (total + c_fc_bias[x])\
+                res[y*{self.dim*4} + x] = 0.5 * (total + c_fc_bias[x])\
                     * (1 + ((2.0f*(1/(exp2(((total + c_fc_bias[x]) * 0.7978845608 * (1 + 0.044715 * pow((total + c_fc_bias[x]),2))*(-2.885390043258667f)))+1.0f)))+(-1.0f)));
             }}
         }}
@@ -987,10 +984,10 @@ class Kernels:
                 int x = gidx0 / {num_tokens};
                 int y = gidx0 % {num_tokens};
                 float total = 0;
-                for(int k = 0; k < {b_cols_2}; k++) {{
-                    total += a[y*{b_cols_2} + k] * c_proj_weight[x*{b_cols_2} + k];
+                for(int k = 0; k < {self.dim*4}; k++) {{
+                    total += a[y*{self.dim*4} + k] * c_proj_weight[x*{self.dim*4} + k];
                 }}
-                res[y*{b_rows} + x] += total + c_proj_bias[x];
+                res[y*{self.dim} + x] += total + c_proj_bias[x];
             }}
         }}
         """
@@ -1002,7 +999,7 @@ class Kernels:
         prg = transformer.compile(prg_str,self.d,self.params)
         #print("rory num_tokens =",num_tokens," -> ",self.n_heads*num_tokens," -> ",self.n_heads*num_tokens*num_tokens," -> ",num_tokens*self.n_heads*64)
         transformer.run(prg,"k2_mm",self.params,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g],num_tokens,ls,self.d)
-        transformer.run(prg,"k2_mm2",self.params,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g],math.ceil(b_cols*num_tokens / ls),ls,self.d)
+        transformer.run(prg,"k2_mm2",self.params,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g],math.ceil(self.dim*3*num_tokens / ls),ls,self.d)
         transformer.run(prg,"k2_mm3",self.params,[self.xqkv_g, cache_kv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
         transformer.run(prg,"k2_tr",self.params,[self.xqkv_g, self.xq_g, self.xv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
         transformer.run(prg,"k2_ms0",self.params,[self.xq_g_temp,self.xq_g, self.xqkv_g],math.ceil(self.n_heads*num_tokens*num_tokens/ls),ls,self.d) #TODO check again
