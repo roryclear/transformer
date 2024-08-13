@@ -151,11 +151,11 @@ class Transformer:
     for i in range(len(self.ln_1_weight)):
       self.attn_cache_kv.append(transformer.create_buffer_empty(2*MAX_CONTEXT*n_heads*64*4,d,params))
 
-    if d == "OpenCL" or d == "CUDA":      
-      print("copying attn_c_proj_weight") #TODO
-      for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_weight[i] = transformer.create_buffer(self.attn_c_proj_weight[i].flatten(),d,params)
+    print("copying attn_c_proj_weight") #TODO
+    for i in range(len(self.ln_1_weight)):
+      self.attn_c_proj_weight[i] = transformer.create_buffer(self.attn_c_proj_weight[i].flatten(),d,params)
 
+    if d == "OpenCL" or d == "CUDA":      
       print("copying mlp_c_proj_weight_unf") #TODO
       self.mlp_c_proj_weight_unf = []
       for i in range(len(self.ln_1_weight)):
@@ -164,10 +164,6 @@ class Transformer:
       return
     
     if d == "Metal":
-      print("copying attn_c_proj_weight") #TODO
-      for i in range(len(self.ln_1_weight)):
-        self.attn_c_proj_weight[i] = transformer.create_buffer(self.attn_c_proj_weight[i],d,params)
-
       print("copying mlp_c_proj_weight_unf") #TODO
       self.mlp_c_proj_weight_unf = []
       for i in range(len(self.ln_1_weight)):
