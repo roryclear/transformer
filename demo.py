@@ -148,20 +148,11 @@ class Transformer:
       for i in range(len(self.ln_1_weight)):
         self.attn_c_proj_weight[i] = transformer.create_buffer(self.attn_c_proj_weight[i].flatten(),d,params)
 
-      if d == "OpenCL" or d == "CUDA":      
-        print("copying mlp_c_proj_weight_unf") #TODO
-        self.mlp_c_proj_weight_unf = []
-        for i in range(len(self.ln_1_weight)):
-          self.mlp_c_proj_weight_unf.append(transformer.create_buffer(np.asfortranarray(self.mlp_c_proj_weight[i]),d,params))
-          self.mlp_c_proj_weight[i] = transformer.create_buffer(self.mlp_c_proj_weight[i].flatten(),d,params)
-        return
-      
-      if d == "Metal":
-        print("copying mlp_c_proj_weight_unf") #TODO
-        self.mlp_c_proj_weight_unf = []
-        for i in range(len(self.ln_1_weight)):
-          self.mlp_c_proj_weight_unf.append(transformer.create_buffer(self.mlp_c_proj_weight[i].transpose(),d,params))
-          self.mlp_c_proj_weight[i] = transformer.create_buffer(self.mlp_c_proj_weight[i].flatten(),d,params)
+      print("copying mlp_c_proj_weight_unf") #TODO, asfortranarray and transpose work differently on either of machines atm.
+      self.mlp_c_proj_weight_unf = []
+      for i in range(len(self.ln_1_weight)):
+        self.mlp_c_proj_weight_unf.append(transformer.create_buffer(np.asfortranarray(self.mlp_c_proj_weight[i]).transpose(),d,params))
+        self.mlp_c_proj_weight[i] = transformer.create_buffer(self.mlp_c_proj_weight[i].flatten(),d,params)
 
   def forward(self, tokens, start_pos, temperature:float=0.8,n_tokens=444):
     if start_pos > 0:
