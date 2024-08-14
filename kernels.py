@@ -84,7 +84,6 @@ class Kernels:
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
-        rows = self.dim
         if hasattr(self, 'logits_g') == False:
             self.logits_g = transformer.create_buffer_empty(50257*4,self.d,self.params)
         if hasattr(self, 'res') == False:
@@ -101,7 +100,9 @@ class Kernels:
             int lidx0 = {global_idx[self.d]};
             float total = 0;
             for(int i = 0; i < {math.ceil(self.dim/ls)}; i++) {{
-                total += h[lidx0*{math.ceil(self.dim/ls)} + i];
+                if(lidx0*{math.ceil(self.dim/ls)} + i < {self.dim}) {{
+                    total += h[lidx0*{math.ceil(self.dim/ls)} + i];
+                }}
             }}
             temp[lidx0] = total;
             {barrier[self.d]}
@@ -114,12 +115,16 @@ class Kernels:
             }}
             {barrier[self.d]}
             for(int i = 0; i < {math.ceil(self.dim/ls)}; i++) {{
-                h[i + lidx0*{math.ceil(self.dim/ls)}] -= mean;
+                if(i + lidx0*{math.ceil(self.dim/ls)} < {self.dim}) {{
+                    h[i + lidx0*{math.ceil(self.dim/ls)}] -= mean;
+                }}
             }}
             {barrier[self.d]}
             total = 0;
             for(int i = 0; i < {math.ceil(self.dim/ls)}; i++) {{
-                total += pow(h[lidx0*{math.ceil(self.dim/ls)} + i],2);
+                if(lidx0*{math.ceil(self.dim/ls)} + i < {self.dim}) {{
+                    total += pow(h[lidx0*{math.ceil(self.dim/ls)} + i],2);
+                }}
             }}
             temp[lidx0] = total;
             {barrier[self.d]}
@@ -132,7 +137,9 @@ class Kernels:
             }}
             {barrier[self.d]}
             for(int i = 0; i < {math.ceil(self.dim/ls)}; i++) {{
-                h[i + lidx0*{math.ceil(self.dim/ls)}] = (h[i + lidx0*{math.ceil(self.dim/ls)}] * weight[i + lidx0*{math.ceil(self.dim/ls)}]) / mean + bias[i + lidx0*{math.ceil(self.dim/ls)}];
+                if(i + lidx0*{math.ceil(self.dim/ls)} < {self.dim}) {{
+                    h[i + lidx0*{math.ceil(self.dim/ls)}] = (h[i + lidx0*{math.ceil(self.dim/ls)}] * weight[i + lidx0*{math.ceil(self.dim/ls)}]) / mean + bias[i + lidx0*{math.ceil(self.dim/ls)}];
+                }}
             }}
         }}
         {func_dec[self.d]} void k1_matvec(
@@ -140,7 +147,7 @@ class Kernels:
         {{
             int gidx0 = {global_idx[self.d]};
             res[gidx0] = 0;
-            for(int j = 0; j < {rows}; j++) {{
+            for(int j = 0; j < {self.dim}; j++) {{
                 res[gidx0] += h[j] * weight2[gidx0 + j*50257];
             }}
             res[gidx0] /= {temperature};
@@ -150,7 +157,6 @@ class Kernels:
         {{
             res[0] = a[0]; //todo why is this needed?, used to be a MAX
         }}
-
         {func_dec[self.d]} void k1_mm6(
         {var_dec[self.d]} float *a, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{  
@@ -164,16 +170,15 @@ class Kernels:
             int gidx0 = {global_idx[self.d]};
             a[gidx0] = a[gidx0] / res[0];
         }}
-
         {func_dec[self.d]} void k1_mm9(
         {var_dec[self.d]} const float *a, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
-            {local_var[self.d]} float temp[{ls}];
             int lidx0 = {global_idx[self.d]};
+            {local_var[self.d]} float temp[{ls}];
             temp[lidx0] = 0;
             for(int i = 0; i < {math.ceil(50257 / ls)}; i++) {{
                 if(lidx0*{math.ceil(50257 / ls)} + i < 50257){{
-                temp[lidx0] += a[lidx0*{math.ceil(50257 / ls)} + i];
+                    temp[lidx0] += a[lidx0*{math.ceil(50257 / ls)} + i];
                 }}
             }}
             {barrier[self.d]}
@@ -185,7 +190,6 @@ class Kernels:
                 res[0] = t;
             }}
         }}
-
         {func_dec[self.d]} void k1_mm10(
         {var_dec[self.d]} float *a{uint3_arg[self.d]})
         {{
@@ -194,7 +198,6 @@ class Kernels:
             }}
         }}
         """
-
         if prg_str not in self.prg_cache:
             library = transformer.compile(prg_str,self.d,self.params)
             self.prg_cache[prg_str] = library
