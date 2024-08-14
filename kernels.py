@@ -85,7 +85,6 @@ class Kernels:
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
-        ls = 256
         seg = int(self.dim / ls)
         rows = self.dim
         if hasattr(self, 'logits_g') == False:
@@ -233,7 +232,6 @@ class Kernels:
 
     def kernel_3(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,lm_head_weight_g,temperature,random_num):
-        ls = 256
         seg2 = math.ceil(50257 / ls)
         seg = int(self.dim / ls) #todo
         x0_g = transformer.create_buffer_empty(n_tokens*self.dim*4,self.d,self.params)
@@ -467,7 +465,6 @@ class Kernels:
 
     def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,attn_c_proj_weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,start_pos,g,j=0):
-        ls = 256
         seg = math.ceil(self.dim / ls)
         if hasattr(self, 'temp_g') == False:
             self.temp_g = transformer.create_buffer_empty(self.n_heads*self.max_context*4,self.d,self.params)
@@ -588,7 +585,7 @@ class Kernels:
                 acc0 += xq_temp[i + 64*k] * keys_values[x*{self.n_heads*64} + i + 64*k];
             }}          
             if(x + k*{start_pos+1} < {self.n_heads*self.max_context}) {{      
-            temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(64)
+                temp3[x + k*{start_pos+1}] = acc0 / 8; //hardcoded math.sqrt(64)
             }}
             }}
         }}
@@ -712,8 +709,6 @@ class Kernels:
             self.xqkv_g = transformer.create_buffer_empty(max_content*self.dim*3*4,self.d,self.params)
         if hasattr(self, 'd_g') == False:
             self.d_g = transformer.create_buffer_empty(max_content*self.dim*4*4,self.d,self.params)
-        a_cols = 64
-        ls = 256
         seg = int(self.dim / ls)
         prg_str = f"""
         {kernel_prefix[self.d]}
@@ -809,9 +804,9 @@ class Kernels:
                 int z = gidx0 / ({num_tokens}*{num_tokens}); 
                 int y = gidx0 % {num_tokens};
                 float total = 0;
-                for(int k = 0; k < {a_cols}; k++) {{
-                    //total += xq[y*{a_cols} + k + z*{num_tokens}*{a_cols}] * xqkv[x*{64*self.n_heads*3} + k + z*64 + {self.dim}]; 
-                    total += xq[y*{a_cols} + k + z*{num_tokens}*{a_cols}] * xqkv[x*{64*self.n_heads*3} + k + z*64 + {self.dim}]; 
+                for(int k = 0; k < {64}; k++) {{
+                    //total += xq[y*{64} + k + z*{num_tokens}*{64}] * xqkv[x*{64*self.n_heads*3} + k + z*64 + {self.dim}]; 
+                    total += xq[y*{64} + k + z*{num_tokens}*{64}] * xqkv[x*{64*self.n_heads*3} + k + z*64 + {self.dim}]; 
                 }}
                 xq_temp[y*{num_tokens} + x + z*{num_tokens}*{num_tokens}] = total/8; //sqrt 64 input shape xq TODO min hack
                 }}
@@ -861,14 +856,14 @@ class Kernels:
         {{
             int gidx0 = {global_idx[self.d]};
             if(gidx0 < {self.n_heads*num_tokens*64}) {{
-                int z = (gidx0 / {num_tokens}) / {a_cols};
-                int x = (gidx0 / {num_tokens}) % {a_cols};
+                int z = (gidx0 / {num_tokens}) / {64};
+                int x = (gidx0 / {num_tokens}) % {64};
                 int y = gidx0 % {num_tokens};
                 float total = 0;
                 for(int k = 0; k < {num_tokens}; k++) {{
-                    total += xq[y*{num_tokens} + k + z*{num_tokens}*{num_tokens}] * xv[x + k*{a_cols} + z*{num_tokens}*{a_cols}]; 
+                    total += xq[y*{num_tokens} + k + z*{num_tokens}*{num_tokens}] * xv[x + k*{64} + z*{num_tokens}*{64}]; 
                 }}
-                res[y*{a_cols} + x + z*{a_cols}*{num_tokens}] = total;
+                res[y*{64} + x + z*{64}*{num_tokens}] = total;
             }}
         }}
         {func_dec[self.d]} void k2_ms6( //transpose
@@ -946,6 +941,7 @@ class Kernels:
         {func_dec[self.d]} void k2_ms9(
             {var_dec[self.d]} const float *a, {var_dec[self.d]} const float *c_fc_weight,{var_dec[self.d]} const float *c_fc_bias, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
+            //tanh = ((2.0f*(1/(exp2((val0*(-2.885390043258667f)))+1.0f)))+(-1.0f));
             int gidx0 = {global_idx[self.d]};
             if(gidx0 < {self.dim*4*num_tokens}) {{
                 int x = gidx0 / {num_tokens};
@@ -954,7 +950,6 @@ class Kernels:
                 for(int k = 0; k < {self.dim}; k++) {{
                     total += a[y*{self.dim} + k] * c_fc_weight[x*{self.dim} + k];
                 }}
-                //tanh = ((2.0f*(1/(exp2((val0*(-2.885390043258667f)))+1.0f)))+(-1.0f));
                 res[y*{self.dim*4} + x] = 0.5 * (total + c_fc_bias[x])\
                     * (1 + ((2.0f*(1/(exp2(((total + c_fc_bias[x]) * 0.7978845608 * (1 + 0.044715 * pow((total + c_fc_bias[x]),2))*(-2.885390043258667f)))+1.0f)))+(-1.0f)));
             }}
