@@ -61,6 +61,7 @@ def compile(prg_str,d,params):
   
 def run(prg,func,params,args,gs,ls,d):
   if d == "Metal":
+    gs = math.ceil(gs/ls)
     mtl_queue = params["queue"]
     device = params["device"]
     fxn = prg.newFunctionWithName_(func)
@@ -79,13 +80,13 @@ def run(prg,func,params,args,gs,ls,d):
     command_buffer.commit()
     command_buffer.waitUntilCompleted()
   if d == "OpenCL":
-     gs*=ls
      queue = params["queue"]
      kernel = getattr(prg,func)
      data = []
      for a in args: data.append(a.data) #todo, better way?
      kernel(queue, (gs,1), (ls,1),*data)
   if d == "CUDA":
+    gs = math.ceil(gs/ls)
     fxn = prg.get_function(func)
     data = []
     for a in args: data.append(a.data) #todo, better way?

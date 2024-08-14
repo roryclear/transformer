@@ -61,8 +61,7 @@ class Kernels:
         }}
         """
         prg = transformer.compile(prg_str,self.d,self.params)
-        g = math.ceil(self.dim / ls)
-        transformer.run(prg,"add",self.params,[a_g, b_g,self.add_res_g],g,ls,self.d)
+        transformer.run(prg,"add",self.params,[a_g, b_g,self.add_res_g],self.dim,ls,self.d)
         return self.add_res_g
 
     def tok_emb(self,tokens,weight_g,weight_2_g,no_tokens):
@@ -80,8 +79,7 @@ class Kernels:
         }}
         """
         library = transformer.compile(prg_str,self.d,self.params)
-        gs = math.ceil(no_tokens*self.dim / ls)
-        transformer.run(library,"tok_emb",self.params,[tokens_g,weight_g,weight_2_g,tok_emb_g],gs,ls,self.d)
+        transformer.run(library,"tok_emb",self.params,[tokens_g,weight_g,weight_2_g,tok_emb_g],no_tokens*self.dim,ls,self.d)
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
@@ -216,7 +214,7 @@ class Kernels:
         """
         prg2 = transformer.compile(prg_str,self.d,self.params)
 
-        gs =  math.ceil(50257 / ls)
+        gs =  50257
         transformer.run(prg,"k1_mm4",self.params,[h_g, weight_g, bias_g],1,ls,self.d)
         transformer.run(prg,"k1_matvec",self.params,[h_g, weight2_g,self.logits_g],gs,ls,self.d)
         transformer.run(prg,"k1_mm5",self.params,[self.logits_g,self.res_g],1,1,self.d)
@@ -440,14 +438,14 @@ class Kernels:
         """
         prg = transformer.compile(prg_str,self.d,self.params)
 
-        transformer.run(prg,"k3_mm",self.params,[x_g, x0_g, weight_g, bias_g],n_tokens,ls,self.d)
-        gs = math.ceil(self.dim*3*n_tokens / ls)
+        transformer.run(prg,"k3_mm",self.params,[x_g, x0_g, weight_g, bias_g],n_tokens*ls,ls,self.d)
+        gs = self.dim*3*n_tokens
         transformer.run(prg,"k3_mm2",self.params,[x0_g, attn_weight_g,attn_bias_g,c_g],gs,ls,self.d)
         transformer.run(prg,"k3_mm4",self.params,[c_g, new_cache_g],gs,ls,self.d)
         transformer.run(prg,"k3_mm5",self.params,[x_g, ln_f_weight_g, ln_f_bias_g],1,ls,self.d)
-        transformer.run(prg,"k3_matmul",self.params,[x_g, lm_head_weight_g,logits_g],math.ceil(50257 / ls),ls,self.d)
+        transformer.run(prg,"k3_matmul",self.params,[x_g, lm_head_weight_g,logits_g],50257,ls,self.d)
         transformer.run(prg,"k3_mm6",self.params,[logits_g,res_g],1,1,self.d)
-        gs = math.ceil(50257 / ls)
+        gs = 50257
         transformer.run(prg,"k3_mm7",self.params,[logits_g,res_g],gs,ls,self.d)
         transformer.run(prg,"k3_mm6",self.params,[logits_g,res_g],1,1,self.d)
         transformer.run(prg,"k3_mm9",self.params,[logits_g,res_g],gs,ls,self.d)
@@ -673,13 +671,13 @@ class Kernels:
             self.h = transformer.create_buffer_empty(self.dim*4,self.d,self.params)
         
         transformer.run(prg,"k0_mm",self.params,[a_g,self.mean],1,ls,self.d)
-        transformer.run(prg2,"k0_mm1",self.params,[a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,self.xq_temp_g,self.mean],math.ceil(self.dim*3 / ls),ls,self.d)
-        transformer.run(prg2,"k0_mm2",self.params,[keys_values_g ,self.temp_g, self.xq_temp_g],math.ceil((self.n_heads*(start_pos+1)*(start_pos+1)) / ls),ls,self.d)
+        transformer.run(prg2,"k0_mm1",self.params,[a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,self.xq_temp_g,self.mean],self.dim*3,ls,self.d)
+        transformer.run(prg2,"k0_mm2",self.params,[keys_values_g ,self.temp_g, self.xq_temp_g],(self.n_heads*(start_pos+1)*(start_pos+1)),ls,self.d)
         transformer.run(prg2,"k0_mm3",self.params,[a_g,keys_values_g,attn_c_proj_weight_g\
         ,bias_g,self.temp_g, self.xq_temp_g,self.mean,self.h_temp,self.h],1,ls,self.d)
         transformer.run(prg,"k0_mm4",self.params,[a_g,weight2_g,bias2_g,\
-        weight3_g,bias3_g,self.mean,self.h,self.bias3_temp],math.ceil(self.dim*4 / ls),ls,self.d)
-        transformer.run(prg,"k0_mm5",self.params,[a_g,weight4_g,bias4_g,self.h_temp,self.bias3_temp],math.ceil(self.dim / ls),ls,self.d)
+        weight3_g,bias3_g,self.mean,self.h,self.bias3_temp],self.dim*4,ls,self.d)
+        transformer.run(prg,"k0_mm5",self.params,[a_g,weight4_g,bias4_g,self.h_temp,self.bias3_temp],self.dim,ls,self.d)
         return a_g
  
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
@@ -968,20 +966,20 @@ class Kernels:
             library = transformer.compile(prg_str,self.d,self.params)
             self.prg_cache[prg_str] = library
         prg = self.prg_cache[prg_str]
-        transformer.run(prg,"k2_mm",self.params,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g],num_tokens,ls,self.d)
-        transformer.run(prg,"k2_mm2",self.params,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g],math.ceil(self.dim*3*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"k2_mm3",self.params,[self.xqkv_g, cache_kv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
-        transformer.run(prg,"k2_tr",self.params,[self.xqkv_g, self.xq_g, self.xv_g],math.ceil((num_tokens*self.n_heads*64) / ls),ls,self.d)
-        transformer.run(prg,"k2_ms0",self.params,[self.xq_g_temp,self.xq_g, self.xqkv_g],math.ceil(self.n_heads*num_tokens*num_tokens/ls),ls,self.d) #TODO check again
-        transformer.run(prg,"k2_ms",self.params,[self.xq_g_temp],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"k2_ms3",self.params,[self.xq_g_temp,self.res_g],math.ceil(self.n_heads*num_tokens/ls),ls,self.d)
-        transformer.run(prg,"k2_ms4",self.params,[self.xq_g_temp,self.res_g],math.ceil(self.n_heads*num_tokens*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"k2_ms5",self.params,[self.xq_g_temp,self.xv_g,self.c_g],math.ceil(num_tokens*self.n_heads*64 / ls),ls,self.d)
-        transformer.run(prg,"k2_ms6",self.params,[self.c_g,self.xqt_g],math.ceil(num_tokens*self.n_heads*64 / ls),ls,self.d)
-        transformer.run(prg,"k2_ms7",self.params,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g],math.ceil(self.dim*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"k2_ms8",self.params,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g],num_tokens,ls,self.d)
-        transformer.run(prg,"k2_ms9",self.params,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g],math.ceil(self.dim*4*num_tokens / ls),ls,self.d)
-        transformer.run(prg,"k2_ms10",self.params,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g],math.ceil(self.dim*num_tokens / ls) ,ls,self.d)
+        transformer.run(prg,"k2_mm",self.params,[x_g,ln_1_weight_g,ln_1_bias_g,self.h_g],num_tokens*ls,ls,self.d)
+        transformer.run(prg,"k2_mm2",self.params,[x_g,attn_weight_g,attn_bias_g,self.xqkv_g],self.dim*3*num_tokens,ls,self.d)
+        transformer.run(prg,"k2_mm3",self.params,[self.xqkv_g, cache_kv_g],num_tokens*self.n_heads*64,ls,self.d)
+        transformer.run(prg,"k2_tr",self.params,[self.xqkv_g, self.xq_g, self.xv_g],num_tokens*self.n_heads*64,ls,self.d)
+        transformer.run(prg,"k2_ms0",self.params,[self.xq_g_temp,self.xq_g, self.xqkv_g],self.n_heads*num_tokens*num_tokens,ls,self.d) #TODO check again
+        transformer.run(prg,"k2_ms",self.params,[self.xq_g_temp],self.n_heads*num_tokens*num_tokens,ls,self.d)
+        transformer.run(prg,"k2_ms3",self.params,[self.xq_g_temp,self.res_g],self.n_heads*num_tokens,ls,self.d)
+        transformer.run(prg,"k2_ms4",self.params,[self.xq_g_temp,self.res_g],self.n_heads*num_tokens*num_tokens,ls,self.d)
+        transformer.run(prg,"k2_ms5",self.params,[self.xq_g_temp,self.xv_g,self.c_g],num_tokens*self.n_heads*64,ls,self.d)
+        transformer.run(prg,"k2_ms6",self.params,[self.c_g,self.xqt_g],num_tokens*self.n_heads*64,ls,self.d)
+        transformer.run(prg,"k2_ms7",self.params,[self.xqt_g,attn_c_proj_weight_g,attn_c_proj_bias_g,self.h_g],self.dim*num_tokens,ls,self.d)
+        transformer.run(prg,"k2_ms8",self.params,[self.h_g, ln_2_weight_g, ln_2_bias_g,self.h2_g],num_tokens*ls,ls,self.d)
+        transformer.run(prg,"k2_ms9",self.params,[self.h_g, c_fc_weight_g,c_fc_bias_g,self.d_g],self.dim*4*num_tokens,ls,self.d)
+        transformer.run(prg,"k2_ms10",self.params,[self.d_g, c_proj_weight_g,c_proj_bias_g,self.h2_g],self.dim*num_tokens,ls,self.d)
         return self.h2_g
 
     def time_it(func,a,b,i=100):
