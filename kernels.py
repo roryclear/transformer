@@ -85,7 +85,7 @@ class Kernels:
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
-        seg = int(self.dim / ls)
+        seg = math.ceil(self.dim / ls)
         rows = self.dim
         if hasattr(self, 'logits_g') == False:
             self.logits_g = transformer.create_buffer_empty(50257*4,self.d,self.params)
@@ -233,7 +233,7 @@ class Kernels:
     def kernel_3(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,lm_head_weight_g,temperature,random_num):
         seg2 = math.ceil(50257 / ls)
-        seg = int(self.dim / ls) #todo
+        seg = math.ceil(self.dim / ls) #todo
         x0_g = transformer.create_buffer_empty(n_tokens*self.dim*4,self.d,self.params)
         logits_g = transformer.create_buffer_empty(50257*4,self.d,self.params)
         c_g = transformer.create_buffer_empty(max_content*self.dim*3*4,self.d,self.params) #todo, can this be smaller?
@@ -427,7 +427,6 @@ class Kernels:
                 a[i] += a[i-1];
             }}
         }}
-
         {func_dec[self.d]} void k3_mm12(
         {var_dec[self.d]} float *a{uint3_arg[self.d]})
         {{
@@ -439,11 +438,7 @@ class Kernels:
             }}
         }}
         """
-        
-        if prg_str not in self.prg_cache:
-            library = transformer.compile(prg_str,self.d,self.params)
-            self.prg_cache[prg_str] = library
-        prg = self.prg_cache[prg_str]
+        prg = transformer.compile(prg_str,self.d,self.params)
 
         transformer.run(prg,"k3_mm",self.params,[x_g, x0_g, weight_g, bias_g],n_tokens,ls,self.d)
         gs = math.ceil(self.dim*3*n_tokens / ls)
@@ -559,18 +554,18 @@ class Kernels:
             int lidx0 = gidx0 % {ls};
             int i = gidx0 / {ls};
             float t = 0;
-            xq_temp[lidx0*{math.ceil(self.dim*3 / ls)} + i] = xqkv[lidx0*{int(self.dim*3 / ls)} + i];
+            xq_temp[lidx0*{math.ceil(self.dim*3 / ls)} + i] = xqkv[lidx0*{math.ceil(self.dim*3 / ls)} + i];
             for(int k = 0; k < {self.dim}; k++) {{
-                t += ((a[k] * c[k]) / mean[0] + d[k]) * e[(lidx0*{int(self.dim*3 / ls)} + i)*{self.dim} + k];
+                t += ((a[k] * c[k]) / mean[0] + d[k]) * e[(lidx0*{math.ceil(self.dim*3 / ls)} + i)*{self.dim} + k];
             }}
-            if((lidx0*{int(self.dim*3 / ls)} + i) < {self.dim}) {{
-                xq_temp[lidx0*{int(self.dim*3 / ls)} + i] += t;
+            if((lidx0*{math.ceil(self.dim*3 / ls)} + i) < {self.dim}) {{
+                xq_temp[lidx0*{math.ceil(self.dim*3 / ls)} + i] += t;
                 }}
-            if((lidx0*{int(self.dim*3 / ls)} + i) >= {self.dim} && (lidx0*{int(self.dim*3 / ls)} + i) < {2*self.dim}) {{
-                keys_values[{start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {self.dim}] = xqkv[{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {self.dim}] + t;
+            if((lidx0*{math.ceil(self.dim*3 / ls)} + i) >= {self.dim} && (lidx0*{math.ceil(self.dim*3 / ls)} + i) < {2*self.dim}) {{
+                keys_values[{start_pos}*{self.dim} + lidx0*{math.ceil(self.dim*3 / ls)} + i - {self.dim}] = xqkv[{self.dim} + lidx0*{math.ceil(self.dim*3 / ls)} + i - {self.dim}] + t;
             }}
-            if((lidx0*{int(self.dim*3 / ls)} + i) >= {2*self.dim}) {{
-                keys_values[{self.dim*self.max_context} + {start_pos}*{self.dim} + lidx0*{int(self.dim*3 / ls)} + i - {2*self.dim}] = xqkv[{self.dim*2} + lidx0*{int(self.dim*3 / ls)} + i - {2*self.dim}] + t;
+            if((lidx0*{math.ceil(self.dim*3 / ls)} + i) >= {2*self.dim}) {{
+                keys_values[{self.dim*self.max_context} + {start_pos}*{self.dim} + lidx0*{math.ceil(self.dim*3 / ls)} + i - {2*self.dim}] = xqkv[{self.dim*2} + lidx0*{math.ceil(self.dim*3 / ls)} + i - {2*self.dim}] + t;
             }}
         }}
         {func_dec[self.d]} void k0_mm2(
@@ -683,8 +678,8 @@ class Kernels:
         transformer.run(prg2,"k0_mm3",self.params,[a_g,keys_values_g,attn_c_proj_weight_g\
         ,bias_g,self.temp_g, self.xq_temp_g,self.mean,self.h_temp,self.h],1,ls,self.d)
         transformer.run(prg,"k0_mm4",self.params,[a_g,weight2_g,bias2_g,\
-        weight3_g,bias3_g,self.mean,self.h,self.bias3_temp],int(self.dim*4 / ls),ls,self.d)
-        transformer.run(prg,"k0_mm5",self.params,[a_g,weight4_g,bias4_g,self.h_temp,self.bias3_temp],int(self.dim / ls),ls,self.d)
+        weight3_g,bias3_g,self.mean,self.h,self.bias3_temp],math.ceil(self.dim*4 / ls),ls,self.d)
+        transformer.run(prg,"k0_mm5",self.params,[a_g,weight4_g,bias4_g,self.h_temp,self.bias3_temp],math.ceil(self.dim / ls),ls,self.d)
         return a_g
  
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
@@ -709,7 +704,7 @@ class Kernels:
             self.xqkv_g = transformer.create_buffer_empty(max_content*self.dim*3*4,self.d,self.params)
         if hasattr(self, 'd_g') == False:
             self.d_g = transformer.create_buffer_empty(max_content*self.dim*4*4,self.d,self.params)
-        seg = int(self.dim / ls)
+        seg = math.ceil(self.dim / ls)
         prg_str = f"""
         {kernel_prefix[self.d]}
         {func_dec[self.d]} void k2_mm(
