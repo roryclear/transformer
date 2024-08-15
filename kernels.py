@@ -458,7 +458,6 @@ class Kernels:
 
     def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,attn_c_proj_weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,start_pos,g,j=0):
-        seg = math.ceil(self.dim / ls)
         if hasattr(self, 'temp_g') == False:
             self.temp_g = transformer.create_buffer_empty(self.n_heads*self.max_context*4,self.d,self.params)
         if hasattr(self, 'xq_temp_g') == False:
@@ -472,8 +471,8 @@ class Kernels:
             {local_var[self.d]} float temp[{ls}];
             int lidx0 = {global_idx[self.d]};
             float t = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                t += a[lidx0*{seg} + i];
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                t += a[i];
             }}
             temp[lidx0] = t;
             {barrier[self.d]}
@@ -486,9 +485,9 @@ class Kernels:
             }}
             {barrier[self.d]}
             t = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                a[i + lidx0*{seg}] -= mean[0];
-                t += pow(a[lidx0*{seg} + i],2);
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                a[i] -= mean[0];
+                t += pow(a[i],2);
             }}
             temp[lidx0] = t;
             {barrier[self.d]}
@@ -500,7 +499,6 @@ class Kernels:
                 mean[0] = pow(t / {self.dim} + 1e-5,0.5);
             }}
         }}
-
         {func_dec[self.d]} void k0_mm4(
             {var_dec[self.d]} float *a,
             {var_dec[self.d]} const float *weight2, {var_dec[self.d]} const float *bias2,
@@ -540,7 +538,6 @@ class Kernels:
             library = transformer.compile(prg_str,self.d,self.params)
             self.prg_cache[prg_str] = library
         prg = self.prg_cache[prg_str]
-
         prg_str = f"""
         {kernel_prefix[self.d]}
         {func_dec[self.d]} void k0_mm1(
@@ -593,8 +590,8 @@ class Kernels:
             int lidx0 = {global_idx[self.d]};
             if(lidx0 < {self.n_heads}){{
             float m = -INFINITY;
-            for(int i = 0; i < {start_pos+1}; i++) {{
-                m = max(m,temp3[i + lidx0*{start_pos+1}]);
+            for(int i = lidx0*{start_pos+1}; i < min(lidx0*{start_pos+1}+{start_pos+1},{self.n_heads*self.max_context}); i++) {{
+                m = max(m,temp3[i]);
             }}
             float t = 0;
             for(int i = 0; i < {start_pos+1}; i++) {{
@@ -606,26 +603,26 @@ class Kernels:
             }}
             }}
             {barrier[self.d]}
-            for(int g = 0; g < {seg}; g++) {{ 
+            for(int g = 0; g < {math.ceil(self.dim/ls)}; g++) {{ 
                 float acc0 = 0;
                 for(int i = 0; i < {start_pos+1}; i++) {{
-                    acc0 += temp3[i + {start_pos+1}*((g + lidx0*{seg}) / 64)] * keys_values[{self.dim*self.max_context} + i*{self.n_heads*64} + g + lidx0*{seg}];
+                    acc0 += temp3[i + {start_pos+1}*((g + lidx0*{math.ceil(self.dim/ls)}) / 64)] * keys_values[{self.dim*self.max_context} + i*{self.n_heads*64} + g + lidx0*{math.ceil(self.dim/ls)}];
                 }}
-                xq_temp[g + lidx0*{seg}] = acc0;
+                xq_temp[g + lidx0*{math.ceil(self.dim/ls)}] = acc0;
             }}
             {barrier[self.d]}
-            for(int i = 0; i < {seg}; i++) {{
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
                 float acc = 0;
                 for(int x = 0; x < {self.dim}; x++) {{
-                    acc += xq_temp[x] * weight[x*{self.dim} + lidx0*{seg} + i];
+                    acc += xq_temp[x] * weight[x*{self.dim} + i];
                 }}
-                h[lidx0*{seg} + i] = a[lidx0*{seg} + i] + acc + bias[lidx0*{seg} + i];
-                h_temp[lidx0*{seg} + i] = h[lidx0*{seg} + i];
+                h[i] = a[i] + acc + bias[i];
+                h_temp[i] = h[i];
             }}
             {barrier[self.d]}
             float total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                total += h[lidx0*{seg} + i];
+            for(int i = 0; i < {math.ceil(self.dim/ls)}; i++) {{
+                total += h[lidx0*{math.ceil(self.dim/ls)} + i];
             }}
             temp[lidx0] = total;
             {barrier[self.d]}
@@ -638,9 +635,9 @@ class Kernels:
             }}
             {barrier[self.d]}
             total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                h[i + lidx0*{seg}] = h[i + lidx0*{seg}] - mean[0];
-                total += pow(h[lidx0*{seg} + i],2);
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                h[i] -= mean[0];
+                total += pow(h[i],2);
             }}        
             temp[lidx0] = total;
             {barrier[self.d]}
@@ -669,7 +666,6 @@ class Kernels:
             self.h_temp = transformer.create_buffer_empty(self.dim*4,self.d,self.params)
         if hasattr(self, 'h') == False:
             self.h = transformer.create_buffer_empty(self.dim*4,self.d,self.params)
-        
         transformer.run(prg,"k0_mm",self.params,[a_g,self.mean],1,ls,self.d)
         transformer.run(prg2,"k0_mm1",self.params,[a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,self.xq_temp_g,self.mean],self.dim*3,ls,self.d)
         transformer.run(prg2,"k0_mm2",self.params,[keys_values_g ,self.temp_g, self.xq_temp_g],(self.n_heads*(start_pos+1)*(start_pos+1)),ls,self.d)
