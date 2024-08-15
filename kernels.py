@@ -83,8 +83,6 @@ class Kernels:
         return tok_emb_g
 
     def kernel_1(self,h_g,weight_g,bias_g,weight2_g,temperature,random_num):
-        seg = math.ceil(self.dim / ls)
-        rows = self.dim
         if hasattr(self, 'logits_g') == False:
             self.logits_g = transformer.create_buffer_empty(50257*4,self.d,self.params)
         if hasattr(self, 'res') == False:
@@ -100,8 +98,8 @@ class Kernels:
             {local_var[self.d]} float mean;
             int lidx0 = {global_idx[self.d]};
             float total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                total += h[lidx0*{seg} + i];
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                total += h[i];
             }}
             temp[lidx0] = total;
             {barrier[self.d]}
@@ -113,13 +111,13 @@ class Kernels:
                 mean = total / {self.dim};  
             }}
             {barrier[self.d]}
-            for(int i = 0; i < {seg}; i++) {{
-                h[i + lidx0*{seg}] -= mean;
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                h[i] -= mean;
             }}
             {barrier[self.d]}
             total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                total += pow(h[lidx0*{seg} + i],2);
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                total += pow(h[i],2);
             }}
             temp[lidx0] = total;
             {barrier[self.d]}
@@ -131,8 +129,8 @@ class Kernels:
                 mean = pow(total / {self.dim} + 1e-5,0.5);
             }}
             {barrier[self.d]}
-            for(int i = 0; i < {seg}; i++) {{
-                h[i + lidx0*{seg}] = (h[i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / mean + bias[i + lidx0*{seg}];
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                h[i] = (h[i] * weight[i]) / mean + bias[i];
             }}
         }}
         {func_dec[self.d]} void k1_matvec(
@@ -140,7 +138,7 @@ class Kernels:
         {{
             int gidx0 = {global_idx[self.d]};
             res[gidx0] = 0;
-            for(int j = 0; j < {rows}; j++) {{
+            for(int j = 0; j < {self.dim}; j++) {{
                 res[gidx0] += h[j] * weight2[gidx0 + j*50257];
             }}
             res[gidx0] /= {temperature};
@@ -150,42 +148,36 @@ class Kernels:
         {{
             res[0] = a[0]; //todo why is this needed?, used to be a MAX
         }}
-
         {func_dec[self.d]} void k1_mm6(
         {var_dec[self.d]} float *a, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{  
             int gidx0 = {global_idx[self.d]};
             a[gidx0] = exp(a[gidx0] - res[0]);
         }}
-
         {func_dec[self.d]} void k1_mm8(
         {var_dec[self.d]} float *a, {var_dec[self.d]} const float *res{uint3_arg[self.d]})
         {{
             int gidx0 = {global_idx[self.d]};
             a[gidx0] = a[gidx0] / res[0];
         }}
-
-        {func_dec[self.d]} void k1_mm9(
+        {func_dec[self.d]} void k1_mm9( //TODO, doesn't work when ls < 16?
         {var_dec[self.d]} const float *a, {var_dec[self.d]} float *res{uint3_arg[self.d]})
-        {{
+        {{ 
             {local_var[self.d]} float temp[{ls}];
             int lidx0 = {global_idx[self.d]};
             temp[lidx0] = 0;
-            for(int i = 0; i < {math.ceil(50257 / ls)}; i++) {{
-                if(lidx0*{math.ceil(50257 / ls)} + i < 50257){{
-                temp[lidx0] += a[lidx0*{math.ceil(50257 / ls)} + i];
-                }}
+            for(int i = lidx0*{math.ceil(50257 / ls)}; i < min(lidx0*{math.ceil(50257 / ls)}+{math.ceil(50257 / ls)},50257); i++) {{
+                temp[lidx0] += a[i];
             }}
             {barrier[self.d]}
             float t = 0;
-            if(lidx0 == 0) {{
+            if(lidx0==0) {{
                 for(int i = 0; i < {ls}; i++) {{
                     t+=temp[i];
                 }}
-                res[0] = t;
-            }}
+            res[0] = t;
+            }}     
         }}
-
         {func_dec[self.d]} void k1_mm10(
         {var_dec[self.d]} float *a{uint3_arg[self.d]})
         {{
@@ -212,8 +204,7 @@ class Kernels:
             }}
         }}
         """
-        prg2 = transformer.compile(prg_str,self.d,self.params)
-
+        prg2 = transformer.compile(prg_str,self.d,self.params) #TODO just pass in random num instead of compiling
         gs =  50257
         transformer.run(prg,"k1_mm4",self.params,[h_g, weight_g, bias_g],1,ls,self.d)
         transformer.run(prg,"k1_matvec",self.params,[h_g, weight2_g,self.logits_g],gs,ls,self.d)
