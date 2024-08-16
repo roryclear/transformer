@@ -461,11 +461,11 @@ class Kernels:
         if hasattr(self, 'h') == False:
             self.h = transformer.create_buffer_empty(self.dim*4,self.d,self.params)
 
-        if "k0_mm" in self.code_cache:
-            prg = transformer.compile(self.code_cache["k0_mm"][0],self.d,self.params)
-            self.prg_cache["k0_mm"] = [prg,self.code_cache["k0_mm"][1]]
+        if "k0_mm"+str(self.dim) in self.code_cache:
+            prg = transformer.compile(self.code_cache["k0_mm"+str(self.dim)][0],self.d,self.params)
+            self.prg_cache["k0_mm"+str(self.dim)] = [prg,self.code_cache["k0_mm"+str(self.dim)][1]]
         else:
-            if "k0_mm" not in self.prg_cache:
+            if "k0_mm"+str(self.dim) not in self.prg_cache:
                 i = 16
                 f_index = None
                 ft = None
@@ -514,16 +514,16 @@ class Kernels:
                     if ft == None or t < ft:
                         ft = t
                         f_index = i
-                        self.prg_cache["k0_mm"] = [prg,f_index]
-                        self.code_cache["k0_mm"] = [k0_mm_test,f_index]
+                        self.prg_cache["k0_mm"+str(self.dim)] = [prg,f_index]
+                        self.code_cache["k0_mm"+str(self.dim)] = [k0_mm_test,f_index]
                     i*=2
                 print(ft,f_index,"mm")
 
-        if "k0_mm4" in self.code_cache:
-            prg = transformer.compile(self.code_cache["k0_mm4"][0],self.d,self.params)
-            self.prg_cache["k0_mm4"] = [prg,self.code_cache["k0_mm4"][1]]
+        if "k0_mm4"+str(self.dim) in self.code_cache:
+            prg = transformer.compile(self.code_cache["k0_mm4"+str(self.dim)][0],self.d,self.params)
+            self.prg_cache["k0_mm4"+str(self.dim)] = [prg,self.code_cache["k0_mm4"+str(self.dim)][1]]
         else:
-            if "k0_mm4" not in self.prg_cache:
+            if "k0_mm4"+str(self.dim) not in self.prg_cache:
                 i = 16
                 f_index = None
                 ft = None
@@ -556,16 +556,16 @@ class Kernels:
                     if ft == None or t < ft:
                         ft = t
                         f_index = i
-                        self.prg_cache["k0_mm4"] = [prg,f_index]
-                        self.code_cache["k0_mm4"] = [k0_mm_test,f_index]
+                        self.prg_cache["k0_mm4"+str(self.dim)] = [prg,f_index]
+                        self.code_cache["k0_mm4"+str(self.dim)] = [k0_mm_test,f_index]
                     i*=2
                 print(ft,f_index,"mm4")
 
-        if "k0_mm5" in self.code_cache:
-            prg = transformer.compile(self.code_cache["k0_mm5"][0],self.d,self.params)
-            self.prg_cache["k0_mm5"] = [prg,self.code_cache["k0_mm5"][1]]
+        if "k0_mm5"+str(self.dim) in self.code_cache:
+            prg = transformer.compile(self.code_cache["k0_mm5"+str(self.dim)][0],self.d,self.params)
+            self.prg_cache["k0_mm5"+str(self.dim)] = [prg,self.code_cache["k0_mm5"+str(self.dim)][1]]
         else:
-            if "k0_mm5" not in self.prg_cache:
+            if "k0_mm5"+str(self.dim) not in self.prg_cache:
                 i = 16
                 f_index = None
                 ft = None
@@ -594,8 +594,8 @@ class Kernels:
                     if ft == None or t < ft:
                         ft = t
                         f_index = i
-                        self.prg_cache["k0_mm5"] = [prg,f_index]
-                        self.code_cache["k0_mm5"] = [k0_mm_test,f_index]
+                        self.prg_cache["k0_mm5"+str(self.dim)] = [prg,f_index]
+                        self.code_cache["k0_mm5"+str(self.dim)] = [k0_mm_test,f_index]
                     i*=2
                 print(ft,f_index,"mm5")
 
@@ -716,14 +716,14 @@ class Kernels:
             library = transformer.compile(prg_str,self.d,self.params)
             self.prg_cache[prg_str] = library
         prg2 = self.prg_cache[prg_str]
-        transformer.run(self.prg_cache["k0_mm"][0],"k0_mm",self.params,[a_g,self.mean],1,self.prg_cache["k0_mm"][1],self.d)
+        transformer.run(self.prg_cache["k0_mm"+str(self.dim)][0],"k0_mm",self.params,[a_g,self.mean],1,self.prg_cache["k0_mm"+str(self.dim)][1],self.d)
         transformer.run(prg2,"k0_mm1",self.params,[a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,self.xq_temp_g,self.mean],self.dim*3,ls,self.d)
         transformer.run(prg2,"k0_mm2",self.params,[keys_values_g ,self.temp_g, self.xq_temp_g],(self.n_heads*(start_pos+1)*(start_pos+1)),ls,self.d)
         transformer.run(prg2,"k0_mm3",self.params,[a_g,keys_values_g,attn_c_proj_weight_g\
         ,bias_g,self.temp_g, self.xq_temp_g,self.mean,self.h_temp,self.h],1,ls,self.d)
-        transformer.run(self.prg_cache["k0_mm4"][0],"k0_mm4",self.params,[a_g,weight2_g,bias2_g,\
-        weight3_g,bias3_g,self.mean,self.h,self.bias3_temp],self.dim*4,self.prg_cache["k0_mm4"][1],self.d)
-        transformer.run(self.prg_cache["k0_mm5"][0],"k0_mm5",self.params,[a_g,weight4_g,bias4_g,self.h_temp,self.bias3_temp],self.dim,self.prg_cache["k0_mm"][1],self.d)
+        transformer.run(self.prg_cache["k0_mm4"+str(self.dim)][0],"k0_mm4",self.params,[a_g,weight2_g,bias2_g,\
+        weight3_g,bias3_g,self.mean,self.h,self.bias3_temp],self.dim*4,self.prg_cache["k0_mm4"+str(self.dim)][1],self.d)
+        transformer.run(self.prg_cache["k0_mm5"+str(self.dim)][0],"k0_mm5",self.params,[a_g,weight4_g,bias4_g,self.h_temp,self.bias3_temp],self.dim,self.prg_cache["k0_mm"+str(self.dim)][1],self.d)
         return a_g
  
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
@@ -1036,3 +1036,4 @@ class Kernels:
             if f is None or t < f:
                 f = t
         return ret,f
+

@@ -395,7 +395,6 @@ text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float
 print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
 k.save()
-exit()
 
 rand = Rand()
 k = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device=d)
@@ -435,7 +434,6 @@ text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float
 print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
 k.save()
-exit()
 
 '''
 if d == "Metal":
