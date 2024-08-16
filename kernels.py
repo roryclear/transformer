@@ -221,13 +221,10 @@ class Kernels:
 
     def kernel_3(self,x_g,weight_g,bias_g,attn_weight_g,attn_bias_g,new_cache_g\
         ,ln_f_weight_g,ln_f_bias_g,n_tokens,max_content,lm_head_weight_g,temperature,random_num):
-        seg2 = math.ceil(50257 / ls)
-        seg = math.ceil(self.dim / ls) #todo
         x0_g = transformer.create_buffer_empty(n_tokens*self.dim*4,self.d,self.params)
         logits_g = transformer.create_buffer_empty(50257*4,self.d,self.params)
         c_g = transformer.create_buffer_empty(max_content*self.dim*3*4,self.d,self.params) #todo, can this be smaller?
         res_g = transformer.create_buffer_empty(1*4,self.d,self.params)
-        
         prg_str = f"""
         {kernel_prefix[self.d]}
         {func_dec[self.d]} void k3_mm({var_dec[self.d]} const float *x_in,
@@ -239,9 +236,9 @@ class Kernels:
             int lidx0 = gidx0 % {ls};
             int r = gidx0 / {ls}; 
             temp2[r] = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                x[{self.dim}*r + lidx0*{seg} + i] = x_in[{self.dim}*r + lidx0*{seg} + i];
-                temp2[r] += x[{self.dim}*r + lidx0*{seg} + i];
+            for(int i = {self.dim}*r + lidx0*{math.ceil(self.dim/ls)}; i < min({self.dim}*r+lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}*r+{self.dim}); i++) {{
+                x[i] = x_in[i];
+                temp2[r] += x[i];
             }}
             temp[lidx0] = temp2[r];
             {barrier[self.d]}
@@ -253,13 +250,13 @@ class Kernels:
                 temp2[lidx0] = temp2[lidx0] / {self.dim};  
             }}
             {barrier[self.d]}
-            for(int i = 0; i < {seg}; i++) {{
-                x[{self.dim}*r + i + lidx0*{seg}] -= temp2[r];
+            for(int i = {self.dim}*r + lidx0*{math.ceil(self.dim/ls)}; i < min({self.dim}*r+lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}*r+{self.dim}); i++) {{
+                x[i] -= temp2[r];
             }}
             {barrier[self.d]}
             temp2[r] = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                temp2[r] += pow(x[{self.dim}*r + lidx0*{seg} + i],2);
+            for(int i = {self.dim}*r + lidx0*{math.ceil(self.dim/ls)}; i < min({self.dim}*r+lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}*r+{self.dim}); i++) {{
+                temp2[r] += pow(x[i],2);
             }}
             temp[lidx0] = temp2[r];
             {barrier[self.d]}
@@ -271,8 +268,8 @@ class Kernels:
                 temp2[lidx0] = pow(temp2[lidx0] / {self.dim} + 1e-5,0.5);
             }}
             {barrier[self.d]}
-            for(int i = 0; i < {seg}; i++) {{
-                x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                x[{self.dim}*r + i] = (x[{self.dim}*r + i] * weight[i]) / temp2[r] + bias[i ];
             }}
         }}
         {func_dec[self.d]} void k3_mm2(
@@ -288,15 +285,6 @@ class Kernels:
             }}
             res[y*{self.dim*3} + i] = total + attn_bias[i];
             }}
-        }}
-        {func_dec[self.d]} void k3_mm3(
-            {var_dec[self.d]} const float *xqkv, {var_dec[self.d]} float *new_cache{uint3_arg[self.d]})
-        {{
-            int gidx0 = {global_idx[self.d]};
-            int i = gidx0 / {self.n_heads*64};
-            int j = gidx0 % {self.n_heads*64};
-            new_cache[i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim*1} + j];
-            new_cache[{max_content*self.n_heads*64} + i*{self.n_heads*64} + j] = xqkv[i*{self.n_heads*64*3} + {self.dim}*2 + j]; 
         }}
          {func_dec[self.d]} void k3_mm4(
             {var_dec[self.d]} const float *xqkv, {var_dec[self.d]} float *new_cache{uint3_arg[self.d]})
@@ -316,8 +304,8 @@ class Kernels:
             {local_var[self.d]} float mean;
             int lidx0 = {global_idx[self.d]};
             float total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                total += x[lidx0*{seg} + i];
+            for(int i = 0; i < {math.ceil(self.dim/ls)}; i++) {{
+                total += x[lidx0*{math.ceil(self.dim/ls)} + i];
             }}
             temp[lidx0] = total;
             {barrier[self.d]}
@@ -329,13 +317,13 @@ class Kernels:
                 mean = total / {self.dim};  
             }}
             {barrier[self.d]}
-            for(int i = 0; i < {seg}; i++) {{
-                x[i + lidx0*{seg} + {(n_tokens - 1)*self.dim}] -= mean;
+            for(int i = 0; i < {math.ceil(self.dim/ls)}; i++) {{
+                x[i + lidx0*{math.ceil(self.dim/ls)} + {(n_tokens - 1)*self.dim}] -= mean;
             }}
             {barrier[self.d]}
             total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                total += pow(x[lidx0*{seg} + i + {(n_tokens - 1)*self.dim}],2);
+            for(int i = 0; i < {math.ceil(self.dim/ls)}; i++) {{
+                total += pow(x[lidx0*{math.ceil(self.dim/ls)} + i + {(n_tokens - 1)*self.dim}],2);
             }}
             temp[lidx0] = total;
             {barrier[self.d]}
@@ -347,10 +335,10 @@ class Kernels:
                 mean = pow(total / {self.dim} + 1e-5,0.5);
             }}
             {barrier[self.d]}
-            for(int i = 0; i < {seg}; i++) {{
-                x[i + lidx0*{seg}] = (x[i + lidx0*{seg} + {(n_tokens - 1)*self.dim}] * ln_f_weight[i + lidx0*{seg}]) / mean + ln_f_bias[i + lidx0*{seg}];
+            for(int i = 0; i < {math.ceil(self.dim/ls)}; i++) {{
+                x[i + lidx0*{math.ceil(self.dim/ls)}] = (x[i + lidx0*{math.ceil(self.dim/ls)} + {(n_tokens - 1)*self.dim}] * ln_f_weight[i + lidx0*{math.ceil(self.dim/ls)}]) / mean + ln_f_bias[i + lidx0*{math.ceil(self.dim/ls)}];
             }}
-        }}
+        }}    
         {func_dec[self.d]} void k3_matmul(
             {var_dec[self.d]} const float *a, {var_dec[self.d]} const float *b, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
@@ -377,7 +365,6 @@ class Kernels:
             a[gidx0] = exp(a[gidx0] - res[0]);
             }}
         }}
-
         {func_dec[self.d]} void k3_mm9(
         {var_dec[self.d]} float *a, {var_dec[self.d]} const float *res{uint3_arg[self.d]})
         {{
@@ -386,14 +373,13 @@ class Kernels:
             a[gidx0] = a[gidx0] / res[0];
             }}
         }}
-
         {func_dec[self.d]} void k3_mm10(
         {var_dec[self.d]} const float *a, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
             {local_var[self.d]} float temp[{ls}];
             int lidx0 = {global_idx[self.d]};
             float t = 0;
-            for(int i = lidx0*{seg2}; i < min(lidx0*{seg2}+{seg2},50257); i++) {{
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},50257); i++) {{
                 t += a[i];
             }}
             temp[lidx0] = t;
@@ -406,7 +392,6 @@ class Kernels:
                 res[0] = t;
             }}
         }}
-
         {func_dec[self.d]} void k3_mm11(
         {var_dec[self.d]} float *a{uint3_arg[self.d]})
         {{
@@ -426,7 +411,6 @@ class Kernels:
         }}
         """
         prg = transformer.compile(prg_str,self.d,self.params)
-
         transformer.run(prg,"k3_mm",self.params,[x_g, x0_g, weight_g, bias_g],n_tokens*ls,ls,self.d)
         gs = self.dim*3*n_tokens
         transformer.run(prg,"k3_mm2",self.params,[x0_g, attn_weight_g,attn_bias_g,c_g],gs,ls,self.d)
