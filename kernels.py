@@ -393,10 +393,8 @@ class Kernels:
             {local_var[self.d]} float temp[{ls}];
             int lidx0 = {global_idx[self.d]};
             float t = 0;
-            for(int i = 0; i < {seg2}; i++) {{
-                if(lidx0*{seg2} + i < 50257) {{
-                t += a[lidx0*{seg2} + i];
-                }}
+            for(int i = lidx0*{seg2}; i < min(lidx0*{seg2}+{seg2},50257); i++) {{
+                t += a[i];
             }}
             temp[lidx0] = t;
             {barrier[self.d]}
@@ -689,7 +687,6 @@ class Kernels:
             self.xqkv_g = transformer.create_buffer_empty(max_content*self.dim*3*4,self.d,self.params)
         if hasattr(self, 'd_g') == False:
             self.d_g = transformer.create_buffer_empty(max_content*self.dim*4*4,self.d,self.params)
-        seg = math.ceil(self.dim / ls)
         prg_str = f"""
         {kernel_prefix[self.d]}
         {func_dec[self.d]} void k2_mm(
@@ -702,9 +699,9 @@ class Kernels:
             int lidx0 = gidx0 % {ls};
             int r = gidx0 / {ls};
             temp2[r] = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                copy[{self.dim}*r + lidx0*{seg} + i] = x[{self.dim}*r + lidx0*{seg} + i];
-                temp2[r] += x[{self.dim}*r + lidx0*{seg} + i];
+            for(int i = {self.dim}*r + lidx0*{math.ceil(self.dim/ls)}; i < min({self.dim}*r + lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}*r + {self.dim}); i++) {{
+                copy[i] = x[i];
+                temp2[r] += x[i];
             }}
             temp[lidx0] = temp2[r];
             {barrier[self.d]}
@@ -716,13 +713,13 @@ class Kernels:
                 temp2[lidx0] = temp2[lidx0] / {self.dim};  
             }}
             {barrier[self.d]}
-            for(int i = 0; i < {seg}; i++) {{
-                x[{self.dim}*r + i + lidx0*{seg}] -= temp2[r];
+            for(int i = {self.dim}*r + lidx0*{math.ceil(self.dim/ls)}; i < min({self.dim}*r + lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}*r + {self.dim}); i++) {{
+                x[i] -= temp2[r];
             }}
             {barrier[self.d]}
             temp2[r] = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                temp2[r] += pow(x[{self.dim}*r + lidx0*{seg} + i],2);
+            for(int i = {self.dim}*r + lidx0*{math.ceil(self.dim/ls)}; i < min({self.dim}*r + lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}*r + {self.dim}); i++) {{
+                temp2[r] += pow(x[i],2);
             }}
             temp[lidx0] = temp2[r];
             {barrier[self.d]}
@@ -734,8 +731,8 @@ class Kernels:
                 temp2[lidx0] = pow(temp2[lidx0] / {self.dim} + 1e-5,0.5);
             }}
             {barrier[self.d]}
-            for(int i = 0; i < {seg}; i++) {{
-                x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * weight[i + lidx0*{seg}]) / temp2[r] + bias[i + lidx0*{seg}];
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                x[{self.dim}*r + i] = (x[{self.dim}*r + i] * weight[i]) / temp2[r] + bias[i];
             }}
         }}
         {func_dec[self.d]} void k2_mm2(
@@ -871,7 +868,6 @@ class Kernels:
                 res[y*{self.dim} + x] += total + attn_bias[x];
             }}
         }}
-        
         {func_dec[self.d]} void k2_ms8( //TODO, there are other kernels like this to fix
             {var_dec[self.d]} float *x, {var_dec[self.d]} const float *ln_2_weight, {var_dec[self.d]} const float *ln_2_bias
             ,{var_dec[self.d]} float *copy{uint3_arg[self.d]})
@@ -882,9 +878,9 @@ class Kernels:
             int lidx0 = gidx0 % {ls};
             int r = gidx0 / {ls}; //todo clean
             total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                copy[{self.dim}*r + lidx0*{seg} + i] = x[{self.dim}*r + lidx0*{seg} + i];
-                total += x[{self.dim}*r + lidx0*{seg} + i];
+            for(int i = {self.dim}*r + lidx0*{math.ceil(self.dim/ls)}; i < min({self.dim}*r + lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}*r + {self.dim}); i++) {{
+                copy[i] = x[i];
+                total += x[i];
             }}
             temp[lidx0] = total;
             {barrier[self.d]}
@@ -895,13 +891,13 @@ class Kernels:
                 }}
             }}
             {barrier[self.d]}
-            for(int i = 0; i < {seg}; i++) {{
-                x[{self.dim}*r + i + lidx0*{seg}] -= total / {self.dim};
+            for(int i = {self.dim}*r + lidx0*{math.ceil(self.dim/ls)}; i < min({self.dim}*r + lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}*r + {self.dim}); i++) {{
+                x[i] -= total / {self.dim};
             }}
             {barrier[self.d]}
             total = 0;
-            for(int i = 0; i < {seg}; i++) {{
-                total += pow(x[{self.dim}*r + lidx0*{seg} + i],2);
+            for(int i = {self.dim}*r + lidx0*{math.ceil(self.dim/ls)}; i < min({self.dim}*r + lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}*r + {self.dim}); i++) {{
+                total += pow(x[i],2);
             }}
             temp[lidx0] = total;
             {barrier[self.d]}
@@ -913,11 +909,10 @@ class Kernels:
                 total = pow(total / {self.dim} + 1e-5,0.5);
             }}
             {barrier[self.d]}
-            for(int i = 0; i < {seg}; i++) {{
-                x[{self.dim}*r + i + lidx0*{seg}] = (x[{self.dim}*r + i + lidx0*{seg}] * ln_2_weight[i + lidx0*{seg}]) / total + ln_2_bias[i + lidx0*{seg}];
+            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                x[{self.dim}*r + i] = (x[{self.dim}*r + i] * ln_2_weight[i]) / total + ln_2_bias[i];
             }}
         }}
-
         {func_dec[self.d]} void k2_ms9(
             {var_dec[self.d]} const float *a, {var_dec[self.d]} const float *c_fc_weight,{var_dec[self.d]} const float *c_fc_bias, {var_dec[self.d]} float *res{uint3_arg[self.d]})
         {{
