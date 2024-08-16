@@ -13,6 +13,8 @@ except ImportError:
     pass
 import transformer
 import pyopencl as cl
+import os
+import pickle
 
 ls = 256
 
@@ -27,6 +29,10 @@ local_var = {"OpenCL":"__attribute__ ((aligned (16))) __local","Metal":"threadgr
 class Kernels:
     def __init__(self,dim,n_heads,max_context,device):
         self.d = device
+        if os.path.exists("cache.pickle"):
+            self.code_cache = pickle.load(open("cache.pickle", 'rb'))
+        else:
+            self.code_cache = {}
         self.prg_cache = {}
         self.dim = dim
         self.n_heads = n_heads
@@ -45,6 +51,10 @@ class Kernels:
             self.params = {"ctx":ctx,"mf":mf,"queue":self.queue}
         if device == "CUDA":
             self.params = None
+    
+    def save(self):
+        with open("cache.pickle", 'wb') as outp:
+            pickle.dump(self.code_cache, outp)
 
     def add(self,a_g,b_g,b_s=0,a_s=0):
         if hasattr(self, 'add_res_g') == False:
@@ -429,88 +439,167 @@ class Kernels:
         transformer.run(prg,"k3_mm10",self.params,[logits_g,res_g],1,ls,self.d)
         return res_g.np(self.params)
 
+    #def find_ls(self,kernel,i):
+    #    kernel = eval(f'f"""{kernel}"""')
+    #    return kernel
+
+
     def kernel_0(self,a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,attn_c_proj_weight_g,bias_g,\
         weight2_g,bias2_g,weight3_g,bias3_g,weight4_g,bias4_g,start_pos,g,j=0):
         if hasattr(self, 'temp_g') == False:
             self.temp_g = transformer.create_buffer_empty(self.n_heads*self.max_context*4,self.d,self.params)
         if hasattr(self, 'xq_temp_g') == False:
             self.xq_temp_g = transformer.create_buffer_empty((self.n_heads*(self.max_context+1)*64 + 64)*4,self.d,self.params) #TODO can this be smaller?
-        prg_str = f"""
-        {kernel_prefix[self.d]}
-        {func_dec[self.d]} void k0_mm(
-            {var_dec[self.d]} float *a,
-            {var_dec[self.d]} float *mean{uint3_arg[self.d]})
-        {{
-            {local_var[self.d]} float temp[{ls}];
-            int lidx0 = {global_idx[self.d]};
-            float t = 0;
-            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
-                t += a[i];
-            }}
-            temp[lidx0] = t;
-            {barrier[self.d]}
-            if(lidx0==0) {{
-                t = 0;
-                for(int i = 0; i < {ls}; i++) {{
-                    t += temp[i];
-                }}
-                mean[0] = t / {self.dim};  
-            }}
-            {barrier[self.d]}
-            t = 0;
-            for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
-                a[i] -= mean[0];
-                t += pow(a[i],2);
-            }}
-            temp[lidx0] = t;
-            {barrier[self.d]}
-            if(lidx0==0) {{
-                t = 0;
-                for(int i = 0; i < {ls}; i++) {{
-                    t += temp[i];
-                }}
-                mean[0] = pow(t / {self.dim} + 1e-5,0.5);
-            }}
-        }}
-        {func_dec[self.d]} void k0_mm4(
-            {var_dec[self.d]} float *a,
-            {var_dec[self.d]} const float *weight2, {var_dec[self.d]} const float *bias2,
-            {var_dec[self.d]} const float *weight3, {var_dec[self.d]} const float *bias3,
-            {var_dec[self.d]} float *mean,
-            {var_dec[self.d]} float *h, {var_dec[self.d]} float *bias3_temp{uint3_arg[self.d]})
-        {{
-            //tanh(val0) = ((2.0f*(1/(exp2((val0*(-2.885390043258667f)))+1.0f)))+(-1.0f));
-            int gidx0 = {global_idx[self.d]};
-            int lidx0 = gidx0 % {ls};
-            int i = gidx0 / {ls};
-            float total = bias3[i + lidx0*{math.ceil(self.dim*4 / ls)}];
-            for(int j = 0; j < {self.dim}; j++) {{
-                total += ((h[j] * weight2[j]) / mean[0] + bias2[j]) * weight3[(i + lidx0*{math.ceil(self.dim*4 / ls)})*{self.dim} + j];
-            }}
-            bias3_temp[i + lidx0*{math.ceil(self.dim*4 / ls)}] = 0.5 * total\
-            * (1 + ((2.0f*(1/(exp2((total * 0.7978845608 * (1 + 0.044715 * pow(total,2))*(-2.885390043258667f)))+1.0f)))+(-1.0f)));
-        }}
-        {func_dec[self.d]} void k0_mm5(
-            {var_dec[self.d]} float *a,
-            {var_dec[self.d]} const float *weight4,{var_dec[self.d]} const float *bias4,
-            {var_dec[self.d]} float *h_temp, {var_dec[self.d]} float *bias3_temp{uint3_arg[self.d]})
-        {{
-            int gidx0 = {global_idx[self.d]};
-            {local_var[self.d]} float bias4_temp[{self.dim*3}];
-            int lidx0 = gidx0 % {ls};
-            int i = gidx0 / {ls};
-            bias4_temp[lidx0 + i*{ls}] = bias4[lidx0 + i*{ls}];
-            for(int j = 0; j < {self.dim*4}; j++) {{
-                bias4_temp[lidx0 + i*{ls}] += bias3_temp[j] * weight4[lidx0 + i*{ls} + j*{self.dim}];
-            }}
-            a[lidx0 + i*{ls}] = bias4_temp[lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
-        }}
-        """
+        if hasattr(self, 'total') == False:
+            self.total = transformer.create_buffer_empty(1*4,self.d,self.params)
+        if hasattr(self, 'bias3_temp') == False:
+            self.bias3_temp = transformer.create_buffer_empty(self.dim*4*4,self.d,self.params)
+        if hasattr(self, 'mean') == False:
+            self.mean = transformer.create_buffer_empty(1*4,self.d,self.params)
+        if hasattr(self, 'h_temp') == False:
+            self.h_temp = transformer.create_buffer_empty(self.dim*4,self.d,self.params)
+        if hasattr(self, 'h') == False:
+            self.h = transformer.create_buffer_empty(self.dim*4,self.d,self.params)
 
-        if prg_str not in self.prg_cache:
-            library = transformer.compile(prg_str,self.d,self.params)
-            self.prg_cache[prg_str] = library
-        prg = self.prg_cache[prg_str]
+        if "k0_mm" in self.code_cache:
+            prg = transformer.compile(self.code_cache["k0_mm"][0],self.d,self.params)
+            self.prg_cache["k0_mm"] = [prg,self.code_cache["k0_mm"][1]]
+        else:
+            if "k0_mm" not in self.prg_cache:
+                i = 16
+                f_index = None
+                ft = None
+                while i < 2048:
+                    ls = i
+                    k0_mm_test = f"""
+                    {kernel_prefix[self.d]}
+                    {func_dec[self.d]} void k0_mm(
+                        {var_dec[self.d]} float *a,
+                        {var_dec[self.d]} float *mean{uint3_arg[self.d]})
+                    {{
+                        {local_var[self.d]} float temp[{ls}];
+                        int lidx0 = {global_idx[self.d]};
+                        float t = 0;
+                        for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                            t += a[i];
+                        }}
+                        temp[lidx0] = t;
+                        {barrier[self.d]}
+                        if(lidx0==0) {{
+                            t = 0;
+                            for(int i = 0; i < {ls}; i++) {{
+                                t += temp[i];
+                            }}
+                            mean[0] = t / {self.dim};  
+                        }}
+                        {barrier[self.d]}
+                        t = 0;
+                        for(int i = lidx0*{math.ceil(self.dim/ls)}; i < min(lidx0*{math.ceil(self.dim/ls)}+{math.ceil(self.dim/ls)},{self.dim}); i++) {{
+                            a[i] -= mean[0];
+                            t += pow(a[i],2);
+                        }}
+                        temp[lidx0] = t;
+                        {barrier[self.d]}
+                        if(lidx0==0) {{
+                            t = 0;
+                            for(int i = 0; i < {ls}; i++) {{
+                                t += temp[i];
+                            }}
+                            mean[0] = pow(t / {self.dim} + 1e-5,0.5);
+                        }}
+                    }}
+                    """
+                    prg = transformer.compile(k0_mm_test,self.d,self.params)
+                    t = transformer.run_speed_test(prg,"k0_mm",self.params,[a_g,self.mean],1,ls,self.d)
+                    if ft == None or t < ft:
+                        ft = t
+                        f_index = i
+                        self.prg_cache["k0_mm"] = [prg,f_index]
+                        self.code_cache["k0_mm"] = [k0_mm_test,f_index]
+                    i*=2
+                print(ft,f_index,"mm")
+
+        if "k0_mm4" in self.code_cache:
+            prg = transformer.compile(self.code_cache["k0_mm4"][0],self.d,self.params)
+            self.prg_cache["k0_mm4"] = [prg,self.code_cache["k0_mm4"][1]]
+        else:
+            if "k0_mm4" not in self.prg_cache:
+                i = 16
+                f_index = None
+                ft = None
+                while i < 2048:
+                    ls = i
+                    k0_mm_test = f"""
+            {kernel_prefix[self.d]}
+            {func_dec[self.d]} void k0_mm4(
+                {var_dec[self.d]} float *a,
+                {var_dec[self.d]} const float *weight2, {var_dec[self.d]} const float *bias2,
+                {var_dec[self.d]} const float *weight3, {var_dec[self.d]} const float *bias3,
+                {var_dec[self.d]} float *mean,
+                {var_dec[self.d]} float *h, {var_dec[self.d]} float *bias3_temp{uint3_arg[self.d]})
+            {{
+                //tanh(val0) = ((2.0f*(1/(exp2((val0*(-2.885390043258667f)))+1.0f)))+(-1.0f));
+                int gidx0 = {global_idx[self.d]};
+                int lidx0 = gidx0 % {ls};
+                int i = gidx0 / {ls};
+                float total = bias3[i + lidx0*{math.ceil(self.dim*4 / ls)}];
+                for(int j = 0; j < {self.dim}; j++) {{
+                    total += ((h[j] * weight2[j]) / mean[0] + bias2[j]) * weight3[(i + lidx0*{math.ceil(self.dim*4 / ls)})*{self.dim} + j];
+                }}
+                bias3_temp[i + lidx0*{math.ceil(self.dim*4 / ls)}] = 0.5 * total\
+                * (1 + ((2.0f*(1/(exp2((total * 0.7978845608 * (1 + 0.044715 * pow(total,2))*(-2.885390043258667f)))+1.0f)))+(-1.0f)));
+            }}
+                    """
+                    prg = transformer.compile(k0_mm_test,self.d,self.params)
+                    t = transformer.run_speed_test(prg,"k0_mm4",self.params,[a_g,weight2_g,bias2_g,\
+                    weight3_g,bias3_g,self.mean,self.h,self.bias3_temp],self.dim*4,ls,self.d)
+                    if ft == None or t < ft:
+                        ft = t
+                        f_index = i
+                        self.prg_cache["k0_mm4"] = [prg,f_index]
+                        self.code_cache["k0_mm4"] = [k0_mm_test,f_index]
+                    i*=2
+                print(ft,f_index,"mm4")
+
+        if "k0_mm5" in self.code_cache:
+            prg = transformer.compile(self.code_cache["k0_mm5"][0],self.d,self.params)
+            self.prg_cache["k0_mm5"] = [prg,self.code_cache["k0_mm5"][1]]
+        else:
+            if "k0_mm5" not in self.prg_cache:
+                i = 16
+                f_index = None
+                ft = None
+                while i < 2048:
+                    ls = i
+                    k0_mm_test = f"""
+            {kernel_prefix[self.d]}
+            {func_dec[self.d]} void k0_mm5(
+                {var_dec[self.d]} float *a,
+                {var_dec[self.d]} const float *weight4,{var_dec[self.d]} const float *bias4,
+                {var_dec[self.d]} float *h_temp, {var_dec[self.d]} float *bias3_temp{uint3_arg[self.d]})
+            {{
+                int gidx0 = {global_idx[self.d]};
+                {local_var[self.d]} float bias4_temp[{self.dim*3}];
+                int lidx0 = gidx0 % {ls};
+                int i = gidx0 / {ls};
+                bias4_temp[lidx0 + i*{ls}] = bias4[lidx0 + i*{ls}];
+                for(int j = 0; j < {self.dim*4}; j++) {{
+                    bias4_temp[lidx0 + i*{ls}] += bias3_temp[j] * weight4[lidx0 + i*{ls} + j*{self.dim}];
+                }}
+                a[lidx0 + i*{ls}] = bias4_temp[lidx0 + i*{ls}] + h_temp[lidx0 + i*{ls}];
+            }}
+                    """
+                    prg = transformer.compile(k0_mm_test,self.d,self.params)
+                    t = transformer.run_speed_test(prg,"k0_mm5",self.params,[a_g,weight4_g,bias4_g,self.h_temp,self.bias3_temp],self.dim*4,ls,self.d)
+                    if ft == None or t < ft:
+                        ft = t
+                        f_index = i
+                        self.prg_cache["k0_mm5"] = [prg,f_index]
+                        self.code_cache["k0_mm5"] = [k0_mm_test,f_index]
+                    i*=2
+                print(ft,f_index,"mm5")
+
+        ls = 256
         prg_str = f"""
         {kernel_prefix[self.d]}
         {func_dec[self.d]} void k0_mm1(
@@ -627,26 +716,14 @@ class Kernels:
             library = transformer.compile(prg_str,self.d,self.params)
             self.prg_cache[prg_str] = library
         prg2 = self.prg_cache[prg_str]
-
-        if hasattr(self, 'total') == False:
-            self.total = transformer.create_buffer_empty(1*4,self.d,self.params)
-
-        if hasattr(self, 'bias3_temp') == False:
-            self.bias3_temp = transformer.create_buffer_empty(self.dim*4*4,self.d,self.params)
-        if hasattr(self, 'mean') == False:
-            self.mean = transformer.create_buffer_empty(1*4,self.d,self.params)
-        if hasattr(self, 'h_temp') == False:
-            self.h_temp = transformer.create_buffer_empty(self.dim*4,self.d,self.params)
-        if hasattr(self, 'h') == False:
-            self.h = transformer.create_buffer_empty(self.dim*4,self.d,self.params)
-        transformer.run(prg,"k0_mm",self.params,[a_g,self.mean],1,ls,self.d)
+        transformer.run(self.prg_cache["k0_mm"][0],"k0_mm",self.params,[a_g,self.mean],1,self.prg_cache["k0_mm"][1],self.d)
         transformer.run(prg2,"k0_mm1",self.params,[a_g,c_g,d_g,e_g,xqkv_g,keys_values_g,self.xq_temp_g,self.mean],self.dim*3,ls,self.d)
         transformer.run(prg2,"k0_mm2",self.params,[keys_values_g ,self.temp_g, self.xq_temp_g],(self.n_heads*(start_pos+1)*(start_pos+1)),ls,self.d)
         transformer.run(prg2,"k0_mm3",self.params,[a_g,keys_values_g,attn_c_proj_weight_g\
         ,bias_g,self.temp_g, self.xq_temp_g,self.mean,self.h_temp,self.h],1,ls,self.d)
-        transformer.run(prg,"k0_mm4",self.params,[a_g,weight2_g,bias2_g,\
-        weight3_g,bias3_g,self.mean,self.h,self.bias3_temp],self.dim*4,ls,self.d)
-        transformer.run(prg,"k0_mm5",self.params,[a_g,weight4_g,bias4_g,self.h_temp,self.bias3_temp],self.dim,ls,self.d)
+        transformer.run(self.prg_cache["k0_mm4"][0],"k0_mm4",self.params,[a_g,weight2_g,bias2_g,\
+        weight3_g,bias3_g,self.mean,self.h,self.bias3_temp],self.dim*4,self.prg_cache["k0_mm4"][1],self.d)
+        transformer.run(self.prg_cache["k0_mm5"][0],"k0_mm5",self.params,[a_g,weight4_g,bias4_g,self.h_temp,self.bias3_temp],self.dim,self.prg_cache["k0_mm"][1],self.d)
         return a_g
  
     def kernel_2(self,x_g,ln_1_weight_g,ln_1_bias_g,attn_weight_g,attn_bias_g,cache_kv_g,attn_c_proj_weight_g,attn_c_proj_bias_g,ln_2_weight_g,ln_2_bias_g,c_fc_weight_g,c_fc_bias_g\
