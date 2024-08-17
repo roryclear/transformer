@@ -80,13 +80,13 @@ def run(prg,func,params,args,gs,ls,d):
     command_buffer.commit()
     command_buffer.waitUntilCompleted()
   if d == "OpenCL":
+     gs = math.ceil(gs/ls)*ls
      queue = params["queue"]
      kernel = getattr(prg,func)
      data = []
      for a in args: data.append(a.data) #todo, better way?
      kernel(queue, (gs,1), (ls,1),*data)
   if d == "CUDA":
-    gs = math.ceil(gs/ls)
     fxn = prg.get_function(func)
     data = []
     for a in args: data.append(a.data) #todo, better way?
