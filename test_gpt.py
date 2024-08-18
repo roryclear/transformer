@@ -394,17 +394,17 @@ gpt2.model.to_buffer(12,768)
 text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens)
 print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
-k.save()
+k.save_cache()
 
 rand = Rand()
 k = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device=d)
 filehandler = open(folder+"gpt2.pickle", 'rb')  
 gpt2 = pickle.load(filehandler)
 gpt2.model.to_buffer(12,768)
-text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_b)
+text = gpt2.generate(prompt="What happened in 1939?", max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
 print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
-k.save()
+k.save_cache()
 
 MAX_CONTEXT = len(encode(default_prompt))+100
 k = kernels.Kernels(dim=1024,n_heads=16,max_context=MAX_CONTEXT,device=d)  
@@ -418,7 +418,7 @@ rand = Rand()
 text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
 print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
-k.save()
+k.save_cache()
 
 MAX_CONTEXT = len(encode(default_prompt))+100
 dim = 1280
@@ -430,10 +430,10 @@ if os.path.exists(folder+"gpt2-large.pickle") == False:
 filehandler = open(folder+"gpt2-large.pickle", 'rb')  
 gpt2 = pickle.load(filehandler)
 gpt2.model.to_buffer(20,1280)
-text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_large)
+text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
 print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
-k.save()
+k.save_cache()
 
 '''
 if d == "Metal":
@@ -464,4 +464,4 @@ rand = Rand()
 text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
 print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
-k.save()
+k.save_cache()

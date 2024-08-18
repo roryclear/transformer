@@ -12,7 +12,6 @@ try:
     from pycuda.compiler import SourceModule
 except ImportError:
     pass
-import time
 
 
 class buffer:
@@ -59,8 +58,8 @@ def compile(prg_str,d,params):
     return cl.Program(params["ctx"],prg_str).build()
   if d == "CUDA":
     return SourceModule(prg_str)
-
-def run(prg,func,params,args,gs,ls,d):
+  
+def run(prg,func,params,args,gs,ls,d,time=False):
   if d == "Metal":
     gs = math.ceil(gs/ls)
     mtl_queue = params["queue"]
@@ -80,6 +79,8 @@ def run(prg,func,params,args,gs,ls,d):
     encoder.endEncoding()
     command_buffer.commit()
     command_buffer.waitUntilCompleted()
+    if time:
+      return command_buffer.GPUEndTime() - command_buffer.GPUStartTime()
   if d == "OpenCL":
      queue = params["queue"]
      kernel = getattr(prg,func)
@@ -93,19 +94,6 @@ def run(prg,func,params,args,gs,ls,d):
     for a in args: data.append(a.data) #todo, better way?
     fxn(*data,block=(ls,1,1),grid=(gs,1))
   return
-
-def run_speed_test(prg,func,params,args,gs,ls,d):
-  args_copies = []
-  for a in args: args_copies.append(buffer.rand_like(a,params))
-  ret = None
-  for _ in range(100):
-    t = time.perf_counter()
-    run(prg,func,params,args_copies,gs,ls,d)
-    t = time.perf_counter() - t
-    if ret == None or t < ret: ret = t
-  return ret
-     
-  
 
 def run_test(prg,func,params,args,gs,ls,d): #TODO, only for metal because no delete in OpenCL yet
   args_copy_a = []
