@@ -382,7 +382,6 @@ expected_tokens_large = [198, 198, 1532, 345, 550, 257, 40663, 11, 345, 561,
 
 
 a = transformer.create_buffer_empty(1*4,d,params) #TODO can't run medium in isolation without doing this first?
-
 rand = Rand()
 MAX_CONTEXT = len(encode(default_prompt))+100
 k = kernels.Kernels(dim=768,n_heads=12,max_context=MAX_CONTEXT,device=d)
@@ -430,7 +429,7 @@ if os.path.exists(folder+"gpt2-large.pickle") == False:
 filehandler = open(folder+"gpt2-large.pickle", 'rb')  
 gpt2 = pickle.load(filehandler)
 gpt2.model.to_buffer(20,1280)
-text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=None)
+text = gpt2.generate(prompt=default_prompt, max_length=100, temperature=np.float32(0.8), timing=None, batch_size=1,expected_tokens=expected_tokens_large)
 print((f"Response:", "green"), text)
 delete_buffers(gpt2.model)
 k.save_cache()
@@ -451,6 +450,8 @@ if d == "Metal":
   print((f"Response:", "green"), text)
   delete_buffers(gpt2.model)
 '''
+
+
 MAX_CONTEXT = len(encode(default_prompt))+100
 dim = 1600
 n_heads = 25
