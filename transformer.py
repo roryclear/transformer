@@ -59,7 +59,7 @@ def compile(prg_str,d,params):
   if d == "CUDA":
     return SourceModule(prg_str)
   
-def run(prg,func,params,args,gs,ls,d):
+def run(prg,func,params,args,gs,ls,d,time=False):
   if d == "Metal":
     gs = math.ceil(gs/ls)
     mtl_queue = params["queue"]
@@ -79,6 +79,8 @@ def run(prg,func,params,args,gs,ls,d):
     encoder.endEncoding()
     command_buffer.commit()
     command_buffer.waitUntilCompleted()
+    if time:
+      return command_buffer.GPUEndTime() - command_buffer.GPUStartTime()
   if d == "OpenCL":
      gs = math.ceil(gs/ls)*ls
      queue = params["queue"]
@@ -87,6 +89,7 @@ def run(prg,func,params,args,gs,ls,d):
      for a in args: data.append(a.data) #todo, better way?
      kernel(queue, (gs,1), (ls,1),*data)
   if d == "CUDA":
+    gs = math.ceil(gs/ls)
     fxn = prg.get_function(func)
     data = []
     for a in args: data.append(a.data) #todo, better way?
@@ -117,31 +120,6 @@ def run_test(prg,func,params,args,gs,ls,d): #TODO, only for metal because no del
     args_copy_a[j].delete()
   args_copy_a = []#todo, needed?
   run(prg,func,params,args,gs,ls,d)
-  return
-
-def run_old(prg,func,params,args,gs,ls,d):
-  if d == "Metal":
-    mtl_queue = params["queue"]
-    device = params["device"]
-    fxn = prg.newFunctionWithName_(func)
-    command_buffer = mtl_queue.commandBuffer()
-    encoder = command_buffer.computeCommandEncoder()
-    pipeline_state, err = device.newComputePipelineStateWithFunction_error_(fxn, None)
-    encoder.setComputePipelineState_(pipeline_state)
-    i = 0
-    for arg in args:
-        encoder.setBuffer_offset_atIndex_(arg.data, 0, i)
-        i+=1
-    threadsPerGrid = Metal.MTLSizeMake(gs,1,1)
-    threadsPerThreadGroup = Metal.MTLSizeMake(ls,1,1)
-    encoder.dispatchThreadgroups_threadsPerThreadgroup_(threadsPerGrid, threadsPerThreadGroup)
-    encoder.endEncoding()
-    command_buffer.commit()
-    command_buffer.waitUntilCompleted()
-  if d == "OpenCL":
-     queue = params["queue"]
-     kernel = getattr(prg,func)
-     kernel(queue, (gs,1), (ls,1),*args)
   return
 
 def create_buffer(a,d,params):
