@@ -87,6 +87,19 @@ class Kernels:
         return self.add_res_g
     
     def test_ls(self,prg_str,func,args,gs,start_pos=None):
+        if self.d != "Metal": #TODO, CUDA and OpenCL
+            ls = 256
+            if func not in self.prg_str_cache:
+                prg_str = eval(f'f"""{prg_str}"""') 
+                self.prg_str_cache[func] = prg_str
+            else:
+                prg_str = self.prg_str_cache[func]
+            if prg_str not in self.prg_cache:
+                self.prg_cache[prg_str] = transformer.compile(prg_str,self.d,self.params)
+            prg = self.prg_cache[prg_str]
+            transformer.run(prg,func,self.params,args,gs,ls,self.d)
+            return
+
         if func not in self.ls_cache:
             ls = 16
             if func[0:7] == "k0_mm3_":
