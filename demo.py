@@ -330,3 +330,4 @@ if __name__ == "__main__":
   gpt2.model.to_buffer(n_heads[model_size],dims[model_size])
   text = gpt2.generate(prompt=default_prompt, max_length=output_length, temperature=temperature, timing=None, batch_size=1,expected_tokens=None)
   print((f"Response:", "green"), text)
+  metalk.save_cache()
