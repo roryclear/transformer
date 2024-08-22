@@ -1,5 +1,9 @@
 # Transformer
 ## Running:
+### Online Notebook (CUDA)
+https://www.kaggle.com/code/roryclear/cuda-gpt2-demo
+
+### Locally
 git clone --depth 1 https://github.com/roryclear/transformer.git
 
 pip install -r requirements.txt
