@@ -54,7 +54,7 @@ class Kernels:
             mf = cl.mem_flags
             prg = None
             self.params = {"ctx":ctx,"mf":mf,"queue":self.queue}
-        if device == "CUDA":
+        if device == "CUDA": #timing https://stackoverflow.com/questions/5706192/pycuda-kernel-timing-errors
             self.params = None
         
 
