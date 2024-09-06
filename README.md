@@ -52,6 +52,6 @@ python demo.py --p="your prompt"
 | -----------                                   | -----------   |------         |----       |
 | tinygrad                                      |16 t/s         |5.8 t/s        |2.1 t/s    |
 | huggingface/transformers                      |34 t/s         |15 t/s         |7.7 t/s    |  
-|**roryclear/transformer**                      |**10 t/s**     |**2.5 t/s**    |**2.0 t/s**|
+|**roryclear/transformer**                      |**11 t/s**     |**5.1 t/s**    |**3.1 t/s**|
 
 *generating 100 tokens from a 13 token prompt, I don't own any Nvidia hardware to measure CUDA speeds properly.
