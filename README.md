@@ -45,7 +45,7 @@ python demo.py --p="your prompt"
 | -----------               | -----------   |------         |----       |
 | tinygrad                  |30 t/s         |22 t/s         |15 t/s     |
 | huggingface/transformers  |53 t/s         |17 t/s         |8 t/s      |  
-| **roryclear/transformer** |**33 t/s**     |**16 t/s**     |**9 t/s**  |
+| **roryclear/transformer** |**33 t/s**     |**16 t/s**     |**10 t/s**  |
 
 ### OpenCL
 |Intel Integrated Graphics (2020 XPS13)         | GPT2          |GPT2-Medium    |GPT2-Large |
