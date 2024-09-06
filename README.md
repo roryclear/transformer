@@ -32,7 +32,7 @@ python demo.py --p="your prompt"
 | -----------                 | -----------   |------         |----       |
 | tinygrad                    |74 t/s         |39 t/s         |24 t/s     |
 | huggingface/transformers    |30 t/s         |12 t/s         |6.1 t/s    |  
-|**roryclear/transformer**    |**71 t/s**     |**28 t/s**     |**13 t/s** |
+|**roryclear/transformer**    |**75 t/s**     |**31 t/s**     |**15 t/s** |
 
 |P100 (Kaggle Cloud)          | GPT2          |GPT2-Medium    |GPT2-Large |
 | -----------                 | -----------   |------         |----       |
